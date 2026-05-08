@@ -1,35 +1,86 @@
 # GPS Photo Distance Checker
 
-Browser-based React + Vite web app for checking distances between GPS-tagged photos and uploading cleaned image copies to a single selected image hosting provider.
+Web-приложение для проверки расстояний между GPS-точками фотографий.
 
-## Features
+## Что делает приложение
 
-- Select multiple JPG/JPEG photos, with simple PNG/WebP preview support where the browser allows it.
-- Read EXIF GPS coordinates locally in the browser with `exifr`.
-- Exclude photos without GPS from distance calculations.
-- Calculate every GPS-photo pair with the Haversine formula.
-- Flag pairs closer than a configurable threshold, defaulting to 25 meters.
-- Highlight problem photo cards and recommend a photo to remove with a simple greedy conflict-count rule.
-- Choose one image host per session: Catbox or ImgBB.
-- Upload sequentially with fail-fast behavior and a 12-second timeout per file.
-- Clean metadata before upload by redrawing each image on a canvas, preserving common EXIF orientation values and using a random filename.
+- выбирает несколько фотографий в браузере;
+- читает EXIF GPS локально через `exifr`;
+- исключает фото без GPS из расчётов;
+- считает расстояния между всеми GPS-точками по формуле Haversine;
+- показывает нарушения, если расстояние меньше заданного порога;
+- по умолчанию порог — 25 метров;
+- подсвечивает проблемные фотографии;
+- предлагает, какую фотографию лучше убрать по простому правилу: больше конфликтов — выше приоритет удаления;
+- выбирает один фотохостинг на сессию: Catbox или ImgBB;
+- перед загрузкой создаёт очищенную JPEG-копию через canvas;
+- не отправляет оригинальный файл;
+- использует случайное имя файла для загрузки.
 
-## Development
+## Стек
+
+- React 18
+- Vite 5
+- exifr
+- GitHub Pages
+
+## Локальный запуск
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Build
+## Сборка
 
 ```bash
 npm run build
 ```
 
-## Notes and limitations
+## Предпросмотр сборки
 
-- The app has no backend, database, authentication, maps, history, or user accounts.
-- EXIF reading and metadata cleaning happen locally in the browser.
-- Canvas export creates a new JPEG copy without EXIF/GPS/device/timestamp metadata, but browser image decoding can vary on mobile devices and very large images may hit memory limits.
-- Cross-origin upload availability depends on Catbox and ImgBB service health and CORS behavior.
+```bash
+npm run preview
+```
+
+## Деплой GitHub Pages
+
+В репозитории добавлен workflow:
+
+```text
+.github/workflows/deploy.yml
+```
+
+Он запускается:
+
+- при push в `main`;
+- вручную через `workflow_dispatch`.
+
+Для работы GitHub Pages нужно в настройках репозитория выбрать:
+
+```text
+Settings → Pages → Source → GitHub Actions
+```
+
+## Ограничения
+
+- Приложение работает без backend.
+- Авторизации, базы данных, карты и истории нет.
+- EXIF/GPS читаются только из файлов, которые браузер реально получил от устройства.
+- Некоторые мобильные галереи могут отдавать фото без EXIF.
+- Canvas-пересохранение обычно удаляет EXIF/GPS/device/timestamp metadata, но вертикальные фото нужно проверить вручную: браузеры могут по-разному применять EXIF orientation.
+- Catbox может быть нестабилен или не отвечать.
+- ImgBB требует API key.
+- Одна сессия должна использовать один выбранный хостинг. Автоматического fallback нет.
+
+## Что проверить вручную
+
+1. Выбор 2–5 фотографий с GPS.
+2. Чтение координат на Android Chrome.
+3. Расчёт расстояний и нарушения меньше 25 м.
+4. Подсветку проблемных точек.
+5. Рекомендацию удаления.
+6. Загрузку на Catbox.
+7. Загрузку на ImgBB с API key.
+8. Вертикальные фото после очистки metadata.
+9. Работу GitHub Pages после включения Source → GitHub Actions.
