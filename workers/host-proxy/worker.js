@@ -7,6 +7,12 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+const COMMON_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+};
+
 const json = (payload, status = 200) => new Response(JSON.stringify(payload, null, 2), {
   status,
   headers: {
@@ -14,6 +20,29 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload, nul
     'Content-Type': 'application/json; charset=utf-8',
   },
 });
+
+const decodeHtml = (value) => String(value || '')
+  .replaceAll('&amp;', '&')
+  .replaceAll('&quot;', '"')
+  .replaceAll('&#039;', "'")
+  .replaceAll('&lt;', '<')
+  .replaceAll('&gt;', '>');
+
+const absoluteUrl = (base, value) => {
+  try {
+    return new URL(decodeHtml(value || ''), base).toString();
+  } catch {
+    return base;
+  }
+};
+
+const summarizeAttempts = (attempts) => attempts.map((attempt) => ({
+  name: attempt.name,
+  status: attempt.result?.status ?? null,
+  statusText: attempt.result?.statusText || '',
+  directUrl: attempt.result?.directUrl || null,
+  responsePreview: String(attempt.result?.responsePreview || '').slice(0, 600),
+}));
 
 const findUrl = (value, imageOnly = true) => {
   if (!value) return null;
@@ -58,12 +87,49 @@ const makeUploadFile = (file, filename) => new File([file], filename || file.nam
   type: file.type || 'image/jpeg',
 });
 
+const extractCookies = (response) => {
+  const cookie = response.headers.get('set-cookie');
+  if (!cookie) return '';
+  return cookie
+    .split(',')
+    .map((part) => part.split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+};
+
+const extractUploadForm = (html, pageUrl) => {
+  const forms = [...html.matchAll(/<form\b[\s\S]*?<\/form>/gi)].map((match) => match[0]);
+  const form = forms.find((item) => /type=["']?file/i.test(item)) || forms[0] || '';
+
+  if (!form) {
+    return null;
+  }
+
+  const actionMatch = form.match(/action=["']([^"']*)["']/i);
+  const methodMatch = form.match(/method=["']([^"']*)["']/i);
+  const fileNameMatch = form.match(/<input[^>]+type=["']?file["']?[^>]*>/i)?.[0]?.match(/name=["']([^"']+)["']/i);
+
+  const hiddenInputs = [...form.matchAll(/<input[^>]+type=["']?hidden["']?[^>]*>/gi)].map((match) => {
+    const input = match[0];
+    const name = input.match(/name=["']([^"']+)["']/i)?.[1];
+    const value = input.match(/value=["']([^"']*)["']/i)?.[1] || '';
+    return name ? { name: decodeHtml(name), value: decodeHtml(value) } : null;
+  }).filter(Boolean);
+
+  return {
+    action: absoluteUrl(pageUrl, actionMatch?.[1] || pageUrl),
+    method: (methodMatch?.[1] || 'POST').toUpperCase(),
+    fileField: decodeHtml(fileNameMatch?.[1] || 'source'),
+    hiddenInputs,
+  };
+};
+
 const postForm = async ({ url, formData, headers = {}, imageOnly = true }) => {
   const response = await fetch(url, {
     method: 'POST',
     body: formData,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; GPS-Checker-Proxy/0.1)',
+      ...COMMON_HEADERS,
       ...headers,
     },
   });
@@ -80,9 +146,62 @@ const postForm = async ({ url, formData, headers = {}, imageOnly = true }) => {
   };
 };
 
+const uploadThroughParsedForm = async ({ pageUrl, file, imageOnly = true, name }) => {
+  const pageResponse = await fetch(pageUrl, { headers: COMMON_HEADERS });
+  const cookie = extractCookies(pageResponse);
+  const html = await pageResponse.text();
+  const uploadForm = extractUploadForm(html, pageUrl);
+
+  if (!uploadForm) {
+    return {
+      ok: false,
+      status: pageResponse.status,
+      statusText: 'Upload form not found',
+      directUrl: null,
+      responsePreview: html.slice(0, 1200),
+    };
+  }
+
+  const uploadFile = makeUploadFile(file, file.name);
+  const formData = new FormData();
+
+  for (const item of uploadForm.hiddenInputs) {
+    formData.append(item.name, item.value);
+  }
+
+  formData.append(uploadForm.fileField, uploadFile, uploadFile.name);
+
+  const result = await postForm({
+    url: uploadForm.action,
+    formData,
+    headers: {
+      Referer: pageUrl,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    imageOnly,
+  });
+
+  return {
+    ...result,
+    responsePreview: `${name}: action=${uploadForm.action}; fileField=${uploadForm.fileField}; hidden=${uploadForm.hiddenInputs.map((i) => i.name).join(', ')}\n\n${result.responsePreview}`,
+  };
+};
+
 const uploadUmbPhotos = async (file) => {
   const uploadFile = makeUploadFile(file, file.name);
   const attempts = [];
+
+  attempts.push({
+    name: 'UMBPhotos parsed homepage form',
+    result: await uploadThroughParsedForm({
+      pageUrl: 'https://umbphotos.ag/',
+      file: uploadFile,
+      imageOnly: true,
+      name: 'UMBPhotos parsed homepage form',
+    }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) })),
+  });
+
+  if (attempts.at(-1).result.ok) return { directUrl: attempts.at(-1).result.directUrl, attempts };
 
   const apiJson = new FormData();
   apiJson.append('source', uploadFile, uploadFile.name);
@@ -112,12 +231,26 @@ const uploadUmbPhotos = async (file) => {
 
   if (attempts.at(-1).result.ok) return { directUrl: attempts.at(-1).result.directUrl, attempts };
 
-  throw new Error(`UMBPhotos upload failed. Attempts: ${JSON.stringify(attempts)}`);
+  const summary = summarizeAttempts(attempts);
+  throw new Error(`UMBPhotos upload failed: ${JSON.stringify(summary)}`);
 };
 
 const uploadNinjaBox = async (file) => {
   const uploadFile = makeUploadFile(file, file.name);
   const attempts = [];
+
+  attempts.push({
+    name: 'NinjaBox parsed homepage form',
+    result: await uploadThroughParsedForm({
+      pageUrl: 'https://ninjabox.org/',
+      file: uploadFile,
+      imageOnly: false,
+      name: 'NinjaBox parsed homepage form',
+    }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) })),
+  });
+
+  if (attempts.at(-1).result.ok) return { directUrl: attempts.at(-1).result.directUrl, attempts };
+
   const strategies = [
     { name: 'NinjaBox root files[]', url: 'https://ninjabox.org/', field: 'files[]' },
     { name: 'NinjaBox root file', url: 'https://ninjabox.org/', field: 'file' },
@@ -143,7 +276,8 @@ const uploadNinjaBox = async (file) => {
     }
   }
 
-  throw new Error(`NinjaBox upload failed. Attempts: ${JSON.stringify(attempts)}`);
+  const summary = summarizeAttempts(attempts);
+  throw new Error(`NinjaBox upload failed: ${JSON.stringify(summary)}`);
 };
 
 export default {
@@ -175,7 +309,7 @@ export default {
         return json({ ok: false, error: 'Unknown target. Use umbphotos or ninjabox.' }, 400);
       }
 
-      return json({ ok: true, target, url: result.directUrl, attempts: result.attempts });
+      return json({ ok: true, target, url: result.directUrl, attempts: summarizeAttempts(result.attempts) });
     } catch (error) {
       return json({ ok: false, error: error?.message || 'Unknown proxy error' }, 502);
     }
