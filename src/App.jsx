@@ -124,7 +124,7 @@ function App() {
         photos,
         hosting,
         imgbbApiKey,
-        timeoutMs: 12000,
+        timeoutMs: 30000,
         onPhotoUpdate: updatePhoto,
       });
       setGlobalMessage(`Загрузка завершена. Успешно загружено: ${uploadedCount} из ${photos.length}.`);
