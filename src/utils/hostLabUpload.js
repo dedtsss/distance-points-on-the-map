@@ -1,4 +1,5 @@
 const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/i;
+const URL_RE = /https?:\/\/[^\s"'<>]+/i;
 
 const withTimeout = async (operation, timeoutMs = 30000) => {
   const controller = new AbortController();
@@ -16,32 +17,32 @@ const withTimeout = async (operation, timeoutMs = 30000) => {
   }
 };
 
-const findImageUrl = (value) => {
+const findUrl = (value, imageOnly = true) => {
   if (!value) return null;
 
   if (typeof value === 'string') {
-    const match = value.match(IMAGE_URL_RE);
+    const match = value.match(imageOnly ? IMAGE_URL_RE : URL_RE);
     return match ? match[0] : null;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findImageUrl(item);
+      const found = findUrl(item, imageOnly);
       if (found) return found;
     }
     return null;
   }
 
   if (typeof value === 'object') {
-    const priorityKeys = ['url', 'display_url', 'image', 'medium', 'thumb', 'filename', 'path'];
+    const priorityKeys = ['url', 'directUrl', 'display_url', 'image', 'medium', 'thumb', 'filename', 'path', 'link'];
 
     for (const key of priorityKeys) {
-      const found = findImageUrl(value[key]);
+      const found = findUrl(value[key], imageOnly);
       if (found) return found;
     }
 
     for (const item of Object.values(value)) {
-      const found = findImageUrl(item);
+      const found = findUrl(item, imageOnly);
       if (found) return found;
     }
   }
@@ -62,8 +63,8 @@ const readResponse = async (response) => {
   return { text, json };
 };
 
-const buildResult = ({ provider, strategy, response, body }) => {
-  const directUrl = findImageUrl(body.json) || findImageUrl(body.text);
+const buildResult = ({ provider, strategy, response, body, imageOnly = true }) => {
+  const directUrl = findUrl(body.json, imageOnly) || findUrl(body.text, imageOnly);
 
   return {
     provider,
@@ -74,6 +75,48 @@ const buildResult = ({ provider, strategy, response, body }) => {
     directUrl,
     responsePreview: body.text.slice(0, 1200),
   };
+};
+
+const runStrategies = async ({ provider, strategies, timeoutMs, imageOnly = true }) => {
+  const results = [];
+
+  for (const strategy of strategies) {
+    try {
+      const response = await withTimeout(
+        (signal) => fetch(strategy.url, {
+          method: 'POST',
+          body: strategy.form(),
+          signal,
+        }),
+        timeoutMs,
+      );
+      const body = await readResponse(response);
+      const result = buildResult({
+        provider,
+        strategy: strategy.name,
+        response,
+        body,
+        imageOnly,
+      });
+      results.push(result);
+
+      if (result.ok) {
+        return { ok: true, directUrl: result.directUrl, results };
+      }
+    } catch (error) {
+      results.push({
+        provider,
+        strategy: strategy.name,
+        ok: false,
+        status: null,
+        statusText: '',
+        directUrl: null,
+        responsePreview: error instanceof Error ? error.message : 'Неизвестная ошибка',
+      });
+    }
+  }
+
+  return { ok: false, directUrl: null, results };
 };
 
 export async function testUmbPhotosUpload(file, timeoutMs = 30000) {
@@ -100,42 +143,52 @@ export async function testUmbPhotosUpload(file, timeoutMs = 30000) {
     },
   ];
 
-  const results = [];
+  return runStrategies({ provider: 'UMBPhotos', strategies, timeoutMs, imageOnly: true });
+}
 
-  for (const strategy of strategies) {
-    try {
-      const response = await withTimeout(
-        (signal) => fetch(strategy.url, {
-          method: 'POST',
-          body: strategy.form(),
-          signal,
-        }),
-        timeoutMs,
-      );
-      const body = await readResponse(response);
-      const result = buildResult({
-        provider: 'UMBPhotos',
-        strategy: strategy.name,
-        response,
-        body,
-      });
-      results.push(result);
+export async function testNinjaBoxUpload(file, timeoutMs = 30000) {
+  const strategies = [
+    {
+      name: 'NinjaBox root: files[]',
+      url: 'https://ninjabox.org/',
+      form: () => {
+        const formData = new FormData();
+        formData.append('files[]', file, file.name);
+        formData.append('delete_after_days', '180');
+        return formData;
+      },
+    },
+    {
+      name: 'NinjaBox root: file',
+      url: 'https://ninjabox.org/',
+      form: () => {
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+        formData.append('delete_after_days', '180');
+        return formData;
+      },
+    },
+    {
+      name: 'NinjaBox /upload: files[]',
+      url: 'https://ninjabox.org/upload',
+      form: () => {
+        const formData = new FormData();
+        formData.append('files[]', file, file.name);
+        formData.append('delete_after_days', '180');
+        return formData;
+      },
+    },
+    {
+      name: 'NinjaBox /api/upload: file',
+      url: 'https://ninjabox.org/api/upload',
+      form: () => {
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+        formData.append('delete_after_days', '180');
+        return formData;
+      },
+    },
+  ];
 
-      if (result.ok) {
-        return { ok: true, directUrl: result.directUrl, results };
-      }
-    } catch (error) {
-      results.push({
-        provider: 'UMBPhotos',
-        strategy: strategy.name,
-        ok: false,
-        status: null,
-        statusText: '',
-        directUrl: null,
-        responsePreview: error instanceof Error ? error.message : 'Неизвестная ошибка',
-      });
-    }
-  }
-
-  return { ok: false, directUrl: null, results };
+  return runStrategies({ provider: 'NinjaBox', strategies, timeoutMs, imageOnly: false });
 }
