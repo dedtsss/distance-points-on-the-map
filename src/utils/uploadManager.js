@@ -55,7 +55,7 @@ export async function uploadPhotosSequentially({
     const cleaned = await cleanImageForUpload(photo.file, photo.orientation);
 
     onPhotoUpdate(photo.id, {
-      cleanStatus: cleaned.ok ? 'Метаданные очищены',
+      cleanStatus: cleaned.ok ? 'Метаданные очищены' : 'Ошибка очистки изображения',
       cleanWarnings: cleaned.warnings,
       uploadFilename: cleaned.filename,
     });
