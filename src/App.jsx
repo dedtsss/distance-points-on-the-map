@@ -18,6 +18,7 @@ function App() {
   const [highlightProblems, setHighlightProblems] = useState(false);
   const [hosting, setHosting] = useState('catbox');
   const [imgbbApiKey, setImgbbApiKey] = useState('');
+  const [proxyUrl, setProxyUrl] = useState('');
   const [globalMessage, setGlobalMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -110,6 +111,11 @@ function App() {
       return;
     }
 
+    if ((hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
+      setGlobalMessage('Укажите URL прокси-загрузчика.');
+      return;
+    }
+
     setIsUploading(true);
     setGlobalMessage('Загрузка началась. Файлы отправляются последовательно на выбранный хостинг.');
     setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
@@ -125,6 +131,7 @@ function App() {
         photos,
         hosting,
         imgbbApiKey,
+        proxyUrl,
         timeoutMs: 30000,
         onPhotoUpdate: updatePhoto,
       });
@@ -178,8 +185,10 @@ function App() {
       <HostingSelector
         hosting={hosting}
         imgbbApiKey={imgbbApiKey}
+        proxyUrl={proxyUrl}
         onHostingChange={resetUploadsForHostingChange}
         onApiKeyChange={setImgbbApiKey}
+        onProxyUrlChange={setProxyUrl}
       />
 
       {globalMessage && <div className="status-banner">{globalMessage}</div>}
