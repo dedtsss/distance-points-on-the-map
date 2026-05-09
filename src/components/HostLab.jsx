@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { testUmbPhotosUpload } from '../utils/hostLabUpload';
+import { testNinjaBoxUpload, testUmbPhotosUpload } from '../utils/hostLabUpload';
+
+const HOST_LABELS = {
+  umb: 'UMBPhotos',
+  ninja: 'NinjaBox',
+};
 
 export default function HostLab() {
   const [file, setFile] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [activeHost, setActiveHost] = useState('');
   const [result, setResult] = useState(null);
 
   const handleFileChange = (event) => {
@@ -12,20 +18,29 @@ export default function HostLab() {
     setResult(null);
   };
 
-  const runUmbTest = async () => {
+  const runTest = async (host) => {
     if (!file) {
-      setResult({ ok: false, directUrl: null, results: [{ strategy: 'Подготовка', responsePreview: 'Сначала выберите тестовое фото.' }] });
+      setResult({
+        hostLabel: HOST_LABELS[host],
+        ok: false,
+        directUrl: null,
+        results: [{ strategy: 'Подготовка', responsePreview: 'Сначала выберите тестовое фото.' }],
+      });
       return;
     }
 
     setIsTesting(true);
+    setActiveHost(host);
     setResult(null);
 
     try {
-      const nextResult = await testUmbPhotosUpload(file);
-      setResult(nextResult);
+      const nextResult = host === 'umb'
+        ? await testUmbPhotosUpload(file)
+        : await testNinjaBoxUpload(file);
+      setResult({ ...nextResult, hostLabel: HOST_LABELS[host] });
     } catch (error) {
       setResult({
+        hostLabel: HOST_LABELS[host],
         ok: false,
         directUrl: null,
         results: [{
@@ -35,6 +50,7 @@ export default function HostLab() {
       });
     } finally {
       setIsTesting(false);
+      setActiveHost('');
     }
   };
 
@@ -42,32 +58,32 @@ export default function HostLab() {
     <section className="panel host-lab">
       <h2>Лаборатория хостингов</h2>
       <p className="muted">
-        Тестовый блок. Он не влияет на основную загрузку. Здесь проверяем, можно ли загружать фото на UMBPhotos напрямую из нашего приложения.
+        Тестовый блок. Он не влияет на основную загрузку. Здесь проверяем, можно ли загружать фото на UMBPhotos и NinjaBox напрямую из нашего приложения.
       </p>
       <p className="muted small">
-        Открытие /api/1/upload в браузере через GET не показатель. Проверка ниже отправляет POST-запрос с файлом.
+        Ручная загрузка на сайте и загрузка из нашего домена — разные сценарии. Если будет Failed to fetch, это обычно CORS или блокировка кросс-доменного POST.
       </p>
 
       <label className="field">
-        Тестовое фото для UMBPhotos
+        Тестовое фото для проверки хостинга
         <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleFileChange} />
       </label>
 
       <div className="host-lab-actions">
-        <button type="button" onClick={runUmbTest} disabled={isTesting || !file}>
-          {isTesting ? 'Проверяем UMBPhotos...' : 'Проверить UMBPhotos'}
+        <button type="button" onClick={() => runTest('umb')} disabled={isTesting || !file}>
+          {isTesting && activeHost === 'umb' ? 'Проверяем UMBPhotos...' : 'Проверить UMBPhotos'}
         </button>
-        <button type="button" disabled title="Добавим после UMBPhotos">
-          Проверить NinjaBox позже
+        <button type="button" onClick={() => runTest('ninja')} disabled={isTesting || !file}>
+          {isTesting && activeHost === 'ninja' ? 'Проверяем NinjaBox...' : 'Проверить NinjaBox'}
         </button>
       </div>
 
       {result && (
         <div className="host-lab-result">
-          <h3>{result.ok ? 'UMBPhotos: загрузка сработала' : 'UMBPhotos: загрузка не подтверждена'}</h3>
+          <h3>{result.ok ? `${result.hostLabel}: загрузка сработала` : `${result.hostLabel}: загрузка не подтверждена`}</h3>
           {result.directUrl && (
             <p>
-              Прямая ссылка:{' '}
+              Найденная ссылка:{' '}
               <a href={result.directUrl} target="_blank" rel="noreferrer">{result.directUrl}</a>
             </p>
           )}
