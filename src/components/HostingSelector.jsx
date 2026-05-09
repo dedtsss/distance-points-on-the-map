@@ -1,4 +1,6 @@
-export default function HostingSelector({ hosting, imgbbApiKey, onHostingChange, onApiKeyChange }) {
+export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHostingChange, onApiKeyChange, onProxyUrlChange }) {
+  const needsProxy = hosting === 'umbproxy' || hosting === 'ninjaproxy';
+
   return (
     <section className="panel">
       <h2>Хостинг изображений</h2>
@@ -19,6 +21,26 @@ export default function HostingSelector({ hosting, imgbbApiKey, onHostingChange,
           <input
             type="radio"
             name="hosting"
+            value="umbproxy"
+            checked={hosting === 'umbproxy'}
+            onChange={(event) => onHostingChange(event.target.value)}
+          />
+          UMBPhotos через прокси
+        </label>
+        <label className="radio-card">
+          <input
+            type="radio"
+            name="hosting"
+            value="ninjaproxy"
+            checked={hosting === 'ninjaproxy'}
+            onChange={(event) => onHostingChange(event.target.value)}
+          />
+          NinjaBox через прокси
+        </label>
+        <label className="radio-card">
+          <input
+            type="radio"
+            name="hosting"
             value="imgbb"
             checked={hosting === 'imgbb'}
             onChange={(event) => onHostingChange(event.target.value)}
@@ -26,6 +48,18 @@ export default function HostingSelector({ hosting, imgbbApiKey, onHostingChange,
           ImgBB с API-ключом
         </label>
       </div>
+
+      {needsProxy && (
+        <label className="field">
+          URL прокси-загрузчика
+          <input
+            type="url"
+            value={proxyUrl}
+            onChange={(event) => onProxyUrlChange(event.target.value)}
+            placeholder="https://your-worker.your-subdomain.workers.dev"
+          />
+        </label>
+      )}
 
       {hosting === 'imgbb' && (
         <label className="field">
