@@ -150,6 +150,45 @@ input[type="password"] {
   word-break: break-word;
 }
 
+.host-lab-actions {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(220px, max-content));
+  margin: 22px 0 28px;
+}
+
+.host-lab-actions button {
+  min-height: 54px;
+  padding-left: 1.35rem;
+  padding-right: 1.35rem;
+}
+
+.host-lab-result {
+  border-top: 1px solid #e5edf7;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.host-lab-attempts {
+  display: grid;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.host-lab-attempt {
+  border: 1px solid #e5edf7;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.host-lab-attempt pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -287,8 +326,14 @@ input[type="password"] {
 
 @media (max-width: 780px) {
   .controls,
-  .hosting-options {
+  .hosting-options,
+  .host-lab-actions {
     grid-template-columns: 1fr;
+  }
+
+  .host-lab-actions {
+    gap: 18px;
+    margin: 24px 0 30px;
   }
 
   .meta-list div {
