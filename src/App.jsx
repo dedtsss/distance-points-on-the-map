@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import HostLab from './components/HostLab';
 import HostingSelector from './components/HostingSelector';
 import LinksBlock from './components/LinksBlock';
 import PhotoCard from './components/PhotoCard';
@@ -154,6 +155,8 @@ function App() {
           Выберите несколько фото, проверьте EXIF GPS, найдите точки ближе заданного порога и загрузите очищенные копии без метаданных.
         </p>
       </header>
+
+      <HostLab />
 
       <section className="panel controls">
         <label className="field">
