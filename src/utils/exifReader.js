@@ -1,8 +1,34 @@
 import exifr from 'exifr';
 
 const isFiniteCoordinate = (value) => Number.isFinite(Number(value));
-
 const toNumber = (value) => Number(value);
+
+const isZeroLikeCoordinate = (latitude, longitude) => {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) < 0.000001 && Math.abs(lon) < 0.000001;
+};
+
+const isValidGpsPair = (latitude, longitude) => {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return false;
+  }
+
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return false;
+  }
+
+  // Для реальных пользовательских фото 0,0 почти всегда означает пустую/битую геометку,
+  // а не точку в Гвинейском заливе. Не показываем такие координаты как найденный GPS.
+  if (isZeroLikeCoordinate(lat, lon)) {
+    return false;
+  }
+
+  return true;
+};
 
 const coordinateFromDms = (value, ref) => {
   if (!Array.isArray(value) || value.length < 3) {
@@ -12,6 +38,10 @@ const coordinateFromDms = (value, ref) => {
   const [degrees, minutes, seconds] = value.map(Number);
 
   if (![degrees, minutes, seconds].every(Number.isFinite)) {
+    return null;
+  }
+
+  if (degrees === 0 && minutes === 0 && seconds === 0) {
     return null;
   }
 
@@ -33,7 +63,7 @@ const normalizeGps = (gps) => {
   const directLatitude = gps.latitude ?? gps.Latitude;
   const directLongitude = gps.longitude ?? gps.Longitude;
 
-  if (isFiniteCoordinate(directLatitude) && isFiniteCoordinate(directLongitude)) {
+  if (isValidGpsPair(directLatitude, directLongitude)) {
     return {
       latitude: toNumber(directLatitude),
       longitude: toNumber(directLongitude),
@@ -43,7 +73,7 @@ const normalizeGps = (gps) => {
   const dmsLatitude = coordinateFromDms(gps.GPSLatitude, gps.GPSLatitudeRef);
   const dmsLongitude = coordinateFromDms(gps.GPSLongitude, gps.GPSLongitudeRef);
 
-  if (isFiniteCoordinate(dmsLatitude) && isFiniteCoordinate(dmsLongitude)) {
+  if (isValidGpsPair(dmsLatitude, dmsLongitude)) {
     return {
       latitude: toNumber(dmsLatitude),
       longitude: toNumber(dmsLongitude),
