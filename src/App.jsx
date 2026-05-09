@@ -148,12 +148,9 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="hero">
-        <p className="eyebrow">GPS Photo Distance Checker</p>
-        <h1>Проверка расстояний между GPS-точками фотографий</h1>
-        <p>
-          Выберите несколько фото, проверьте EXIF GPS, найдите точки ближе заданного порога и загрузите очищенные копии без метаданных.
-        </p>
+      <header className="hero hero-compact">
+        <p className="eyebrow">рабочая версия</p>
+        <h1>GPS-чекер</h1>
       </header>
 
       <HostLab />
@@ -192,7 +189,7 @@ function App() {
       <section className="panel upload-panel">
         <h2>Загрузка очищенных копий</h2>
         <p className="muted">
-          Перед загрузкой приложение рисует фото на canvas, создаёт новый JPG без EXIF/GPS/device/timestamp metadata и случайным именем файла.
+          Перед загрузкой приложение создаёт новую JPEG-копию без EXIF/GPS/device/timestamp metadata и со случайным именем файла.
         </p>
         <button type="button" onClick={handleUpload} disabled={isUploading || isReadingExif || photos.length === 0}>
           {isUploading ? 'Загрузка...' : `Загрузить на ${HOSTING_LABELS[hosting]}`}
@@ -201,7 +198,7 @@ function App() {
 
       {photos.length > 0 && <LinksBlock photos={photos} hostingLabel={HOSTING_LABELS[hosting]} />}
 
-      <section className="photo-grid" aria-live="polite">
+      <section className="photo-list" aria-live="polite">
         {photos.map((photo) => (
           <PhotoCard
             key={photo.id}
