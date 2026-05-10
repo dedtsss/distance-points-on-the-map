@@ -1,0 +1,3 @@
+name = "spring-mouse-8d81"
+main = "workers/host-proxy/worker.js"
+compatibility_date = "2026-05-09"
