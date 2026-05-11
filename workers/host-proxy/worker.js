@@ -1,3 +1,4 @@
+// GPS Checker upload proxy. Version marker: 2026-05-11-worker-autodeploy-check.
 const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/i;
 const ANY_URL_RE = /https?:\/\/[^\s"'<>]+/i;
 
