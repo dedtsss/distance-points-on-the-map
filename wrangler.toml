@@ -1,3 +1,4 @@
 name = "spring-mouse-8d81"
 main = "workers/host-proxy/worker.js"
 compatibility_date = "2026-05-09"
+account_id = "977cf45e04d4066ca0b8288de1aa337ed"
