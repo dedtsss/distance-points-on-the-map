@@ -32,9 +32,11 @@ jobs:
           fi
           echo "Cloudflare secrets are present."
 
+      - name: Install Wrangler
+        run: npm install --no-save wrangler@3
+
+      - name: Check Cloudflare authentication
+        run: npx wrangler whoami
+
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+        run: npx wrangler deploy
