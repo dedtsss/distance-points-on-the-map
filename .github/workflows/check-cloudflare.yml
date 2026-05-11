@@ -1,0 +1,120 @@
+name: Check Cloudflare Access
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-cloudflare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate token presence
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Missing GitHub secret: CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+          echo "Token is present."
+
+      - name: Read Wrangler config
+        id: config
+        run: |
+          ACCOUNT_ID=$(sed -n 's/^account_id *= *"\([^"]*\)"/\1/p' wrangler.toml | head -n 1)
+          WORKER_NAME=$(sed -n 's/^name *= *"\([^"]*\)"/\1/p' wrangler.toml | head -n 1)
+
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "worker_name=$WORKER_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "Configured account_id: $ACCOUNT_ID"
+          echo "Configured worker_name: $WORKER_NAME"
+
+          if [ -z "$ACCOUNT_ID" ]; then
+            echo "::error::account_id is missing in wrangler.toml"
+            exit 1
+          fi
+          if [ -z "$WORKER_NAME" ]; then
+            echo "::error::name is missing in wrangler.toml"
+            exit 1
+          fi
+
+      - name: Verify Cloudflare token
+        run: |
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify \
+            -o token_verify.json
+          cat token_verify.json
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open('token_verify.json'))
+          if not data.get('success'):
+              print('::error::Cloudflare token verification failed')
+              sys.exit(1)
+          print('Cloudflare token verification passed')
+          PY
+
+      - name: List accounts visible to token
+        run: |
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/accounts \
+            -o accounts.json
+          cat accounts.json
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open('accounts.json'))
+          if not data.get('success'):
+              print('::error::Cannot list accounts with this token')
+              sys.exit(1)
+          accounts = data.get('result') or []
+          print('Visible accounts count:', len(accounts))
+          for acc in accounts:
+              print('VISIBLE_ACCOUNT', acc.get('id'), acc.get('name'))
+          PY
+
+      - name: Check configured account access
+        run: |
+          ACCOUNT_ID="${{ steps.config.outputs.account_id }}"
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID" \
+            -o account_check.json
+          cat account_check.json
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open('account_check.json'))
+          if not data.get('success'):
+              print('::error::Configured account_id is not accessible with this token')
+              sys.exit(1)
+          result = data.get('result') or {}
+          print('Configured account is accessible:', result.get('id'), result.get('name'))
+          PY
+
+      - name: Check Workers services in configured account
+        run: |
+          ACCOUNT_ID="${{ steps.config.outputs.account_id }}"
+          WORKER_NAME="${{ steps.config.outputs.worker_name }}"
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/services" \
+            -o workers_services.json
+          cat workers_services.json
+          python3 - <<'PY'
+          import json, os, sys
+          data = json.load(open('workers_services.json'))
+          worker_name = os.environ.get('WORKER_NAME')
+          if not data.get('success'):
+              print('::error::Cannot list Workers services in configured account. Token lacks Workers access or account_id is wrong.')
+              sys.exit(1)
+          services = data.get('result') or []
+          print('Workers services count:', len(services))
+          for service in services:
+              print('WORKER_SERVICE', service.get('id'))
+          if worker_name not in [s.get('id') for s in services]:
+              print(f'::warning::Worker service {worker_name} is not listed in this account. Wrangler should create it if token permissions allow it.')
+          else:
+              print(f'Worker service {worker_name} exists in this account.')
+          PY
+        env:
+          WORKER_NAME: ${{ steps.config.outputs.worker_name }}
