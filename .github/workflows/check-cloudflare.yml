@@ -42,37 +42,20 @@ jobs:
             exit 1
           fi
 
-      - name: Verify Cloudflare token
+      - name: Verify Account API token
         run: |
+          ACCOUNT_ID="${{ steps.config.outputs.account_id }}"
           curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            https://api.cloudflare.com/client/v4/user/tokens/verify \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/tokens/verify" \
             -o token_verify.json
           cat token_verify.json
           python3 - <<'PY'
           import json, sys
           data = json.load(open('token_verify.json'))
           if not data.get('success'):
-              print('::error::Cloudflare token verification failed')
+              print('::error::Cloudflare account token verification failed')
               sys.exit(1)
-          print('Cloudflare token verification passed')
-          PY
-
-      - name: List accounts visible to token
-        run: |
-          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            https://api.cloudflare.com/client/v4/accounts \
-            -o accounts.json
-          cat accounts.json
-          python3 - <<'PY'
-          import json, sys
-          data = json.load(open('accounts.json'))
-          if not data.get('success'):
-              print('::error::Cannot list accounts with this token')
-              sys.exit(1)
-          accounts = data.get('result') or []
-          print('Visible accounts count:', len(accounts))
-          for acc in accounts:
-              print('VISIBLE_ACCOUNT', acc.get('id'), acc.get('name'))
+          print('Cloudflare account token verification passed')
           PY
 
       - name: Check configured account access
