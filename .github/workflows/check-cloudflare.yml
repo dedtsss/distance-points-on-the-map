@@ -13,13 +13,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate token presence
+      - name: Validate token presence and format
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Missing GitHub secret: CLOUDFLARE_API_TOKEN"
             exit 1
           fi
-          echo "Token is present."
+
+          TOKEN_LEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | wc -c | tr -d ' ')
+          echo "Token is present. Length: $TOKEN_LEN characters."
+
+          if printf '%s' "$CLOUDFLARE_API_TOKEN" | grep -q '^Bearer '; then
+            echo "::error::GitHub secret CLOUDFLARE_API_TOKEN must contain only token value, without Bearer prefix"
+            exit 1
+          fi
+
+          if printf '%s' "$CLOUDFLARE_API_TOKEN" | grep -q '[[:space:]]'; then
+            echo "::warning::GitHub secret CLOUDFLARE_API_TOKEN contains whitespace. Re-copy the token without spaces or line breaks if verification fails."
+          fi
 
       - name: Read Wrangler config
         id: config
@@ -52,7 +63,7 @@ jobs:
           import json, sys
           data = json.load(open('token_verify.json'))
           if not data.get('success'):
-              print('::error::Cloudflare API token verification failed')
+              print('::error::Cloudflare API token verification failed. Replace GitHub secret CLOUDFLARE_API_TOKEN with the exact token value shown by Cloudflare after Create token.')
               sys.exit(1)
           print('Cloudflare API token verification passed')
           PY
