@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import HostLab from './components/HostLab';
 import HostingSelector from './components/HostingSelector';
 import LinksBlock from './components/LinksBlock';
 import PhotoCard from './components/PhotoCard';
@@ -9,6 +8,7 @@ import { buildRemovalRecommendation, findViolations } from './utils/haversine';
 import { HOSTING_LABELS, uploadPhotosSequentially } from './utils/uploadManager';
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const DEFAULT_PROXY_URL = 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
 
 const makePhotoId = () => `${Date.now()}-${crypto.randomUUID()}`;
 
@@ -16,9 +16,9 @@ function App() {
   const [photos, setPhotos] = useState([]);
   const [threshold, setThreshold] = useState(25);
   const [highlightProblems, setHighlightProblems] = useState(false);
-  const [hosting, setHosting] = useState('catbox');
+  const [hosting, setHosting] = useState('umbproxy');
   const [imgbbApiKey, setImgbbApiKey] = useState('');
-  const [proxyUrl, setProxyUrl] = useState('');
+  const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL);
   const [globalMessage, setGlobalMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -159,8 +159,6 @@ function App() {
         <p className="eyebrow">рабочая версия</p>
         <h1>GPS-чекер</h1>
       </header>
-
-      <HostLab />
 
       <section className="panel controls">
         <label className="field">
