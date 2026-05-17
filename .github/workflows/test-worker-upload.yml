@@ -1,0 +1,32 @@
+name: Test Worker Upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      worker_url:
+        description: 'Cloudflare Worker URL'
+        required: false
+        default: 'https://spring-mouse-8d81.dvabobra2014.workers.dev/'
+      targets:
+        description: 'Comma-separated targets: umbphotos,ninjabox'
+        required: false
+        default: 'umbphotos,ninjabox'
+
+jobs:
+  test-worker-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Test Worker upload targets
+        env:
+          WORKER_URL: ${{ github.event.inputs.worker_url }}
+          TARGETS: ${{ github.event.inputs.targets }}
+        run: node scripts/test-worker-upload.mjs
