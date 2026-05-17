@@ -53,21 +53,6 @@ jobs:
             exit 1
           fi
 
-      - name: Verify Cloudflare API token
-        run: |
-          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/user/tokens/verify" \
-            -o token_verify.json
-          cat token_verify.json
-          python3 - <<'PY'
-          import json, sys
-          data = json.load(open('token_verify.json'))
-          if not data.get('success'):
-              print('::error::Cloudflare API token verification failed. Replace GitHub secret CLOUDFLARE_API_TOKEN with the exact token value shown by Cloudflare after Create token.')
-              sys.exit(1)
-          print('Cloudflare API token verification passed')
-          PY
-
       - name: Check configured account access
         run: |
           ACCOUNT_ID="${{ steps.config.outputs.account_id }}"
@@ -79,7 +64,7 @@ jobs:
           import json, sys
           data = json.load(open('account_check.json'))
           if not data.get('success'):
-              print('::error::Configured account_id is not accessible with this token')
+              print('::error::Configured account_id is not accessible with this token. Check account_id in wrangler.toml or token account scope.')
               sys.exit(1)
           result = data.get('result') or {}
           print('Configured account is accessible:', result.get('id'), result.get('name'))
