@@ -18,7 +18,7 @@ const withTimeout = async (operation, timeoutMs) => {
     return await operation(controller.signal);
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error('upload_timeout');
+      throw new Error('Тайм-аут загрузки: хостинг или прокси не ответил вовремя');
     }
     throw error;
   } finally {
@@ -94,13 +94,14 @@ export async function uploadPhotosSequentially({
         uploadError: '',
       });
     } catch (error) {
+      const details = error instanceof Error ? error.message : 'Неизвестная ошибка загрузки';
       onPhotoUpdate(photo.id, {
         uploadStatus: 'Ошибка загрузки',
-        uploadError: error instanceof Error ? error.message : 'Неизвестная ошибка загрузки',
+        uploadError: details,
       });
       const hostName = HOSTING_LABELS[hosting];
       throw new Error(
-        `Ошибка загрузки. Хостинг ${hostName} не отвечает или нестабилен. Успешно загружено: ${uploadedCount} из ${photos.length}.`,
+        `Ошибка загрузки фото №${photo.number} через ${hostName}. Успешно загружено: ${uploadedCount} из ${photos.length}. Причина: ${details}`,
       );
     }
   }
