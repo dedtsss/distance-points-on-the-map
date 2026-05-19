@@ -21,6 +21,10 @@ on:
         required: false
         default: 'all'
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   test-worker-upload:
     runs-on: ubuntu-latest
@@ -35,8 +39,36 @@ jobs:
           node-version: '20'
 
       - name: Test Worker upload targets
+        id: smoke
+        continue-on-error: true
         env:
           WORKER_URL: ${{ github.event.inputs.worker_url || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/' }}
           TARGETS: ${{ github.event.inputs.targets || 'umbphotos,ninjabox' }}
           REQUIRE_MODE: ${{ github.event.inputs.require_mode || 'all' }}
-        run: node scripts/test-worker-upload.mjs
+        run: |
+          set +e
+          node scripts/test-worker-upload.mjs 2>&1 | tee smoke-output.log
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Comment smoke-test result to issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.existsSync('smoke-output.log') ? fs.readFileSync('smoke-output.log', 'utf8') : 'No smoke-output.log found';
+            const exitCode = '${{ steps.smoke.outputs.exit_code }}' || 'unknown';
+            const shortOutput = output.length > 12000 ? output.slice(0, 12000) + '\n...TRUNCATED...' : output;
+            const body = `Worker upload smoke-test result\n\nCommit: ${context.sha}\nWorkflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\nExit code: ${exitCode}\n\n\`\`\`text\n${shortOutput}\n\`\`\``;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 4,
+              body,
+            });
+
+      - name: Fail workflow if smoke-test failed
+        if: steps.smoke.outputs.exit_code != '0'
+        run: exit 1
