@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'workers/host-proxy/**'
       - 'scripts/test-worker-upload.mjs'
       - '.github/workflows/test-worker-upload.yml'
   workflow_dispatch:
