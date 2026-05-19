@@ -29,8 +29,21 @@ const canvasToBlob = (canvas) => new Promise((resolve, reject) => {
   }, 'image/jpeg', 0.92);
 });
 
-export async function cleanImageForUpload(file, orientation = 1) {
-  const filename = `f_${randomHex(8)}.jpg`;
+const normalizeFilename = (filename) => {
+  const value = String(filename || '').trim();
+  if (!value) return `f_${randomHex(8)}.jpg`;
+
+  const safe = value
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  return `${safe || `f_${randomHex(8)}`}.jpg`;
+};
+
+export async function cleanImageForUpload(file, orientation = 1, preferredFilename = '') {
+  const filename = normalizeFilename(preferredFilename);
   const warnings = [];
 
   try {
