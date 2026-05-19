@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import HostingSelector from './components/HostingSelector';
 import LinksBlock from './components/LinksBlock';
+import ManualExportPanel from './components/ManualExportPanel';
 import PhotoCard from './components/PhotoCard';
 import ViolationsBlock from './components/ViolationsBlock';
 import { readPhotoExif } from './utils/exifReader';
@@ -193,10 +194,17 @@ function App() {
 
       <ViolationsBlock violations={violations} recommendation={recommendation} hasGpsPhotos={hasGpsPhotos} />
 
+      <ManualExportPanel
+        photos={photos}
+        setPhotos={setPhotos}
+        isReadingExif={isReadingExif}
+        setGlobalMessage={setGlobalMessage}
+      />
+
       <section className="panel upload-panel">
-        <h2>Загрузка очищенных копий</h2>
+        <h2>Автоматическая загрузка очищенных копий</h2>
         <p className="muted">
-          Перед загрузкой приложение создаёт новую JPEG-копию без EXIF/GPS/device/timestamp metadata и со случайным именем файла.
+          Экспериментальный режим. Для стабильной работы сейчас лучше использовать ручную загрузку выше.
         </p>
         <button type="button" onClick={handleUpload} disabled={isUploading || isReadingExif || photos.length === 0}>
           {isUploading ? 'Загрузка...' : `Загрузить на ${HOSTING_LABELS[hosting]}`}
