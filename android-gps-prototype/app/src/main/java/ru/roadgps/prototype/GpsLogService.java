@@ -125,7 +125,7 @@ public class GpsLogService extends Service {
         try {
             currentCsv = createCsvFile();
             csvWriter = new BufferedWriter(new FileWriter(currentCsv, false));
-            csvWriter.write("time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok\n");
+            csvWriter.write("time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok,internet_latency_ms\n");
             csvWriter.flush();
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                     .edit()
@@ -209,23 +209,23 @@ public class GpsLogService extends Service {
         }
 
         internetExecutor.execute(() -> {
-            boolean internetOk = checkInternetThroughActiveNetwork();
-            mainHandler.post(() -> writeLocation(location, internetOk));
+            InternetProbeResult internet = checkInternetThroughActiveNetwork();
+            mainHandler.post(() -> writeLocation(location, internet));
         });
     }
 
-    private void writeLocation(Location location, boolean internetOk) {
+    private void writeLocation(Location location, InternetProbeResult internet) {
         if (!recording || csvWriter == null) {
             return;
         }
 
         try {
-            csvWriter.write(csvLine(location, internetOk));
+            csvWriter.write(csvLine(location, internet));
             csvWriter.newLine();
             csvWriter.flush();
             pointCount++;
             sendStatus("Status: recording " + pointCount + " points to " + currentCsv.getName()
-                    + "; internet_ok=" + internetOk);
+                    + "; internet_ok=" + internet.internetOkInt + "; latency_ms=" + internet.latencyMs);
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             manager.notify(NOTIFICATION_ID, buildNotification("Recorded " + pointCount + " GPS points"));
         } catch (IOException e) {
@@ -233,7 +233,7 @@ public class GpsLogService extends Service {
         }
     }
 
-    private String csvLine(Location location, boolean internetOk) {
+    private String csvLine(Location location, InternetProbeResult internet) {
         return utcIsoTime(location.getTime()) + ","
                 + location.getLatitude() + ","
                 + location.getLongitude() + ","
@@ -242,7 +242,8 @@ public class GpsLogService extends Service {
                 + valueOrEmpty(location.hasSpeed(), location.getSpeed()) + ","
                 + valueOrEmpty(location.hasBearing(), location.getBearing()) + ","
                 + escapeCsv(location.getProvider()) + ","
-                + internetOk;
+                + internet.internetOkInt + ","
+                + internet.latencyMs;
     }
 
     private String valueOrEmpty(boolean hasValue, double value) {
@@ -259,21 +260,41 @@ public class GpsLogService extends Service {
         return value;
     }
 
-    private boolean checkInternetThroughActiveNetwork() {
+    private InternetProbeResult checkInternetThroughActiveNetwork() {
         ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
         if (connectivityManager == null) {
-            return false;
+            return InternetProbeResult.unavailable();
         }
         Network network = connectivityManager.getActiveNetwork();
         if (network == null) {
-            return false;
+            return InternetProbeResult.unavailable();
         }
 
         try (Socket socket = network.getSocketFactory().createSocket()) {
+            long startNanos = System.nanoTime();
             socket.connect(new InetSocketAddress("1.1.1.1", 53), INTERNET_TIMEOUT_MS);
-            return true;
+            long latencyMs = Math.max(0L, (System.nanoTime() - startNanos) / 1_000_000L);
+            return InternetProbeResult.available(latencyMs);
         } catch (IOException | RuntimeException e) {
-            return false;
+            return InternetProbeResult.unavailable();
+        }
+    }
+
+    private static final class InternetProbeResult {
+        final int internetOkInt;
+        final long latencyMs;
+
+        private InternetProbeResult(int internetOkInt, long latencyMs) {
+            this.internetOkInt = internetOkInt;
+            this.latencyMs = latencyMs;
+        }
+
+        static InternetProbeResult available(long latencyMs) {
+            return new InternetProbeResult(1, latencyMs);
+        }
+
+        static InternetProbeResult unavailable() {
+            return new InternetProbeResult(0, -1);
         }
     }
 

@@ -10,7 +10,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Road GPS Logger v0.1"
+        android:text="Road GPS Logger v0.2.0"
         android:textColor="#0F172A"
         android:textSize="26sp"
         android:textStyle="bold" />
