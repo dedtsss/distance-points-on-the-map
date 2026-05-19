@@ -1,6 +1,11 @@
 name: Test Worker Upload
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/test-worker-upload.mjs'
+      - '.github/workflows/test-worker-upload.yml'
   workflow_dispatch:
     inputs:
       worker_url:
@@ -11,6 +16,10 @@ on:
         description: 'Comma-separated targets: umbphotos,ninjabox'
         required: false
         default: 'umbphotos,ninjabox'
+      require_mode:
+        description: 'Pass mode: all or any'
+        required: false
+        default: 'all'
 
 jobs:
   test-worker-upload:
@@ -27,6 +36,7 @@ jobs:
 
       - name: Test Worker upload targets
         env:
-          WORKER_URL: ${{ github.event.inputs.worker_url }}
-          TARGETS: ${{ github.event.inputs.targets }}
+          WORKER_URL: ${{ github.event.inputs.worker_url || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/' }}
+          TARGETS: ${{ github.event.inputs.targets || 'umbphotos,ninjabox' }}
+          REQUIRE_MODE: ${{ github.event.inputs.require_mode || 'all' }}
         run: node scripts/test-worker-upload.mjs
