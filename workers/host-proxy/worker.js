@@ -1,6 +1,6 @@
-// GPS Checker upload proxy. Version marker: 2026-05-11-worker-autodeploy-check.
-const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/i;
-const ANY_URL_RE = /https?:\/\/[^\s"'<>]+/i;
+// GPS Checker upload proxy. Version marker: 2026-05-19-strict-upload-url-filter.
+const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/gi;
+const ANY_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -45,17 +45,43 @@ const summarizeAttempts = (attempts) => attempts.map((attempt) => ({
   responsePreview: String(attempt.result?.responsePreview || '').slice(0, 600),
 }));
 
-const findUrl = (value, imageOnly = true) => {
+const isAllowedUrl = (url, allowedHosts = []) => {
+  if (!url) return false;
+  if (allowedHosts.length === 0) return true;
+
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    return allowedHosts.some((allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`));
+  } catch {
+    return false;
+  }
+};
+
+const findUrlInString = (value, { imageOnly = true, allowedHosts = [] } = {}) => {
+  const text = String(value || '');
+  const regexp = imageOnly ? IMAGE_URL_RE : ANY_URL_RE;
+  regexp.lastIndex = 0;
+
+  for (const match of text.matchAll(regexp)) {
+    const candidate = decodeHtml(match[0]);
+    if (isAllowedUrl(candidate, allowedHosts)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const findUrl = (value, options = {}) => {
   if (!value) return null;
 
   if (typeof value === 'string') {
-    const match = value.match(imageOnly ? IMAGE_URL_RE : ANY_URL_RE);
-    return match ? match[0] : null;
+    return findUrlInString(value, options);
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findUrl(item, imageOnly);
+      const found = findUrl(item, options);
       if (found) return found;
     }
     return null;
@@ -63,7 +89,7 @@ const findUrl = (value, imageOnly = true) => {
 
   if (typeof value === 'object') {
     for (const item of Object.values(value)) {
-      const found = findUrl(item, imageOnly);
+      const found = findUrl(item, options);
       if (found) return found;
     }
   }
@@ -125,7 +151,7 @@ const extractUploadForm = (html, pageUrl) => {
   };
 };
 
-const postForm = async ({ url, formData, headers = {}, imageOnly = true }) => {
+const postForm = async ({ url, formData, headers = {}, imageOnly = true, allowedHosts = [] }) => {
   const response = await fetch(url, {
     method: 'POST',
     body: formData,
@@ -136,7 +162,8 @@ const postForm = async ({ url, formData, headers = {}, imageOnly = true }) => {
   });
 
   const body = await readBody(response);
-  const directUrl = findUrl(body.data, imageOnly) || findUrl(body.text, imageOnly);
+  const findOptions = { imageOnly, allowedHosts };
+  const directUrl = findUrl(body.data, findOptions) || findUrl(body.text, findOptions);
 
   return {
     ok: response.ok && Boolean(directUrl),
@@ -147,7 +174,7 @@ const postForm = async ({ url, formData, headers = {}, imageOnly = true }) => {
   };
 };
 
-const uploadThroughParsedForm = async ({ pageUrl, file, imageOnly = true, name }) => {
+const uploadThroughParsedForm = async ({ pageUrl, file, imageOnly = true, name, allowedHosts = [] }) => {
   const pageResponse = await fetch(pageUrl, { headers: COMMON_HEADERS });
   const cookie = extractCookies(pageResponse);
   const html = await pageResponse.text();
@@ -180,6 +207,7 @@ const uploadThroughParsedForm = async ({ pageUrl, file, imageOnly = true, name }
       ...(cookie ? { Cookie: cookie } : {}),
     },
     imageOnly,
+    allowedHosts,
   });
 
   return {
@@ -191,6 +219,7 @@ const uploadThroughParsedForm = async ({ pageUrl, file, imageOnly = true, name }
 const uploadUmbPhotos = async (file) => {
   const uploadFile = makeUploadFile(file, file.name);
   const attempts = [];
+  const allowedHosts = ['umbphotos.ag'];
 
   attempts.push({
     name: 'UMBPhotos parsed homepage form',
@@ -198,6 +227,7 @@ const uploadUmbPhotos = async (file) => {
       pageUrl: 'https://umbphotos.ag/',
       file: uploadFile,
       imageOnly: true,
+      allowedHosts,
       name: 'UMBPhotos parsed homepage form',
     }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) })),
   });
@@ -213,6 +243,7 @@ const uploadUmbPhotos = async (file) => {
       url: 'https://umbphotos.ag/api/1/upload',
       formData: apiJson,
       imageOnly: true,
+      allowedHosts,
     }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) })),
   });
 
@@ -227,6 +258,7 @@ const uploadUmbPhotos = async (file) => {
       url: 'https://umbphotos.ag/api/1/upload',
       formData: apiTxt,
       imageOnly: true,
+      allowedHosts,
     }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) })),
   });
 
@@ -239,6 +271,7 @@ const uploadUmbPhotos = async (file) => {
 const uploadNinjaBox = async (file) => {
   const uploadFile = makeUploadFile(file, file.name);
   const attempts = [];
+  const allowedHosts = ['ninjabox.org'];
 
   attempts.push({
     name: 'NinjaBox parsed homepage form',
@@ -246,6 +279,7 @@ const uploadNinjaBox = async (file) => {
       pageUrl: 'https://ninjabox.org/',
       file: uploadFile,
       imageOnly: false,
+      allowedHosts,
       name: 'NinjaBox parsed homepage form',
     }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) })),
   });
@@ -268,6 +302,7 @@ const uploadNinjaBox = async (file) => {
       url: strategy.url,
       formData,
       imageOnly: false,
+      allowedHosts,
     }).catch((error) => ({ ok: false, status: null, statusText: '', directUrl: null, responsePreview: String(error?.message || error) }));
 
     attempts.push({ name: strategy.name, result });
