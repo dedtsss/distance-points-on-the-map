@@ -18,7 +18,17 @@ import android.widget.Toast;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import org.osmdroid.config.Configuration;
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
+import org.osmdroid.util.GeoPoint;
+import org.osmdroid.views.MapView;
+import org.osmdroid.views.overlay.Marker;
+import org.osmdroid.views.overlay.Polyline;
+
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,6 +36,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 10;
 
     private TextView statusText;
+    private MapView mapView;
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -35,6 +46,7 @@ public class MainActivity extends Activity {
                 if (status != null) {
                     statusText.setText(status);
                 }
+                loadLatestTrackOnMap();
             }
         }
     };
@@ -42,9 +54,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Configuration.getInstance().setUserAgentValue(getPackageName());
         setContentView(R.layout.activity_main);
 
         statusText = findViewById(R.id.statusText);
+        mapView = findViewById(R.id.mapView);
+        mapView.setTileSource(TileSourceFactory.MAPNIK);
+        mapView.setMultiTouchControls(true);
+
         Button startButton = findViewById(R.id.startButton);
         Button stopButton = findViewById(R.id.stopButton);
         Button shareButton = findViewById(R.id.shareButton);
@@ -54,6 +71,7 @@ public class MainActivity extends Activity {
         shareButton.setOnClickListener(view -> shareLatestCsv());
 
         updateStatusFromStorage();
+        loadLatestTrackOnMap();
     }
 
     @Override
@@ -71,6 +89,23 @@ public class MainActivity extends Activity {
     protected void onStop() {
         unregisterReceiver(statusReceiver);
         super.onStop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mapView != null) {
+            mapView.onResume();
+            loadLatestTrackOnMap();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (mapView != null) {
+            mapView.onPause();
+        }
+        super.onPause();
     }
 
     private void startRecording() {
@@ -150,5 +185,73 @@ public class MainActivity extends Activity {
         } else {
             statusText.setText("Status: idle; latest CSV: " + new File(latestPath).getName());
         }
+    }
+
+    private void loadLatestTrackOnMap() {
+        if (mapView == null) {
+            return;
+        }
+        mapView.getOverlays().clear();
+
+        List<GeoPoint> points = readLatestTrackPoints();
+        if (points.isEmpty()) {
+            mapView.getController().setZoom(3.0);
+            mapView.getController().setCenter(new GeoPoint(20.0, 0.0));
+            mapView.invalidate();
+            return;
+        }
+
+        Polyline path = new Polyline();
+        path.setPoints(points);
+        mapView.getOverlays().add(path);
+
+        Marker startMarker = new Marker(mapView);
+        startMarker.setPosition(points.get(0));
+        startMarker.setTitle("Start");
+        mapView.getOverlays().add(startMarker);
+
+        Marker endMarker = new Marker(mapView);
+        endMarker.setPosition(points.get(points.size() - 1));
+        endMarker.setTitle("Latest");
+        mapView.getOverlays().add(endMarker);
+
+        mapView.zoomToBoundingBox(path.getBounds(), true, 64);
+        mapView.invalidate();
+    }
+
+    private List<GeoPoint> readLatestTrackPoints() {
+        SharedPreferences prefs = getSharedPreferences(GpsLogService.PREFS_NAME, MODE_PRIVATE);
+        String latestPath = prefs.getString(GpsLogService.PREF_LATEST_CSV, null);
+        List<GeoPoint> points = new ArrayList<>();
+        if (latestPath == null) {
+            return points;
+        }
+
+        File csv = new File(latestPath);
+        if (!csv.exists()) {
+            return points;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(csv))) {
+            String line;
+            boolean isFirstLine = true;
+            while ((line = reader.readLine()) != null) {
+                if (isFirstLine) {
+                    isFirstLine = false;
+                    continue;
+                }
+                String[] columns = line.split(",");
+                if (columns.length < 3) {
+                    continue;
+                }
+                double lat = Double.parseDouble(columns[1]);
+                double lon = Double.parseDouble(columns[2]);
+                points.add(new GeoPoint(lat, lon));
+            }
+        } catch (IOException | NumberFormatException ignored) {
+            // Keep map usable even with partial/broken CSV rows.
+        }
+
+        return points;
     }
 }
