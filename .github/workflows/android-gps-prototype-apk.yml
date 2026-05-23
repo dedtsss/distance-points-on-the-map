@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/android-gps-prototype
     paths:
       - 'android-gps-prototype/**'
       - '.github/workflows/android-gps-prototype-apk.yml'
