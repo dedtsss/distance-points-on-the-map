@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Road GPS Logger v0.2.0"
+        android:text="Road GPS Logger v0.4.0"
         android:textColor="#0F172A"
         android:textSize="26sp"
         android:textStyle="bold" />
@@ -53,6 +53,21 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="Share CSV" />
+
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="CSV history"
+        android:textColor="#0F172A"
+        android:textStyle="bold" />
+
+    <ListView
+        android:id="@+id/csvListView"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_marginTop="4dp" />
 
     <Button
         android:id="@+id/showMapButton"

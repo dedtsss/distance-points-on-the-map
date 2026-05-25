@@ -1,4 +1,4 @@
-# Road GPS Logger v0.2.0
+# Road GPS Logger v0.4.0
 
 Temporary Android prototype for recording phone GPS points while the phone is connected to the car router Wi-Fi.
 The prototype has no map, server, authentication, OpenWrt integration, or background upload.
@@ -41,3 +41,14 @@ app/build/outputs/apk/debug/app-debug.apk
 - Keep the phone connected to the car router Wi-Fi before starting recording.
 - Mobile data may be disabled; the app uses the active Android network for the internet check.
 - Battery optimization settings can still affect long recordings on some Android devices, so a manual road test is required before relying on the prototype.
+
+
+## Session recovery and CSV history (v0.4.0)
+
+- Every GPS row is written immediately and flushed per row to reduce data loss risk during long recordings.
+- The app tracks active session metadata in SharedPreferences: `active_session_path`, `active_session_started_at`, `active_session_is_recording`, `latest_csv_path`.
+- If an unfinished session file exists, the next Start continues writing into that file in append mode instead of silently creating a new file.
+- On app startup, the status shows: `Найдена незавершённая запись: <filename>` when an unfinished recording exists.
+- On Stop, recording state is marked inactive and the file remains the latest CSV.
+- The main screen includes CSV history for `gps_logs/` with file name, size, and modified date. You can select any CSV for map rendering and share the selected CSV.
+- Map loads selected CSV first and falls back to the latest CSV when no selection exists.
