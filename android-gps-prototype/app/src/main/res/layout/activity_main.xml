@@ -3,8 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center_horizontal"
+    android:padding="16dp"
     android:background="#F8FAFC">
 
     <TextView
@@ -19,32 +18,70 @@
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:padding="16dp"
+        android:layout_marginTop="12dp"
+        android:padding="12dp"
         android:background="#E2E8F0"
         android:text="Status: idle"
         android:textColor="#0F172A"
         android:textSize="16sp" />
 
-    <Button
-        android:id="@+id/startButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="Start recording" />
-
-    <Button
-        android:id="@+id/stopButton"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:text="Stop recording" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/startButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start recording" />
+
+        <Button
+            android:id="@+id/stopButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:text="Stop recording" />
+    </LinearLayout>
 
     <Button
         android:id="@+id/shareButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="8dp"
         android:text="Share CSV" />
+
+    <Button
+        android:id="@+id/showMapButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Показать карту" />
+
+    <TextView
+        android:id="@+id/mapInfoText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="#0F172A"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/mapLegendText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="#334155"
+        android:textSize="12sp" />
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1" />
 
 </LinearLayout>
