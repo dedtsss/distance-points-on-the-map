@@ -52,6 +52,10 @@ public class MainActivity extends Activity {
                 String status = intent.getStringExtra(GpsLogService.EXTRA_STATUS);
                 if (status != null) {
                     statusText.setText(status);
+                    if (status.startsWith("Status: stopped")) {
+                        updateStatusFromStorage();
+                        refreshMapFromLatestCsv();
+                    }
                 }
             }
         }
@@ -121,7 +125,6 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(this, GpsLogService.class);
         intent.setAction(GpsLogService.ACTION_STOP);
         startService(intent);
-        refreshMapFromLatestCsv();
     }
 
     private List<String> getMissingPermissions() {
