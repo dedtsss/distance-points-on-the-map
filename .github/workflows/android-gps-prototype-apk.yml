@@ -36,6 +36,9 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Decode dev debug keystore
+        run: base64 -d dev-debug.keystore.b64 > app/dev-debug.keystore
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
