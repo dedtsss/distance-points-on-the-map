@@ -36,6 +36,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
+
+      - name: Restore debug keystore
+        run: |
+          if [ -f dev-debug.keystore.b64 ]; then
+            base64 --decode dev-debug.keystore.b64 > dev-debug.keystore
+          fi
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
