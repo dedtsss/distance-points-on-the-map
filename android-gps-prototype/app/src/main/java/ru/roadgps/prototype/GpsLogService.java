@@ -295,6 +295,16 @@ public class GpsLogService extends Service {
         }
     }
 
+    private void persistLatestCsvIfPresent() {
+        if (currentCsv == null) {
+            return;
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_LATEST_CSV, currentCsv.getAbsolutePath())
+                .apply();
+    }
+
     private File createCsvFile() throws IOException {
         File logsDir = new File(getFilesDir(), "gps_logs");
         if (!logsDir.exists() && !logsDir.mkdirs()) {
