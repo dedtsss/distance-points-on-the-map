@@ -42,3 +42,7 @@ app/build/outputs/apk/debug/app-debug.apk
 - Keep the phone connected to the car router Wi-Fi before starting recording.
 - Mobile data may be disabled; the app uses the active Android network for the internet check.
 - Battery optimization settings can still affect long recordings on some Android devices, so a manual road test is required before relying on the prototype.
+
+- This debug APK uses the default CI debug signing.
+- If Android reports a package conflict while installing over an older APK, uninstall the old app once and install the new APK.
+- Stable update-over-existing signing will be handled later.
