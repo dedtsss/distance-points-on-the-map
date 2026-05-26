@@ -2,16 +2,37 @@ plugins {
     id 'com.android.application'
 }
 
+def devDebugKeystore = file('dev-debug.keystore')
+
 android {
     namespace 'ru.roadgps.prototype'
     compileSdk 35
+
+    signingConfigs {
+        if (devDebugKeystore.exists()) {
+            debugDev {
+                storeFile devDebugKeystore
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
 
     defaultConfig {
         applicationId 'ru.roadgps.prototype'
         minSdk 26
         targetSdk 35
-        versionCode 1
+        versionCode 4
         versionName '0.4.0'
+    }
+
+    buildTypes {
+        debug {
+            if (devDebugKeystore.exists()) {
+                signingConfig signingConfigs.debugDev
+            }
+        }
     }
 }
 
