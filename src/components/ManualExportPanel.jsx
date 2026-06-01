@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { cleanImageForUpload } from '../utils/imageCleaner';
 import { applyLinksByOrder, parseNinjaBoxLinks } from '../utils/linkParser';
-import { buildCsv, buildGpx, buildKml, downloadTextFile, getExportablePoints } from '../utils/geoExport';
+import {
+  buildCsv,
+  buildDistanceReportCsv,
+  buildGpx,
+  buildKml,
+  downloadTextFile,
+  getExportablePoints,
+} from '../utils/geoExport';
 
 const padNumber = (value) => String(value).padStart(3, '0');
 
@@ -16,7 +23,7 @@ const downloadBlob = (filename, blob) => {
   URL.revokeObjectURL(url);
 };
 
-export default function ManualExportPanel({ photos, setPhotos, isReadingExif, setGlobalMessage }) {
+export default function ManualExportPanel({ photos, setPhotos, isReadingGps, violations, setGlobalMessage }) {
   const [manualText, setManualText] = useState('');
   const [parsedLinks, setParsedLinks] = useState([]);
   const exportablePoints = getExportablePoints(photos);
@@ -27,8 +34,8 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingExif, se
       return;
     }
 
-    if (isReadingExif) {
-      setGlobalMessage('Дождитесь завершения чтения EXIF/GPS.');
+    if (isReadingGps) {
+      setGlobalMessage('Дождитесь завершения OCR/EXIF.');
       return;
     }
 
@@ -74,6 +81,17 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingExif, se
   };
 
   const handleExport = (type) => {
+    if (type === 'distance') {
+      if (violations.length === 0) {
+        setGlobalMessage('Нет нарушений дистанции для экспорта.');
+        return;
+      }
+
+      downloadTextFile('gps-checker-distance-report.csv', buildDistanceReportCsv(violations), 'text/csv;charset=utf-8');
+      setGlobalMessage(`Экспортировано нарушений: ${violations.length}.`);
+      return;
+    }
+
     if (exportablePoints.length === 0) {
       setGlobalMessage('Нет точек с GPS для экспорта.');
       return;
@@ -98,7 +116,7 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingExif, se
       </p>
 
       <div className="manual-actions">
-        <button type="button" onClick={handleDownloadCleaned} disabled={photos.length === 0 || isReadingExif}>
+        <button type="button" onClick={handleDownloadCleaned} disabled={photos.length === 0 || isReadingGps}>
           Скачать очищенные фото
         </button>
         <a className="button-link" href="https://ninjabox.org/" target="_blank" rel="noreferrer">
@@ -128,6 +146,9 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingExif, se
         </button>
         <button type="button" onClick={() => handleExport('csv')} disabled={exportablePoints.length === 0}>
           Скачать CSV
+        </button>
+        <button type="button" onClick={() => handleExport('distance')} disabled={violations.length === 0}>
+          Скачать CSV нарушений
         </button>
       </div>
 

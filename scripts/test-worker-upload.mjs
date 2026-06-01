@@ -1,5 +1,5 @@
 const WORKER_URL = process.env.WORKER_URL || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
-const TARGETS = (process.env.TARGETS || 'umbphotos,ninjabox')
+const TARGETS = (process.env.TARGETS || 'allwebs')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);

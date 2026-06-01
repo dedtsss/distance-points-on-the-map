@@ -28,7 +28,7 @@ jobs:
           echo "Cloudflare API token is present."
 
       - name: Install Wrangler
-        run: npm install --no-save wrangler@3
+        run: npm install --no-save wrangler@4
 
       - name: Check Cloudflare authentication
         run: npx wrangler whoami

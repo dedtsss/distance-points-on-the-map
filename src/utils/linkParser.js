@@ -57,6 +57,7 @@ export function applyLinksByOrder(photos, links) {
 
     return {
       ...photo,
+      imageUrl: nextLink,
       uploadedUrl: nextLink,
       uploadStatus: 'ссылка вставлена вручную',
       uploadError: '',

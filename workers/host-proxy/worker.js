@@ -1,4 +1,6 @@
-// GPS Checker upload proxy. Version marker: 2026-05-19-strict-upload-url-filter.
+import { uploadAllwebs } from './allwebs.js';
+
+// GPS Checker upload proxy. Version marker: 2026-06-01-allwebs-target.
 const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/gi;
 const ANY_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
 
@@ -317,7 +319,7 @@ const uploadNinjaBox = async (file) => {
 };
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -337,12 +339,14 @@ export default {
 
       let result;
 
-      if (target === 'umb' || target === 'umbphotos') {
+      if (target === 'allwebs') {
+        result = await uploadAllwebs(file, env);
+      } else if (target === 'umb' || target === 'umbphotos') {
         result = await uploadUmbPhotos(file);
       } else if (target === 'ninja' || target === 'ninjabox') {
         result = await uploadNinjaBox(file);
       } else {
-        return json({ ok: false, error: 'Unknown target. Use umbphotos or ninjabox.' }, 400);
+        return json({ ok: false, error: 'Unknown target. Use allwebs, umbphotos or ninjabox.' }, 400);
       }
 
       return json({ ok: true, target, url: result.directUrl, attempts: summarizeAttempts(result.attempts) });

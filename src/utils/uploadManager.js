@@ -4,6 +4,7 @@ import { uploadImgBB } from './uploadImgBB';
 import { uploadViaProxy } from './uploadProxy';
 
 export const HOSTING_LABELS = {
+  allwebsproxy: 'Allwebs через прокси',
   catbox: 'Catbox',
   imgbb: 'ImgBB',
   umbproxy: 'UMBPhotos через прокси',
@@ -38,7 +39,7 @@ export async function uploadPhotosSequentially({
     throw new Error('Укажите API ключ ImgBB');
   }
 
-  if ((hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
+  if ((hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
     throw new Error('Укажите URL прокси-загрузчика');
   }
 
@@ -48,6 +49,7 @@ export async function uploadPhotosSequentially({
     onPhotoUpdate(photo.id, {
       uploadStatus: 'Готовится очищенная копия',
       uploadError: '',
+      imageUrl: '',
       uploadedUrl: '',
       hostingUsed: HOSTING_LABELS[hosting],
     });
@@ -76,6 +78,10 @@ export async function uploadPhotosSequentially({
           return uploadImgBB(cleaned.file, imgbbApiKey, signal);
         }
 
+        if (hosting === 'allwebsproxy') {
+          return uploadViaProxy(cleaned.file, 'allwebs', proxyUrl, signal);
+        }
+
         if (hosting === 'umbproxy') {
           return uploadViaProxy(cleaned.file, 'umbphotos', proxyUrl, signal);
         }
@@ -90,6 +96,7 @@ export async function uploadPhotosSequentially({
       uploadedCount += 1;
       onPhotoUpdate(photo.id, {
         uploadStatus: 'Загружено',
+        imageUrl: uploadedUrl,
         uploadedUrl,
         uploadError: '',
       });

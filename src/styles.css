@@ -185,6 +185,30 @@ textarea {
   gap: 10px;
 }
 
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.stats-grid div {
+  border: 1px solid #e5edf7;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.stats-grid strong {
+  display: block;
+  font-size: 1.35rem;
+}
+
+.stats-grid span {
+  color: #63718a;
+  font-size: 0.9rem;
+}
+
 .parsed-links ol,
 .links-panel ol {
   padding-left: 1.35rem;
@@ -372,6 +396,17 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.coordinate-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.description-field {
+  margin-top: 14px;
+}
+
 .badge {
   border-radius: 999px;
   background: #edf2f7;
@@ -396,6 +431,28 @@ textarea {
 .details h4,
 .details p {
   margin: 0 0 8px;
+}
+
+.debug-block {
+  border-top: 1px solid #e5edf7;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.debug-block summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.debug-block pre {
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 10px;
+  background: #111827;
+  color: #f8fafc;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .violation-list {
@@ -437,7 +494,9 @@ textarea {
 @media (max-width: 780px) {
   .controls,
   .hosting-options,
-  .host-lab-actions {
+  .host-lab-actions,
+  .stats-grid,
+  .coordinate-editor {
     grid-template-columns: 1fr;
   }
 

@@ -1,5 +1,5 @@
 export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHostingChange, onApiKeyChange, onProxyUrlChange }) {
-  const needsProxy = hosting === 'umbproxy' || hosting === 'ninjaproxy';
+  const needsProxy = hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy';
 
   return (
     <section className="panel">
@@ -7,6 +7,16 @@ export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHost
       <p className="muted">Одна сессия использует только один выбранный хостинг. Автоматического переключения нет.</p>
 
       <div className="hosting-options">
+        <label className="radio-card">
+          <input
+            type="radio"
+            name="hosting"
+            value="allwebsproxy"
+            checked={hosting === 'allwebsproxy'}
+            onChange={(event) => onHostingChange(event.target.value)}
+          />
+          Allwebs через прокси
+        </label>
         <label className="radio-card">
           <input
             type="radio"

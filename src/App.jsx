@@ -5,7 +5,8 @@ import ManualExportPanel from './components/ManualExportPanel';
 import PhotoCard from './components/PhotoCard';
 import ViolationsBlock from './components/ViolationsBlock';
 import { readPhotoExif } from './utils/exifReader';
-import { buildRemovalRecommendation, findViolations } from './utils/haversine';
+import { buildRemovalRecommendation, findDistanceViolations, isValidCoordinate, markProblemPoints } from './utils/geoDistance';
+import { readGpsFromImageOcr } from './utils/ocrGpsReader';
 import { HOSTING_LABELS, uploadPhotosSequentially } from './utils/uploadManager';
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -13,22 +14,114 @@ const DEFAULT_PROXY_URL = 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
 
 const makePhotoId = () => `${Date.now()}-${crypto.randomUUID()}`;
 
+const toCoordinateValue = (value) => {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
+  }
+
+  const numeric = Number(String(value).replace(',', '.'));
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const makeCoordinatePatch = ({ latitude, longitude, gpsSource, foundText, missingText, gpsWarnings = [] }) => {
+  if (isValidCoordinate(latitude, longitude)) {
+    const normalizedLatitude = Number(latitude);
+    const normalizedLongitude = Number(longitude);
+
+    return {
+      latitude: normalizedLatitude,
+      longitude: normalizedLongitude,
+      coordinates: {
+        latitude: normalizedLatitude,
+        longitude: normalizedLongitude,
+      },
+      gpsSource,
+      gpsStatus: 'found',
+      gpsStatusText: foundText,
+      gpsWarnings,
+    };
+  }
+
+  return {
+    latitude,
+    longitude,
+    coordinates: null,
+    gpsSource,
+    gpsStatus: 'missing',
+    gpsStatusText: missingText,
+    gpsWarnings: [...new Set([...gpsWarnings, 'coordinates_invalid'])],
+  };
+};
+
+const createPhotoModel = (file, index) => ({
+  id: makePhotoId(),
+  number: index + 1,
+  file,
+  fileName: file.name,
+  originalName: file.name,
+  previewUrl: URL.createObjectURL(file),
+  indexFromOcr: null,
+  displayIndex: String(index + 1),
+  latitude: null,
+  longitude: null,
+  coordinates: null,
+  gpsSource: 'missing',
+  gpsStatus: 'pending',
+  gpsStatusText: 'OCR ожидает обработки...',
+  gpsWarnings: [],
+  ocrStatus: 'pending',
+  rawOcrText: '',
+  normalizedOcrText: '',
+  ocrConfidence: 0,
+  orientation: 1,
+  exifError: null,
+  description: '',
+  distanceStatus: 'missing_coordinates',
+  distanceWarnings: [],
+  imageUrl: '',
+  cleanStatus: 'ожидает загрузки',
+  cleanWarnings: [],
+  uploadFilename: '',
+  uploadStatus: 'не загружено',
+  uploadError: '',
+  uploadedUrl: '',
+  hostingUsed: '',
+  expanded: false,
+});
+
 function App() {
   const [photos, setPhotos] = useState([]);
   const [threshold, setThreshold] = useState(25);
   const [highlightProblems, setHighlightProblems] = useState(false);
-  const [hosting, setHosting] = useState('umbproxy');
+  const [hosting, setHosting] = useState('allwebsproxy');
   const [imgbbApiKey, setImgbbApiKey] = useState('');
   const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL);
   const [globalMessage, setGlobalMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
   const thresholdNumber = Number.isFinite(Number(threshold)) && Number(threshold) > 0 ? Number(threshold) : 25;
-  const violations = useMemo(() => findViolations(photos, thresholdNumber), [photos, thresholdNumber]);
+  const violations = useMemo(
+    () => findDistanceViolations(photos, { thresholdMeters: thresholdNumber }),
+    [photos, thresholdNumber],
+  );
   const recommendation = useMemo(() => buildRemovalRecommendation(violations, photos), [violations, photos]);
-  const problemPhotoIds = useMemo(() => new Set(violations.flatMap((violation) => [violation.photoAId, violation.photoBId])), [violations]);
-  const hasGpsPhotos = photos.some((photo) => photo.gpsStatus === 'found');
-  const isReadingExif = photos.some((photo) => photo.gpsStatus === 'pending');
+  const markedPhotos = useMemo(() => markProblemPoints(photos, violations), [photos, violations]);
+  const problemPhotoIds = useMemo(
+    () => new Set(violations.flatMap((violation) => [violation.pointAId, violation.pointBId])),
+    [violations],
+  );
+  const pointStats = useMemo(() => {
+    const validCount = photos.filter((photo) => isValidCoordinate(photo.latitude, photo.longitude)).length;
+    const missingCount = photos.length - validCount;
+
+    return {
+      totalCount: photos.length,
+      validCount,
+      missingCount,
+      violationCount: violations.length,
+    };
+  }, [photos, violations.length]);
+  const isReadingGps = photos.some((photo) => photo.gpsStatus === 'pending' || ['pending', 'processing'].includes(photo.ocrStatus));
 
   const updatePhoto = (id, patch) => {
     setPhotos((currentPhotos) => currentPhotos.map((photo) => (
@@ -41,11 +134,93 @@ function App() {
     setGlobalMessage('Хостинг изменён. Ссылки очищены, фотографии нужно загрузить заново.');
     setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
       ...photo,
+      imageUrl: '',
       uploadedUrl: '',
       uploadStatus: 'не загружено',
       uploadError: '',
       hostingUsed: '',
     })));
+  };
+
+  const processPhotoGps = async (photo) => {
+    updatePhoto(photo.id, {
+      ocrStatus: 'processing',
+      gpsStatus: 'pending',
+      gpsStatusText: 'OCR: подготовка изображения...',
+    });
+
+    const ocr = await readGpsFromImageOcr(photo.file, {
+      onProgress: ({ status, progress }) => {
+        const percent = progress > 0 ? ` ${Math.round(progress * 100)}%` : '';
+        updatePhoto(photo.id, {
+          ocrStatus: 'processing',
+          gpsStatusText: `OCR: ${status}${percent}`,
+        });
+      },
+    });
+
+    const ocrBasePatch = {
+      indexFromOcr: ocr.indexFromOcr,
+      displayIndex: ocr.indexFromOcr || photo.displayIndex,
+      rawOcrText: ocr.rawText || '',
+      normalizedOcrText: ocr.normalizedText || '',
+      ocrConfidence: ocr.confidence || 0,
+      ocrStatus: ocr.ocrStatus || (ocr.ok ? 'found' : 'missing'),
+    };
+
+    if (ocr.ok) {
+      return {
+        ...photo,
+        ...ocrBasePatch,
+        ...makeCoordinatePatch({
+          latitude: ocr.latitude,
+          longitude: ocr.longitude,
+          gpsSource: 'ocr',
+          foundText: 'OCR: координаты найдены',
+          missingText: 'OCR: координаты невалидны',
+          gpsWarnings: ocr.warnings,
+        }),
+      };
+    }
+
+    updatePhoto(photo.id, {
+      ...ocrBasePatch,
+      gpsStatusText: 'OCR не нашёл координаты, читаю EXIF...',
+    });
+
+    const exif = await readPhotoExif(photo.file);
+
+    if (exif.coordinates) {
+      return {
+        ...photo,
+        ...ocrBasePatch,
+        orientation: exif.orientation || 1,
+        exifError: null,
+        ...makeCoordinatePatch({
+          latitude: exif.coordinates.latitude,
+          longitude: exif.coordinates.longitude,
+          gpsSource: 'exif',
+          foundText: 'EXIF fallback: GPS найден',
+          missingText: 'EXIF fallback: координаты невалидны',
+          gpsWarnings: ocr.warnings,
+        }),
+      };
+    }
+
+    return {
+      ...photo,
+      ...ocrBasePatch,
+      orientation: exif.orientation || 1,
+      exifError: exif.exifError,
+      ...makeCoordinatePatch({
+        latitude: null,
+        longitude: null,
+        gpsSource: 'missing',
+        foundText: '',
+        missingText: 'OCR и EXIF не нашли координаты',
+        gpsWarnings: [...new Set([...(ocr.warnings || []), 'exif_coordinates_not_found'])],
+      }),
+    };
   };
 
   const handleFileChange = async (event) => {
@@ -61,38 +236,21 @@ function App() {
       return;
     }
 
-    const nextPhotos = files.map((file, index) => ({
-      id: makePhotoId(),
-      number: index + 1,
-      file,
-      originalName: file.name,
-      previewUrl: URL.createObjectURL(file),
-      gpsStatus: 'pending',
-      gpsStatusText: 'Чтение EXIF...',
-      coordinates: null,
-      orientation: 1,
-      exifError: null,
-      cleanStatus: 'ожидает загрузки',
-      cleanWarnings: [],
-      uploadFilename: '',
-      uploadStatus: 'не загружено',
-      uploadError: '',
-      uploadedUrl: '',
-      hostingUsed: '',
-      expanded: false,
-    }));
-
+    const nextPhotos = files.map(createPhotoModel);
     setPhotos(nextPhotos);
 
-    const withExif = await Promise.all(nextPhotos.map(async (photo) => {
-      const exif = await readPhotoExif(photo.file);
-      return { ...photo, ...exif };
-    }));
+    const processedPhotos = [];
 
-    setPhotos(withExif);
+    for (const photo of nextPhotos) {
+      const processedPhoto = await processPhotoGps(photo);
+      processedPhotos.push(processedPhoto);
+      updatePhoto(photo.id, processedPhoto);
+    }
 
-    if (!withExif.some((photo) => photo.gpsStatus === 'found')) {
-      setGlobalMessage('GPS не найден ни в одной фотографии. Такие фото не участвуют в расчётах расстояний.');
+    if (!processedPhotos.some((photo) => isValidCoordinate(photo.latitude, photo.longitude))) {
+      setGlobalMessage('Координаты не найдены ни OCR, ни EXIF. Их можно ввести вручную в карточках фото.');
+    } else if (processedPhotos.some((photo) => !isValidCoordinate(photo.latitude, photo.longitude))) {
+      setGlobalMessage('Часть фото без координат. Расчёт расстояний и экспорт будут использовать только валидные точки.');
     }
   };
 
@@ -102,8 +260,8 @@ function App() {
       return;
     }
 
-    if (isReadingExif) {
-      setGlobalMessage('Дождитесь завершения чтения EXIF/GPS перед загрузкой.');
+    if (isReadingGps) {
+      setGlobalMessage('Дождитесь завершения OCR/EXIF перед загрузкой.');
       return;
     }
 
@@ -112,7 +270,7 @@ function App() {
       return;
     }
 
-    if ((hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
+    if ((hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
       setGlobalMessage('Укажите URL прокси-загрузчика.');
       return;
     }
@@ -121,6 +279,7 @@ function App() {
     setGlobalMessage('Загрузка началась. Файлы отправляются последовательно на выбранный хостинг.');
     setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
       ...photo,
+      imageUrl: '',
       uploadedUrl: '',
       uploadStatus: 'в очереди',
       uploadError: '',
@@ -136,6 +295,10 @@ function App() {
         timeoutMs: 30000,
         onPhotoUpdate: updatePhoto,
       });
+      setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
+        ...photo,
+        imageUrl: photo.uploadedUrl,
+      })));
       setGlobalMessage(`Загрузка завершена. Успешно загружено: ${uploadedCount} из ${photos.length}.`);
     } catch (error) {
       setGlobalMessage(
@@ -151,6 +314,37 @@ function App() {
   const toggleDetails = (id) => {
     setPhotos((currentPhotos) => currentPhotos.map((photo) => (
       photo.id === id ? { ...photo, expanded: !photo.expanded } : photo
+    )));
+  };
+
+  const handleCoordinateChange = (id, field, value) => {
+    setPhotos((currentPhotos) => currentPhotos.map((photo) => {
+      if (photo.id !== id) {
+        return photo;
+      }
+
+      const nextPhoto = {
+        ...photo,
+        [field]: toCoordinateValue(value),
+      };
+
+      return {
+        ...nextPhoto,
+        ...makeCoordinatePatch({
+          latitude: field === 'latitude' ? toCoordinateValue(value) : nextPhoto.latitude,
+          longitude: field === 'longitude' ? toCoordinateValue(value) : nextPhoto.longitude,
+          gpsSource: 'manual',
+          foundText: 'Координаты введены вручную',
+          missingText: 'Ручные координаты неполные или невалидные',
+          gpsWarnings: [],
+        }),
+      };
+    }));
+  };
+
+  const handleDescriptionChange = (id, description) => {
+    setPhotos((currentPhotos) => currentPhotos.map((photo) => (
+      photo.id === id ? { ...photo, description } : photo
     )));
   };
 
@@ -192,12 +386,18 @@ function App() {
 
       {globalMessage && <div className="status-banner">{globalMessage}</div>}
 
-      <ViolationsBlock violations={violations} recommendation={recommendation} hasGpsPhotos={hasGpsPhotos} />
+      <ViolationsBlock
+        violations={violations}
+        recommendation={recommendation}
+        pointStats={pointStats}
+        thresholdMeters={thresholdNumber}
+      />
 
       <ManualExportPanel
         photos={photos}
         setPhotos={setPhotos}
-        isReadingExif={isReadingExif}
+        isReadingGps={isReadingGps}
+        violations={violations}
         setGlobalMessage={setGlobalMessage}
       />
 
@@ -206,7 +406,7 @@ function App() {
         <p className="muted">
           Экспериментальный режим. Для стабильной работы сейчас лучше использовать ручную загрузку выше.
         </p>
-        <button type="button" onClick={handleUpload} disabled={isUploading || isReadingExif || photos.length === 0}>
+        <button type="button" onClick={handleUpload} disabled={isUploading || isReadingGps || photos.length === 0}>
           {isUploading ? 'Загрузка...' : `Загрузить на ${HOSTING_LABELS[hosting]}`}
         </button>
       </section>
@@ -214,14 +414,16 @@ function App() {
       {photos.length > 0 && <LinksBlock photos={photos} hostingLabel={HOSTING_LABELS[hosting]} />}
 
       <section className="photo-list" aria-live="polite">
-        {photos.map((photo) => (
+        {markedPhotos.map((photo) => (
           <PhotoCard
             key={photo.id}
             photo={photo}
             isProblem={problemPhotoIds.has(photo.id)}
             isHighlighted={highlightProblems}
-            conflicts={violations.filter((violation) => violation.photoAId === photo.id || violation.photoBId === photo.id)}
+            conflicts={violations.filter((violation) => violation.pointAId === photo.id || violation.pointBId === photo.id)}
             onToggle={toggleDetails}
+            onCoordinateChange={handleCoordinateChange}
+            onDescriptionChange={handleDescriptionChange}
           />
         ))}
       </section>
