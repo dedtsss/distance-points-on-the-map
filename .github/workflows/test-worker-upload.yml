@@ -1,12 +1,9 @@
 name: Test Worker Upload
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'workers/host-proxy/**'
-      - 'scripts/test-worker-upload.mjs'
-      - '.github/workflows/test-worker-upload.yml'
+  workflow_run:
+    workflows: ['Deploy Cloudflare Worker']
+    types: [completed]
   workflow_dispatch:
     inputs:
       worker_url:
@@ -28,6 +25,7 @@ permissions:
 
 jobs:
   test-worker-upload:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
