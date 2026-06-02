@@ -1,5 +1,5 @@
-export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHostingChange, onApiKeyChange, onProxyUrlChange }) {
-  const needsProxy = hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy';
+export default function HostingSelector({ hosting, proxyUrl, onHostingChange, onProxyUrlChange }) {
+  const needsProxy = hosting === 'imgbbproxy' || hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy';
 
   return (
     <section className="panel">
@@ -11,11 +11,22 @@ export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHost
           <input
             type="radio"
             name="hosting"
+            value="imgbbproxy"
+            checked={hosting === 'imgbbproxy'}
+            onChange={(event) => onHostingChange(event.target.value)}
+          />
+          ImgBB через прокси
+        </label>
+        <label className="radio-card disabled-card">
+          <input
+            type="radio"
+            name="hosting"
             value="allwebsproxy"
             checked={hosting === 'allwebsproxy'}
             onChange={(event) => onHostingChange(event.target.value)}
+            disabled
           />
-          Allwebs через прокси
+          Allwebs legacy
         </label>
         <label className="radio-card">
           <input
@@ -47,16 +58,6 @@ export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHost
           />
           NinjaBox через прокси
         </label>
-        <label className="radio-card">
-          <input
-            type="radio"
-            name="hosting"
-            value="imgbb"
-            checked={hosting === 'imgbb'}
-            onChange={(event) => onHostingChange(event.target.value)}
-          />
-          ImgBB с API-ключом
-        </label>
       </div>
 
       {needsProxy && (
@@ -71,17 +72,6 @@ export default function HostingSelector({ hosting, imgbbApiKey, proxyUrl, onHost
         </label>
       )}
 
-      {hosting === 'imgbb' && (
-        <label className="field">
-          API ключ ImgBB
-          <input
-            type="password"
-            value={imgbbApiKey}
-            onChange={(event) => onApiKeyChange(event.target.value)}
-            placeholder="Введите API ключ ImgBB"
-          />
-        </label>
-      )}
     </section>
   );
 }

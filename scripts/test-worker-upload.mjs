@@ -1,5 +1,5 @@
 const WORKER_URL = process.env.WORKER_URL || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
-const TARGETS = (process.env.TARGETS || 'allwebs')
+const TARGETS = (process.env.TARGETS || 'imgbb')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
@@ -12,6 +12,15 @@ const JPEG_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP/////////////////////////
 const makeTestFile = () => {
   const bytes = Uint8Array.from(Buffer.from(JPEG_BASE64, 'base64'));
   return new File([bytes], `worker-smoke-${Date.now()}.jpg`, { type: 'image/jpeg' });
+};
+
+const isValidHttpUrl = (value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
 };
 
 async function testTarget(target) {
@@ -45,12 +54,22 @@ async function testTarget(target) {
     data = null;
   }
 
+  const uploadedUrl = data?.url || data?.displayUrl || null;
+  const ok = Boolean(
+    response.ok
+    && data?.ok === true
+    && data?.target === target
+    && isValidHttpUrl(uploadedUrl)
+  );
+
   return {
     target,
-    ok: Boolean(response.ok && data?.ok && data?.url),
+    ok,
     httpStatus: response.status,
     durationMs: Date.now() - started,
     url: data?.url || null,
+    viewerUrl: data?.viewerUrl || null,
+    displayUrl: data?.displayUrl || null,
     response: data || text.slice(0, 4000),
   };
 }

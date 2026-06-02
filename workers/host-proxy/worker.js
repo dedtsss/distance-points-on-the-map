@@ -1,6 +1,7 @@
 import { uploadAllwebs } from './allwebs.js';
+import { uploadImgBB } from './imgbb.js';
 
-// GPS Checker upload proxy. Version marker: 2026-06-01-allwebs-target.
+// GPS Checker upload proxy. Version marker: 2026-06-02-imgbb-target.
 const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/gi;
 const ANY_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
 
@@ -328,9 +329,11 @@ export default {
       return json({ ok: false, error: 'Use POST multipart/form-data with fields: target, file' }, 405);
     }
 
+    let target = '';
+
     try {
       const formData = await request.formData();
-      const target = String(formData.get('target') || '').toLowerCase();
+      target = String(formData.get('target') || '').toLowerCase();
       const file = formData.get('file');
 
       if (!(file instanceof File)) {
@@ -339,6 +342,11 @@ export default {
 
       let result;
 
+      if (target === 'imgbb') {
+        const imgbbResult = await uploadImgBB(file, env);
+        return json(imgbbResult);
+      }
+
       if (target === 'allwebs') {
         result = await uploadAllwebs(file, env);
       } else if (target === 'umb' || target === 'umbphotos') {
@@ -346,12 +354,18 @@ export default {
       } else if (target === 'ninja' || target === 'ninjabox') {
         result = await uploadNinjaBox(file);
       } else {
-        return json({ ok: false, error: 'Unknown target. Use allwebs, umbphotos or ninjabox.' }, 400);
+        return json({ ok: false, target, error: 'Unknown target. Use imgbb, allwebs, umbphotos or ninjabox.', status: 400 }, 400);
       }
 
       return json({ ok: true, target, url: result.directUrl, attempts: summarizeAttempts(result.attempts) });
     } catch (error) {
-      return json({ ok: false, error: error?.message || 'Unknown proxy error' }, 502);
+      const status = Number.isFinite(error?.status) ? error.status : 502;
+      return json({
+        ok: false,
+        target: target || undefined,
+        error: error?.message || 'Unknown proxy error',
+        status,
+      }, status);
     }
   },
 };
