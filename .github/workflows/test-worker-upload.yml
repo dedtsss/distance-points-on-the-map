@@ -2,7 +2,7 @@ name: Test Worker Upload
 
 on:
   workflow_run:
-    workflows: ['Deploy Cloudflare Worker']
+    workflows: ['Sync Worker Secrets']
     types: [completed]
   workflow_dispatch:
     inputs:

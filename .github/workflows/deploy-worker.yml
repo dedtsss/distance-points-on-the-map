@@ -7,6 +7,8 @@ on:
       - 'workers/host-proxy/**'
       - 'wrangler.toml'
       - '.github/workflows/deploy-worker.yml'
+      - '.github/workflows/sync-worker-secrets.yml'
+      - '.github/workflows/test-worker-upload.yml'
   workflow_dispatch:
 
 jobs:
