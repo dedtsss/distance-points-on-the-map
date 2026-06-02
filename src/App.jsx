@@ -93,8 +93,7 @@ function App() {
   const [photos, setPhotos] = useState([]);
   const [threshold, setThreshold] = useState(25);
   const [highlightProblems, setHighlightProblems] = useState(false);
-  const [hosting, setHosting] = useState('allwebsproxy');
-  const [imgbbApiKey, setImgbbApiKey] = useState('');
+  const [hosting, setHosting] = useState('imgbb');
   const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL);
   const [globalMessage, setGlobalMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -265,12 +264,7 @@ function App() {
       return;
     }
 
-    if (hosting === 'imgbb' && !imgbbApiKey.trim()) {
-      setGlobalMessage('Укажите API ключ ImgBB');
-      return;
-    }
-
-    if ((hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
+    if ((hosting === 'imgbb' || hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
       setGlobalMessage('Укажите URL прокси-загрузчика.');
       return;
     }
@@ -290,7 +284,6 @@ function App() {
       const uploadedCount = await uploadPhotosSequentially({
         photos,
         hosting,
-        imgbbApiKey,
         proxyUrl,
         timeoutMs: 30000,
         onPhotoUpdate: updatePhoto,
@@ -377,10 +370,8 @@ function App() {
 
       <HostingSelector
         hosting={hosting}
-        imgbbApiKey={imgbbApiKey}
         proxyUrl={proxyUrl}
         onHostingChange={resetUploadsForHostingChange}
-        onApiKeyChange={setImgbbApiKey}
         onProxyUrlChange={setProxyUrl}
       />
 

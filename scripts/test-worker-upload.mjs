@@ -1,5 +1,5 @@
 const WORKER_URL = process.env.WORKER_URL || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
-const TARGETS = (process.env.TARGETS || 'allwebs')
+const TARGETS = (process.env.TARGETS || 'imgbb')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
@@ -47,13 +47,22 @@ async function testTarget(target) {
 
   return {
     target,
-    ok: Boolean(response.ok && data?.ok && data?.url),
+    ok: Boolean(response.ok && data?.ok && data?.target === target && isValidPublicUrl(data?.url || data?.displayUrl)),
     httpStatus: response.status,
     durationMs: Date.now() - started,
-    url: data?.url || null,
+    url: data?.url || data?.displayUrl || null,
     response: data || text.slice(0, 4000),
   };
 }
+
+const isValidPublicUrl = (value) => {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
 
 const results = [];
 for (const target of TARGETS) {

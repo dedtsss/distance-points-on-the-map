@@ -1,6 +1,6 @@
 import { uploadAllwebs } from './allwebs.js';
 
-// GPS Checker upload proxy. Version marker: 2026-06-01-allwebs-target.
+// GPS Checker upload proxy. Version marker: 2026-06-02-imgbb-target.
 const IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"'<>]*)?/gi;
 const ANY_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
 
@@ -218,6 +218,72 @@ const uploadThroughParsedForm = async ({ pageUrl, file, imageOnly = true, name, 
   };
 };
 
+
+const isValidHttpUrl = (value) => {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const uploadImgBB = async (file, env) => {
+  const apiKey = String(env?.IMGBB_API_KEY || '').trim();
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      target: 'imgbb',
+      error: 'IMGBB_API_KEY is not configured in Cloudflare Worker secrets',
+      status: 400,
+    };
+  }
+
+  const uploadFile = makeUploadFile(file, file.name);
+  const formData = new FormData();
+  formData.append('key', apiKey);
+  formData.append('image', uploadFile, uploadFile.name);
+
+  const response = await fetch('https://api.imgbb.com/1/upload', {
+    method: 'POST',
+    body: formData,
+  });
+  const body = await readBody(response);
+  const data = body.data;
+
+  if (!response.ok || !data?.success) {
+    return {
+      ok: false,
+      target: 'imgbb',
+      error: data?.error?.message || `ImgBB upload failed with HTTP ${response.status}`,
+      status: response.status || 400,
+    };
+  }
+
+  const uploadedUrl = data?.data?.url || '';
+  const displayUrl = data?.data?.display_url || '';
+
+  if (!isValidHttpUrl(uploadedUrl) && !isValidHttpUrl(displayUrl)) {
+    return {
+      ok: false,
+      target: 'imgbb',
+      error: 'ImgBB upload response did not include a valid image URL',
+      status: 400,
+    };
+  }
+
+  return {
+    ok: true,
+    target: 'imgbb',
+    url: uploadedUrl || displayUrl,
+    viewerUrl: data?.data?.url_viewer || '',
+    displayUrl,
+    deleteUrl: data?.data?.delete_url || '',
+    raw: data,
+  };
+};
+
 const uploadUmbPhotos = async (file) => {
   const uploadFile = makeUploadFile(file, file.name);
   const attempts = [];
@@ -328,9 +394,11 @@ export default {
       return json({ ok: false, error: 'Use POST multipart/form-data with fields: target, file' }, 405);
     }
 
+    let target = '';
+
     try {
       const formData = await request.formData();
-      const target = String(formData.get('target') || '').toLowerCase();
+      target = String(formData.get('target') || '').toLowerCase();
       const file = formData.get('file');
 
       if (!(file instanceof File)) {
@@ -339,6 +407,11 @@ export default {
 
       let result;
 
+      if (target === 'imgbb') {
+        result = await uploadImgBB(file, env);
+        return json(result, result.ok ? 200 : result.status);
+      }
+
       if (target === 'allwebs') {
         result = await uploadAllwebs(file, env);
       } else if (target === 'umb' || target === 'umbphotos') {
@@ -346,12 +419,12 @@ export default {
       } else if (target === 'ninja' || target === 'ninjabox') {
         result = await uploadNinjaBox(file);
       } else {
-        return json({ ok: false, error: 'Unknown target. Use allwebs, umbphotos or ninjabox.' }, 400);
+        return json({ ok: false, target, error: 'Unknown target. Use imgbb, allwebs, umbphotos or ninjabox.', status: 400 }, 400);
       }
 
       return json({ ok: true, target, url: result.directUrl, attempts: summarizeAttempts(result.attempts) });
     } catch (error) {
-      return json({ ok: false, error: error?.message || 'Unknown proxy error' }, 502);
+      return json({ ok: false, target, error: error?.message || 'Unknown proxy error', status: 502 }, 502);
     }
   },
 };
