@@ -11,9 +11,9 @@ on:
         required: false
         default: 'https://spring-mouse-8d81.dvabobra2014.workers.dev/'
       targets:
-        description: 'Comma-separated targets: allwebs,umbphotos,ninjabox'
+        description: 'Comma-separated targets: imgbb,allwebs,umbphotos,ninjabox'
         required: false
-        default: 'allwebs'
+        default: 'imgbb'
       require_mode:
         description: 'Pass mode: all or any'
         required: false
@@ -42,7 +42,7 @@ jobs:
         continue-on-error: true
         env:
           WORKER_URL: ${{ github.event.inputs.worker_url || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/' }}
-          TARGETS: ${{ github.event.inputs.targets || 'allwebs' }}
+          TARGETS: ${{ github.event.inputs.targets || 'imgbb' }}
           REQUIRE_MODE: ${{ github.event.inputs.require_mode || 'all' }}
         run: |
           set +e

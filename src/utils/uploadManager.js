@@ -1,12 +1,11 @@
 import { cleanImageForUpload } from './imageCleaner';
 import { uploadCatbox } from './uploadCatbox';
-import { uploadImgBB } from './uploadImgBB';
 import { uploadViaProxy } from './uploadProxy';
 
 export const HOSTING_LABELS = {
-  allwebsproxy: 'Allwebs через прокси',
+  imgbb: 'ImgBB через прокси',
+  allwebsproxy: 'Allwebs через прокси (legacy)',
   catbox: 'Catbox',
-  imgbb: 'ImgBB',
   umbproxy: 'UMBPhotos через прокси',
   ninjaproxy: 'NinjaBox через прокси',
 };
@@ -30,16 +29,11 @@ const withTimeout = async (operation, timeoutMs) => {
 export async function uploadPhotosSequentially({
   photos,
   hosting,
-  imgbbApiKey,
   proxyUrl,
   timeoutMs = 12000,
   onPhotoUpdate,
 }) {
-  if (hosting === 'imgbb' && !imgbbApiKey.trim()) {
-    throw new Error('Укажите API ключ ImgBB');
-  }
-
-  if ((hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
+  if ((hosting === 'imgbb' || hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
     throw new Error('Укажите URL прокси-загрузчика');
   }
 
@@ -75,7 +69,7 @@ export async function uploadPhotosSequentially({
         }
 
         if (hosting === 'imgbb') {
-          return uploadImgBB(cleaned.file, imgbbApiKey, signal);
+          return uploadViaProxy(cleaned.file, 'imgbb', proxyUrl, signal);
         }
 
         if (hosting === 'allwebsproxy') {
