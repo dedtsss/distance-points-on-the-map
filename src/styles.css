@@ -460,6 +460,39 @@ textarea {
   word-break: break-word;
 }
 
+.ocr-debug-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.ocr-debug-images figure {
+  margin: 0;
+}
+
+.ocr-debug-images figcaption {
+  color: #62708a;
+  font-size: 0.9rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.ocr-debug-images img {
+  width: 100%;
+  max-height: 260px;
+  border: 1px solid #d9e3f2;
+  border-radius: 10px;
+  background: #f8fafc;
+  object-fit: contain;
+}
+
+.ocr-attempts {
+  display: grid;
+  gap: 8px;
+  padding-left: 1.2rem;
+}
+
 .violation-list {
   display: grid;
   gap: 8px;
@@ -501,7 +534,8 @@ textarea {
   .hosting-options,
   .host-lab-actions,
   .stats-grid,
-  .coordinate-editor {
+  .coordinate-editor,
+  .ocr-debug-images {
     grid-template-columns: 1fr;
   }
 

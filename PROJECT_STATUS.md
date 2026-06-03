@@ -1,6 +1,6 @@
 # GPS Checker Map Photo — Project Status
 
-Last updated: 2026-06-02
+Last updated: 2026-06-03
 
 ## Repository
 
@@ -23,6 +23,10 @@ Last updated: 2026-06-02
 - GPX/KML/CSV export uses the normalized point model and valid final coordinates.
 - Upload hosting has been switched from Allwebs to ImgBB through the Cloudflare Worker.
 - The frontend does not use or store the ImgBB API key.
+- Missing coordinates are represented as `latitude: null`, `longitude: null`, `coordinates: null`, `gpsSource: "missing"`, `gpsStatus: "missing"`.
+- Missing/invalid/placeholder `0,0` points do not participate in distance calculations or main exports.
+- OCR parser exposes candidates, chosen candidate, warnings, confidence, and debug crop/preprocess previews when `?debug=1` is enabled.
+- Upload records per-photo failures instead of stopping silently at the first failed photo.
 
 ## Upload Flow
 
@@ -136,3 +140,40 @@ node scripts/test-worker-upload.mjs
 - OCR and distance logic are intentionally separate modules.
 - If upload fails with `IMGBB_API_KEY is not configured in Cloudflare Worker secrets`, run or inspect `Sync Worker Secrets`.
 - If a future assistant has GitHub connector access, it can inspect this file plus recent commits instead of requiring chat history.
+
+## 2026-06-03 Stabilization Notes
+
+Fixed real-photo MVP stability issues:
+
+- `0,0`, empty strings, `null/null`, and `gpsSource: "missing"` are no longer usable coordinates.
+- Distance calculations use only `hasUsableCoordinates()` / `getValidPointsForDistance()`.
+- `markProblemPoints()` marks missing/invalid photos as `missing_coordinates` without creating false violations.
+- GPX/KML/CSV export filters through the same usable-coordinate logic.
+- OCR parser rejects `0,0`, one-coordinate results, and low-confidence parser results.
+- OCR tries multiple bottom-right crop/preprocess variants before EXIF fallback.
+- UI shows `нет координат` and `не участвует в расчёте` for missing points.
+- Debug mode is available with `?debug=1`.
+
+Verified checks:
+
+```text
+npm test: passed
+npm run build: passed
+npx wrangler deploy --dry-run --config wrangler.toml: passed
+node scripts/test-worker-upload.mjs: passed, ImgBB target returned HTTP 200
+```
+
+Verified browser E2E with 5 real attached photos:
+
+- OCR recognized 5/5 photo coordinate blocks.
+- OCR indexes recognized: `5130`, `5285`, `5917`, `5291`, `5241`.
+- Distance stats: 5 valid points, 0 missing points, 0 violations at 25 m.
+- ImgBB upload through Worker succeeded for 5/5 cleaned images.
+
+Real-photo fixture folder:
+
+```text
+tests/fixtures/photos/
+```
+
+Use that folder for local private photo checks. Do not commit private production photos unless intentional.

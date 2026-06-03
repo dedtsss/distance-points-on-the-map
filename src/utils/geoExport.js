@@ -1,4 +1,4 @@
-import { isValidCoordinate } from './geoDistance';
+import { hasUsableCoordinates } from './geoDistance.js';
 
 const escapeXml = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -33,7 +33,7 @@ const buildDescriptionLines = (point) => [
 
 export function getExportablePoints(photos) {
   return photos
-    .filter((photo) => isValidCoordinate(photo.latitude, photo.longitude))
+    .filter(hasUsableCoordinates)
     .map((photo, index) => {
       const imageUrl = photo.imageUrl || photo.uploadedUrl || '';
 

@@ -34,11 +34,28 @@ assert.equal(missing.ok, false);
 assert.equal(missing.latitude, null);
 assert.equal(missing.longitude, null);
 assert.ok(missing.warnings.includes('coordinates_not_found'));
+assert.deepEqual(missing.candidates, []);
+
+const oneCoordinate = parseGpsFromOcrText('только широта 64.588123 без долготы');
+assert.equal(oneCoordinate.ok, false);
+assert.ok(oneCoordinate.warnings.includes('only_one_coordinate_found'));
+
+const zeroZero = parseGpsFromOcrText('0.000000, 0.000000');
+assert.equal(zeroZero.ok, false);
+assert.equal(zeroZero.latitude, null);
+assert.equal(zeroZero.longitude, null);
+assert.ok(zeroZero.warnings.includes('zero_zero_placeholder'));
+
+const lowConfidence = parseGpsFromOcrText('64.588123, 30.601234', { minimumConfidence: 0.99 });
+assert.equal(lowConfidence.ok, false);
+assert.ok(lowConfidence.warnings.includes('low_confidence'));
 
 const swapped = parseGpsFromOcrText('30.601234 64.588123');
 assert.equal(swapped.ok, true);
 assert.equal(swapped.latitude, 64.588123);
 assert.equal(swapped.longitude, 30.601234);
 assert.ok(swapped.warnings.includes('coordinates_swapped'));
+assert.ok(Array.isArray(swapped.candidates));
+assert.ok(swapped.chosenCandidate);
 
 console.log('OCR parser tests passed');

@@ -19,6 +19,7 @@ const OCR_STATUS_LABELS = {
   pending: 'OCR ожидает',
   processing: 'OCR идет',
   found: 'OCR найден',
+  suspect: 'OCR сомнительный',
   missing: 'OCR не найден',
   error: 'OCR ошибка',
 };
@@ -37,6 +38,10 @@ const WARNING_LABELS = {
   missing_coordinates: 'нет координат для расчета',
   ocr_error: 'ошибка OCR',
   ocr_text_empty: 'OCR вернул пустой текст',
+  only_one_coordinate_found: 'найдена только одна координата',
+  low_confidence: 'низкая уверенность OCR parser',
+  zero_zero_placeholder: '0,0 похоже на placeholder',
+  outside_expected_region: 'координаты вне ожидаемого региона',
 };
 
 const formatWarning = (warning) => WARNING_LABELS[warning] || warning;
@@ -49,6 +54,7 @@ export default function PhotoCard({
   onToggle,
   onCoordinateChange,
   onDescriptionChange,
+  debugMode = false,
 }) {
   const expanded = photo.expanded;
   const conflictLabels = conflicts.map((conflict) => {
@@ -60,7 +66,10 @@ export default function PhotoCard({
   const distanceWarnings = photo.distanceWarnings || [];
   const coordinateText = photo.coordinates
     ? `${formatCoordinate(photo.latitude)}, ${formatCoordinate(photo.longitude)}`
-    : photo.gpsStatusText;
+    : 'нет координат';
+  const participatesInDistance = photo.distanceStatus !== 'missing_coordinates';
+  const debugAttempts = photo.ocrAttempts || [];
+  const debugCandidates = photo.ocrCandidates || [];
 
   return (
     <article className={`photo-card photo-card-compact ${isHighlighted && isProblem ? 'problem-highlight' : ''}`}>
@@ -100,6 +109,12 @@ export default function PhotoCard({
             <div>
               <dt>Координаты</dt>
               <dd className={photo.gpsStatus === 'found' ? 'success-text' : 'warning-text'}>{coordinateText}</dd>
+            </div>
+            <div>
+              <dt>Расчёт</dt>
+              <dd className={participatesInDistance ? 'success-text' : 'warning-text'}>
+                {participatesInDistance ? 'участвует' : 'не участвует в расчёте'}
+              </dd>
             </div>
             <div>
               <dt>Источник</dt>
@@ -180,6 +195,7 @@ export default function PhotoCard({
             <h4>Точка</h4>
             <p>Индекс/номер: {photo.displayIndex || photo.indexFromOcr || photo.number}</p>
             <p>Координаты: {coordinateText}</p>
+            <p>Расчёт расстояний: {participatesInDistance ? 'участвует' : 'не участвует'}</p>
             <p>Ссылка на фото: {photo.uploadedUrl || 'нет'}</p>
             <p>Описание: {photo.description || 'нет'}</p>
             <p>
@@ -193,7 +209,51 @@ export default function PhotoCard({
             <summary>Raw OCR text</summary>
             <pre>{photo.rawOcrText || 'нет текста'}</pre>
             {photo.normalizedOcrText && <pre>{photo.normalizedOcrText}</pre>}
+            {photo.ocrChosenCandidate && (
+              <pre>{JSON.stringify({ chosenCandidate: photo.ocrChosenCandidate }, null, 2)}</pre>
+            )}
+            {debugCandidates.length > 0 && (
+              <pre>{JSON.stringify({ candidates: debugCandidates }, null, 2)}</pre>
+            )}
           </details>
+
+          {debugMode && (
+            <details className="debug-block" open>
+              <summary>OCR debug</summary>
+              {photo.ocrCropPreview && (
+                <div className="ocr-debug-images">
+                  <figure>
+                    <figcaption>Crop</figcaption>
+                    <img src={photo.ocrCropPreview} alt="OCR crop" />
+                  </figure>
+                  {photo.ocrProcessedPreview && (
+                    <figure>
+                      <figcaption>Processed</figcaption>
+                      <img src={photo.ocrProcessedPreview} alt="OCR processed crop" />
+                    </figure>
+                  )}
+                </div>
+              )}
+              {debugAttempts.length > 0 && (
+                <ol className="ocr-attempts">
+                  {debugAttempts.map((attempt) => (
+                    <li key={attempt.name}>
+                      <strong>{attempt.name}</strong>
+                      {' '}
+                      {attempt.ok ? 'ok' : 'rejected'}
+                      {' '}
+                      parser={Number(attempt.parserConfidence || 0).toFixed(2)}
+                      {' '}
+                      ocr={Number(attempt.ocrConfidence || 0).toFixed(2)}
+                      {attempt.warnings?.length > 0 && (
+                        <span> warnings: {attempt.warnings.map(formatWarning).join('; ')}</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </details>
+          )}
         </div>
       )}
     </article>

@@ -28,7 +28,9 @@ export async function uploadViaProxy(file, target, proxyUrl, signal) {
     data = null;
   }
 
-  if (!response.ok || !data?.ok || !data?.url) {
+  const uploadedUrl = data?.url || data?.displayUrl || null;
+
+  if (!response.ok || !data?.ok || !uploadedUrl) {
     const attempts = Array.isArray(data?.attempts)
       ? data.attempts.map((attempt, index) => {
         const status = attempt.status ?? 'нет статуса';
@@ -41,5 +43,5 @@ export async function uploadViaProxy(file, target, proxyUrl, signal) {
     throw new Error(attempts ? `${baseError}. Детали: ${attempts}` : baseError);
   }
 
-  return data.url;
+  return uploadedUrl;
 }

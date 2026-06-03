@@ -38,6 +38,8 @@ export async function uploadPhotosSequentially({
   }
 
   let uploadedCount = 0;
+  let failedCount = 0;
+  const errors = [];
 
   for (const photo of photos) {
     onPhotoUpdate(photo.id, {
@@ -57,7 +59,14 @@ export async function uploadPhotosSequentially({
     });
 
     if (!cleaned.ok) {
-      throw new Error(`Ошибка очистки изображения: Фото №${photo.number}`);
+      const details = `Ошибка очистки изображения: Фото №${photo.number}`;
+      failedCount += 1;
+      errors.push(details);
+      onPhotoUpdate(photo.id, {
+        uploadStatus: 'Ошибка очистки',
+        uploadError: details,
+      });
+      continue;
     }
 
     onPhotoUpdate(photo.id, { uploadStatus: 'Загрузка...' });
@@ -96,16 +105,18 @@ export async function uploadPhotosSequentially({
       });
     } catch (error) {
       const details = error instanceof Error ? error.message : 'Неизвестная ошибка загрузки';
+      failedCount += 1;
+      errors.push(`Фото №${photo.number}: ${details}`);
       onPhotoUpdate(photo.id, {
         uploadStatus: 'Ошибка загрузки',
         uploadError: details,
       });
-      const hostName = HOSTING_LABELS[hosting];
-      throw new Error(
-        `Ошибка загрузки фото №${photo.number} через ${hostName}. Успешно загружено: ${uploadedCount} из ${photos.length}. Причина: ${details}`,
-      );
     }
   }
 
-  return uploadedCount;
+  return {
+    uploadedCount,
+    failedCount,
+    errors,
+  };
 }

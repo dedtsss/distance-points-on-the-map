@@ -5,7 +5,15 @@ import ManualExportPanel from './components/ManualExportPanel';
 import PhotoCard from './components/PhotoCard';
 import ViolationsBlock from './components/ViolationsBlock';
 import { readPhotoExif } from './utils/exifReader';
-import { buildRemovalRecommendation, findDistanceViolations, isValidCoordinate, markProblemPoints } from './utils/geoDistance';
+import {
+  buildRemovalRecommendation,
+  findDistanceViolations,
+  getValidPointsForDistance,
+  hasUsableCoordinates,
+  isValidCoordinate,
+  isZeroZeroCoordinate,
+  markProblemPoints,
+} from './utils/geoDistance';
 import { readGpsFromImageOcr } from './utils/ocrGpsReader';
 import { HOSTING_LABELS, uploadPhotosSequentially } from './utils/uploadManager';
 
@@ -23,8 +31,21 @@ const toCoordinateValue = (value) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
-const makeCoordinatePatch = ({ latitude, longitude, gpsSource, foundText, missingText, gpsWarnings = [] }) => {
-  if (isValidCoordinate(latitude, longitude)) {
+const makeCoordinatePatch = ({
+  latitude,
+  longitude,
+  gpsSource,
+  foundText,
+  missingText,
+  gpsWarnings = [],
+  preserveInputValues = false,
+  zeroZeroConfirmed = false,
+}) => {
+  const normalizedWarnings = new Set(gpsWarnings);
+  const isZeroZero = isZeroZeroCoordinate(latitude, longitude);
+  const canUseZeroZero = gpsSource === 'manual' && zeroZeroConfirmed === true;
+
+  if (isValidCoordinate(latitude, longitude) && (!isZeroZero || canUseZeroZero)) {
     const normalizedLatitude = Number(latitude);
     const normalizedLongitude = Number(longitude);
 
@@ -38,18 +59,25 @@ const makeCoordinatePatch = ({ latitude, longitude, gpsSource, foundText, missin
       gpsSource,
       gpsStatus: 'found',
       gpsStatusText: foundText,
-      gpsWarnings,
+      gpsWarnings: [...normalizedWarnings],
+      zeroZeroConfirmed,
     };
   }
 
+  if (isZeroZero) {
+    normalizedWarnings.add('zero_zero_placeholder');
+  }
+  normalizedWarnings.add('coordinates_invalid');
+
   return {
-    latitude,
-    longitude,
+    latitude: preserveInputValues ? latitude : null,
+    longitude: preserveInputValues ? longitude : null,
     coordinates: null,
-    gpsSource,
+    gpsSource: gpsSource === 'manual' ? 'manual' : 'missing',
     gpsStatus: 'missing',
-    gpsStatusText: missingText,
-    gpsWarnings: [...new Set([...gpsWarnings, 'coordinates_invalid'])],
+    gpsStatusText: isZeroZero ? 'Координаты 0,0 похожи на placeholder и не используются' : missingText,
+    gpsWarnings: [...normalizedWarnings],
+    zeroZeroConfirmed: false,
   };
 };
 
@@ -69,10 +97,16 @@ const createPhotoModel = (file, index) => ({
   gpsStatus: 'pending',
   gpsStatusText: 'OCR ожидает обработки...',
   gpsWarnings: [],
+  zeroZeroConfirmed: false,
   ocrStatus: 'pending',
   rawOcrText: '',
   normalizedOcrText: '',
   ocrConfidence: 0,
+  ocrCandidates: [],
+  ocrChosenCandidate: null,
+  ocrAttempts: [],
+  ocrCropPreview: '',
+  ocrProcessedPreview: '',
   orientation: 1,
   exifError: null,
   description: '',
@@ -97,6 +131,7 @@ function App() {
   const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL);
   const [globalMessage, setGlobalMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const debugMode = useMemo(() => new URLSearchParams(window.location.search).get('debug') === '1', []);
 
   const thresholdNumber = Number.isFinite(Number(threshold)) && Number(threshold) > 0 ? Number(threshold) : 25;
   const violations = useMemo(
@@ -110,7 +145,7 @@ function App() {
     [violations],
   );
   const pointStats = useMemo(() => {
-    const validCount = photos.filter((photo) => isValidCoordinate(photo.latitude, photo.longitude)).length;
+    const validCount = getValidPointsForDistance(photos).length;
     const missingCount = photos.length - validCount;
 
     return {
@@ -149,6 +184,7 @@ function App() {
     });
 
     const ocr = await readGpsFromImageOcr(photo.file, {
+      debug: debugMode,
       onProgress: ({ status, progress }) => {
         const percent = progress > 0 ? ` ${Math.round(progress * 100)}%` : '';
         updatePhoto(photo.id, {
@@ -165,6 +201,11 @@ function App() {
       normalizedOcrText: ocr.normalizedText || '',
       ocrConfidence: ocr.confidence || 0,
       ocrStatus: ocr.ocrStatus || (ocr.ok ? 'found' : 'missing'),
+      ocrCandidates: ocr.candidates || [],
+      ocrChosenCandidate: ocr.chosenCandidate || null,
+      ocrAttempts: ocr.attempts || [],
+      ocrCropPreview: ocr.cropPreview || '',
+      ocrProcessedPreview: ocr.processedPreview || '',
     };
 
     if (ocr.ok) {
@@ -246,10 +287,10 @@ function App() {
       updatePhoto(photo.id, processedPhoto);
     }
 
-    if (!processedPhotos.some((photo) => isValidCoordinate(photo.latitude, photo.longitude))) {
+    if (!processedPhotos.some(hasUsableCoordinates)) {
       setGlobalMessage('Координаты не найдены ни OCR, ни EXIF. Их можно ввести вручную в карточках фото.');
-    } else if (processedPhotos.some((photo) => !isValidCoordinate(photo.latitude, photo.longitude))) {
-      setGlobalMessage('Часть фото без координат. Расчёт расстояний и экспорт будут использовать только валидные точки.');
+    } else if (processedPhotos.some((photo) => !hasUsableCoordinates(photo))) {
+      setGlobalMessage('Часть фото без координат. Фото без координат не участвуют в расчёте расстояний и экспорте.');
     }
   };
 
@@ -281,7 +322,7 @@ function App() {
     })));
 
     try {
-      const uploadedCount = await uploadPhotosSequentially({
+      const uploadResult = await uploadPhotosSequentially({
         photos,
         hosting,
         proxyUrl,
@@ -292,7 +333,11 @@ function App() {
         ...photo,
         imageUrl: photo.uploadedUrl,
       })));
-      setGlobalMessage(`Загрузка завершена. Успешно загружено: ${uploadedCount} из ${photos.length}.`);
+      setGlobalMessage(
+        uploadResult.failedCount > 0
+          ? `Загрузка завершена с ошибками. Успешно: ${uploadResult.uploadedCount} из ${photos.length}, ошибок: ${uploadResult.failedCount}. Подробности в карточках фото.`
+          : `Загрузка завершена. Успешно загружено: ${uploadResult.uploadedCount} из ${photos.length}.`,
+      );
     } catch (error) {
       setGlobalMessage(
         error instanceof Error
@@ -330,6 +375,8 @@ function App() {
           foundText: 'Координаты введены вручную',
           missingText: 'Ручные координаты неполные или невалидные',
           gpsWarnings: [],
+          preserveInputValues: true,
+          zeroZeroConfirmed: nextPhoto.zeroZeroConfirmed === true,
         }),
       };
     }));
@@ -415,6 +462,7 @@ function App() {
             onToggle={toggleDetails}
             onCoordinateChange={handleCoordinateChange}
             onDescriptionChange={handleDescriptionChange}
+            debugMode={debugMode}
           />
         ))}
       </section>

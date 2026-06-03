@@ -33,7 +33,9 @@ export default function ViolationsBlock({ violations, recommendation, pointStats
         <p className="success">Все валидные точки дальше {formatDistanceMeters(thresholdMeters)} м.</p>
       )}
       {pointStats.missingCount > 0 && (
-        <p className="warning">Расчёт выполнен только по {pointStats.validCount} валидным точкам.</p>
+        <p className="warning">
+          Фото без координат не участвуют в расчёте расстояний. Расчёт выполнен только по {pointStats.validCount} валидным точкам.
+        </p>
       )}
 
       {violations.length > 0 && (

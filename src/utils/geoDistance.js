@@ -5,23 +5,75 @@ const toRadians = (degrees) => (degrees * Math.PI) / 180;
 const getLatitude = (point) => point?.latitude ?? point?.coordinates?.latitude;
 const getLongitude = (point) => point?.longitude ?? point?.coordinates?.longitude;
 
-export function isValidCoordinate(latitude, longitude) {
-  const lat = Number(latitude);
-  const lon = Number(longitude);
+const toCoordinateNumber = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
 
-  return Number.isFinite(lat)
-    && Number.isFinite(lon)
+  if (typeof value === 'string' && value.trim() === '') {
+    return null;
+  }
+
+  const numeric = Number(String(value).replace(',', '.'));
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+export function isZeroZeroCoordinate(latitude, longitude) {
+  const lat = toCoordinateNumber(latitude);
+  const lon = toCoordinateNumber(longitude);
+
+  return lat !== null
+    && lon !== null
+    && Math.abs(lat) < 0.000001
+    && Math.abs(lon) < 0.000001;
+}
+
+export function isValidCoordinate(latitude, longitude) {
+  const lat = toCoordinateNumber(latitude);
+  const lon = toCoordinateNumber(longitude);
+
+  return lat !== null
+    && lon !== null
     && lat >= -90
     && lat <= 90
     && lon >= -180
     && lon <= 180;
 }
 
+export function hasUsableCoordinates(point) {
+  const latitude = getLatitude(point);
+  const longitude = getLongitude(point);
+
+  if (!point || !isValidCoordinate(latitude, longitude)) {
+    return false;
+  }
+
+  if (point.coordinates === null) {
+    return false;
+  }
+
+  if (point.gpsSource === 'missing' || point.gpsStatus === 'missing') {
+    return false;
+  }
+
+  if (Array.isArray(point.gpsWarnings) && point.gpsWarnings.includes('zero_zero_placeholder')) {
+    return false;
+  }
+
+  if (isZeroZeroCoordinate(latitude, longitude)) {
+    return point.gpsSource === 'manual' && point.zeroZeroConfirmed === true;
+  }
+
+  return point.gpsStatus === 'found' || point.gpsSource === 'manual';
+}
+
+export const isUsablePointCoordinate = hasUsableCoordinates;
+
 export function haversineDistanceMeters(pointA, pointB) {
-  const latitudeA = Number(getLatitude(pointA));
-  const longitudeA = Number(getLongitude(pointA));
-  const latitudeB = Number(getLatitude(pointB));
-  const longitudeB = Number(getLongitude(pointB));
+  const latitudeA = toCoordinateNumber(getLatitude(pointA));
+  const longitudeA = toCoordinateNumber(getLongitude(pointA));
+  const latitudeB = toCoordinateNumber(getLatitude(pointB));
+  const longitudeB = toCoordinateNumber(getLongitude(pointB));
 
   if (!isValidCoordinate(latitudeA, longitudeA) || !isValidCoordinate(latitudeB, longitudeB)) {
     return null;
@@ -50,17 +102,17 @@ const getPointLabel = (point, fallbackIndex) => {
 
 const getPointFileName = (point) => point.fileName || point.originalName || '';
 
-const getValidPoints = (points) => points
+export const getValidPointsForDistance = (points) => points
   .map((point, index) => ({
     ...point,
     __index: index,
-    latitude: Number(getLatitude(point)),
-    longitude: Number(getLongitude(point)),
+    latitude: toCoordinateNumber(getLatitude(point)),
+    longitude: toCoordinateNumber(getLongitude(point)),
   }))
-  .filter((point) => isValidCoordinate(point.latitude, point.longitude));
+  .filter(hasUsableCoordinates);
 
 export function buildDistanceMatrix(points) {
-  const validPoints = getValidPoints(points);
+  const validPoints = getValidPointsForDistance(points);
 
   return validPoints.map((pointA, rowIndex) => validPoints.map((pointB, columnIndex) => {
     if (rowIndex === columnIndex) {
@@ -79,7 +131,7 @@ export function findDistanceViolations(points, options = {}) {
   const thresholdMeters = Number.isFinite(Number(options.thresholdMeters))
     ? Number(options.thresholdMeters)
     : 25;
-  const validPoints = getValidPoints(points);
+  const validPoints = getValidPointsForDistance(points);
   const violations = [];
 
   for (let i = 0; i < validPoints.length; i += 1) {
@@ -115,7 +167,7 @@ export function markProblemPoints(points, violations) {
   const problemIds = new Set(violations.flatMap((violation) => [violation.pointAId, violation.pointBId]));
 
   return points.map((point) => {
-    const hasCoordinates = isValidCoordinate(getLatitude(point), getLongitude(point));
+    const hasCoordinates = hasUsableCoordinates(point);
     const ownViolations = violations.filter((violation) => (
       violation.pointAId === point.id || violation.pointBId === point.id
     ));
