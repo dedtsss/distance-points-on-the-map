@@ -240,17 +240,27 @@ const stripCoordinateNumbers = (text) => text
   .replace(/[NS]\s*[-+]?\d{1,3}\.\d{2,10}\s*[EW]\s*[-+]?\d{1,3}\.\d{2,10}/gi, ' ')
   .replace(/[-+]?\d{1,3}\.\d{2,10}\s*[NS]?\s*[, ]+\s*[-+]?\d{1,3}\.\d{2,10}\s*[EW]?/gi, ' ');
 
+const normalizeIndexCandidate = (value) => {
+  const index = String(value || '').trim();
+
+  if (!index || /^0+$/.test(index)) {
+    return null;
+  }
+
+  return index;
+};
+
 const parseIndex = (normalizedText) => {
   const labeled = normalizedText.match(
     /(?:номер\s+индекса|номер\s+index|index\s+number|индекс(?:а)?|index|idx|id)\s*[:=\-]?\s*([A-Za-zА-Яа-я]?\d{1,6})/i,
   );
   if (labeled) {
-    return labeled[1];
+    return normalizeIndexCandidate(labeled[1]);
   }
 
   const symbolLabeled = normalizedText.match(/(?:№|#)\s*(\d{3,6})/);
   if (symbolLabeled) {
-    return symbolLabeled[1];
+    return normalizeIndexCandidate(symbolLabeled[1]);
   }
 
   const firstCoordinateIndex = normalizedText.search(DECIMAL_NUMBER_RE);
@@ -261,14 +271,14 @@ const parseIndex = (normalizedText) => {
   const standaloneAfterCoordinates = textAfterCoordinates.match(/(?:^|\s|#)(\d{3,6})(?![.,]\d)(?=\s|$|[#.,;:])/);
 
   if (standaloneAfterCoordinates) {
-    return standaloneAfterCoordinates[1];
+    return normalizeIndexCandidate(standaloneAfterCoordinates[1]);
   }
 
   if (firstCoordinateIndex > 0) {
     const prefix = normalizedText.slice(0, firstCoordinateIndex);
     const fallback = prefix.match(/(?:^|\s)(\d{3,5})(?=\s|$)/);
     if (fallback) {
-      return fallback[1];
+      return normalizeIndexCandidate(fallback[1]);
     }
   }
 

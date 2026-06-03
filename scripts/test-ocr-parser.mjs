@@ -21,6 +21,7 @@ assertCoordinates('61,792040N 34,323477E ±1,00m Номер индекса: 4468
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4469').indexFromOcr, '4469');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4468').indexFromOcr, '4468');
 assert.equal(parseGpsFromOcrText('ООО Карелия Дом 30.10.2025 11:11 64.6028, 30.6258 (±4м)').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('000 Карелия Дом 30.10.2025 11:11 64.6028, 30.6258 (±4м)').indexFromOcr, null);
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E +1,00 owe nnaeea: 4469 +o 4').indexFromOcr, '4469');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E +1,00 oe nnaexea: 4468 #o 4A 6').indexFromOcr, '4468');
 assert.equal(parseGpsFromOcrText('64,602311N 30,616222E +3,41 #ed #11 #ennana nax #on3a6oe oe nnaexea: 5130').indexFromOcr, '5130');
