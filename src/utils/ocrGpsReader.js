@@ -35,10 +35,21 @@ const OCR_ATTEMPT_VARIANTS = [
     crop: { widthRatio: 0.62, heightRatio: 0.34 },
     preprocess: { threshold: 145, contrast: 1.45, invert: false },
   },
+  {
+    name: 'light_overlay_high_threshold',
+    crop: { widthRatio: 0.62, heightRatio: 0.32 },
+    preprocess: { threshold: 210, contrast: 1.2, invert: false },
+  },
+  {
+    name: 'wide_lower_light_overlay',
+    crop: { widthRatio: 0.78, heightRatio: 0.24 },
+    preprocess: { threshold: 205, contrast: 1.25, invert: false },
+  },
 ];
 
 const OCR_CHAR_WHITELIST = '0123456789.,-+ NSEWnsew°\'": LATlatLONlonIndex№#НомерИндексаиндекса';
 const DECIMAL_NUMBER_RE = /[-+]?\d{1,3}\.\d{3,10}/g;
+const KARELIA_SHORT_DECIMAL_PAIR_RE = /((?:6[0-9]|70)\.\d{2,10})\D{0,30}((?:2[5-9]|3[0-9]|40)\.\d{2,10})/g;
 
 export function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
@@ -226,8 +237,8 @@ const withDirection = (value, direction) => {
 };
 
 const stripCoordinateNumbers = (text) => text
-  .replace(/[NS]\s*[-+]?\d{1,3}\.\d{3,10}\s*[EW]\s*[-+]?\d{1,3}\.\d{3,10}/gi, ' ')
-  .replace(/[-+]?\d{1,3}\.\d{3,10}\s*[NS]?\s*[, ]+\s*[-+]?\d{1,3}\.\d{3,10}\s*[EW]?/gi, ' ');
+  .replace(/[NS]\s*[-+]?\d{1,3}\.\d{2,10}\s*[EW]\s*[-+]?\d{1,3}\.\d{2,10}/gi, ' ')
+  .replace(/[-+]?\d{1,3}\.\d{2,10}\s*[NS]?\s*[, ]+\s*[-+]?\d{1,3}\.\d{2,10}\s*[EW]?/gi, ' ');
 
 const parseIndex = (normalizedText) => {
   const labeled = normalizedText.match(
@@ -247,7 +258,7 @@ const parseIndex = (normalizedText) => {
     ? normalizedText.slice(firstCoordinateIndex)
     : normalizedText;
   const textAfterCoordinates = stripCoordinateNumbers(afterCoordinatesSource);
-  const standaloneAfterCoordinates = textAfterCoordinates.match(/(?:^|\s|#)(\d{3,6})(?=\s|$|[#.,;:])/);
+  const standaloneAfterCoordinates = textAfterCoordinates.match(/(?:^|\s|#)(\d{3,6})(?![.,]\d)(?=\s|$|[#.,;:])/);
 
   if (standaloneAfterCoordinates) {
     return standaloneAfterCoordinates[1];
@@ -255,7 +266,7 @@ const parseIndex = (normalizedText) => {
 
   if (firstCoordinateIndex > 0) {
     const prefix = normalizedText.slice(0, firstCoordinateIndex);
-    const fallback = prefix.match(/(?:^|\s)(\d{1,5})(?=\s|$)/);
+    const fallback = prefix.match(/(?:^|\s)(\d{3,5})(?=\s|$)/);
     if (fallback) {
       return fallback[1];
     }
@@ -333,6 +344,16 @@ const collectDecimalPairs = (normalizedText) => {
   return pairs;
 };
 
+const hasLowPrecisionCoordinate = (value) => {
+  const decimals = String(value || '').split('.')[1] || '';
+  return decimals.length > 0 && decimals.length < 3;
+};
+
+const collectKareliaShortDecimalPairs = (normalizedText) => (
+  [...normalizedText.matchAll(KARELIA_SHORT_DECIMAL_PAIR_RE)]
+    .map((match) => [match[1], match[2]])
+);
+
 export function parseGpsFromOcrText(text, options = {}) {
   const minimumConfidence = Number.isFinite(Number(options.minimumConfidence))
     ? Number(options.minimumConfidence)
@@ -383,6 +404,20 @@ export function parseGpsFromOcrText(text, options = {}) {
 
   collectDecimalPairs(normalizedText).forEach(([latitude, longitude]) => {
     addCandidate(candidates, toNumber(latitude), toNumber(longitude), 'decimal_pair', 0.52);
+  });
+
+  collectKareliaShortDecimalPairs(normalizedText).forEach(([latitude, longitude]) => {
+    const warningsForCandidate = hasLowPrecisionCoordinate(latitude) || hasLowPrecisionCoordinate(longitude)
+      ? ['low_precision_coordinate']
+      : [];
+    addCandidate(
+      candidates,
+      toNumber(latitude),
+      toNumber(longitude),
+      'karelia_short_decimal_pair',
+      0.56,
+      warningsForCandidate,
+    );
   });
 
   if (candidates.length === 0) {

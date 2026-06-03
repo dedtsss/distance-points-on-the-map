@@ -151,6 +151,8 @@ Fixed real-photo MVP stability issues:
 - GPX/KML/CSV export filters through the same usable-coordinate logic.
 - OCR parser rejects `0,0`, one-coordinate results, and low-confidence parser results.
 - OCR tries multiple bottom-right crop/preprocess variants before EXIF fallback.
+- OCR also supports a real-photo gray/light overlay case with short Karelia-like coordinate precision, such as `64,60272, 30,62`.
+- OCR index fallback avoids using unlabeled one/two-digit noise such as `41` or altitude fragments as `indexFromOcr`.
 - UI shows `нет координат` and `не участвует в расчёте` for missing points.
 - Debug mode is available with `?debug=1`.
 

@@ -28,6 +28,10 @@ assert.equal(parseGpsFromOcrText('64,602502N 30,611988E +2,61 #ed #11 #ennsa nax
 assert.equal(parseGpsFromOcrText('64,604670N 30,591181E +2,39 oe nnaexea: 5917').indexFromOcr, '5917');
 assert.equal(parseGpsFromOcrText('64,602214N 30,611359E +2,08 onen wxaexa: 5291').indexFromOcr, '5291');
 assert.equal(parseGpsFromOcrText('64,601882N 30,615078E +3,44 #ed #11 #ennana nax #on3a6oe oe nnaexea: 5241').indexFromOcr, '5241');
+assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м', 64.60272, 30.62);
+assert.ok(parseGpsFromOcrText('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').warnings.includes('low_precision_coordinate'));
+assert.equal(parseGpsFromOcrText('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('41 Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').indexFromOcr, null);
 
 const missing = parseGpsFromOcrText('строка без координат');
 assert.equal(missing.ok, false);
