@@ -44,7 +44,29 @@ const WARNING_LABELS = {
   outside_expected_region: 'координаты вне ожидаемого региона',
 };
 
+const CLEAN_METHOD_LABELS = {
+  'binary-jpeg-strip': 'binary JPEG strip',
+  'canvas-fallback': 'Canvas fallback',
+  failed: 'ошибка',
+};
+
 const formatWarning = (warning) => WARNING_LABELS[warning] || warning;
+
+const formatCleanMethod = (method) => CLEAN_METHOD_LABELS[method] || method || 'нет';
+
+const formatMetadataVerification = (verification) => {
+  if (!verification) return 'не проверено';
+  if (!verification.checked) return 'проверка не выполнена';
+  if (verification.hasGps) return 'GPS metadata остался';
+  if (verification.hasExif) return 'EXIF/XMP metadata остались';
+  return 'GPS/EXIF не найдены';
+};
+
+const formatMetadataRemoved = (value) => {
+  if (value === true) return 'да';
+  if (value === false) return 'нет';
+  return 'неизвестно';
+};
 
 export default function PhotoCard({
   photo,
@@ -70,6 +92,7 @@ export default function PhotoCard({
   const participatesInDistance = photo.distanceStatus !== 'missing_coordinates';
   const debugAttempts = photo.ocrAttempts || [];
   const debugCandidates = photo.ocrCandidates || [];
+  const cleanVerification = photo.cleanVerification || null;
 
   return (
     <article className={`photo-card photo-card-compact ${isHighlighted && isProblem ? 'problem-highlight' : ''}`}>
@@ -127,6 +150,20 @@ export default function PhotoCard({
             <div>
               <dt>Очистка</dt>
               <dd>{photo.cleanStatus}</dd>
+            </div>
+            <div>
+              <dt>Метод очистки</dt>
+              <dd>{formatCleanMethod(photo.cleanMethod)}</dd>
+            </div>
+            <div>
+              <dt>Metadata removed</dt>
+              <dd>{formatMetadataRemoved(photo.metadataRemoved)}</dd>
+            </div>
+            <div>
+              <dt>Проверка metadata</dt>
+              <dd className={cleanVerification?.hasGps || cleanVerification?.hasExif ? 'warning-text' : 'success-text'}>
+                {formatMetadataVerification(cleanVerification)}
+              </dd>
             </div>
             <div>
               <dt>Имя загрузки</dt>
@@ -215,6 +252,15 @@ export default function PhotoCard({
             {debugCandidates.length > 0 && (
               <pre>{JSON.stringify({ candidates: debugCandidates }, null, 2)}</pre>
             )}
+          </details>
+
+          <details className="debug-block">
+            <summary>Metadata cleanup debug</summary>
+            <pre>{JSON.stringify({
+              method: photo.cleanMethod || null,
+              metadataRemoved: photo.metadataRemoved,
+              verification: cleanVerification,
+            }, null, 2)}</pre>
           </details>
 
           {debugMode && (

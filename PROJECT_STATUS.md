@@ -1,6 +1,6 @@
 # GPS Checker Map Photo — Project Status
 
-Last updated: 2026-06-03
+Last updated: 2026-06-05
 
 ## Repository
 
@@ -23,6 +23,8 @@ Last updated: 2026-06-03
 - GPX/KML/CSV export uses the normalized point model and valid final coordinates.
 - Upload hosting has been switched from Allwebs to ImgBB through the Cloudflare Worker.
 - The frontend does not use or store the ImgBB API key.
+- Upload image cleanup now uses binary JPEG metadata stripping first and Canvas only as fallback.
+- Cleaned upload files are verified with `exifr` before upload; files with remaining GPS metadata are blocked.
 - Missing coordinates are represented as `latitude: null`, `longitude: null`, `coordinates: null`, `gpsSource: "missing"`, `gpsStatus: "missing"`.
 - Missing/invalid/placeholder `0,0` points do not participate in distance calculations or main exports.
 - OCR parser exposes candidates, chosen candidate, warnings, confidence, and debug crop/preprocess previews when `?debug=1` is enabled.
@@ -114,11 +116,13 @@ public ImgBB URL returned
 - `workers/host-proxy/worker.js` — Worker routing and upload target dispatch.
 - `workers/host-proxy/imgbb.js` — ImgBB upload integration.
 - `src/utils/uploadManager.js` — frontend upload orchestration through Worker proxy.
+- `src/utils/imageCleaner.js` — upload-safe image cleanup; binary JPEG segment stripper plus Canvas fallback and metadata verification.
 - `src/components/HostingSelector.jsx` — upload provider UI, ImgBB proxy is default.
 - `src/utils/ocrGpsReader.js` — OCR crop/preprocess/parser pipeline.
 - `src/utils/geoDistance.js` — pure distance and violation logic.
 - `src/utils/geoExport.js` — GPX/KML/CSV export.
 - `scripts/test-worker-upload.mjs` — Worker upload smoke-test.
+- `scripts/test-image-cleaner.mjs` — JPEG metadata stripper unit smoke-test.
 - `.github/workflows/deploy-worker.yml` — deploys Worker.
 - `.github/workflows/sync-worker-secrets.yml` — syncs `IMGBB_API_KEY` to Worker secret.
 - `.github/workflows/test-worker-upload.yml` — verifies Worker upload.
@@ -130,6 +134,7 @@ npm test
 npm run build
 npx wrangler deploy --dry-run --config wrangler.toml
 node scripts/test-worker-upload.mjs
+npm run test:image-cleaner
 ```
 
 ## Notes For Future Codex/ChatGPT
@@ -140,6 +145,25 @@ node scripts/test-worker-upload.mjs
 - OCR and distance logic are intentionally separate modules.
 - If upload fails with `IMGBB_API_KEY is not configured in Cloudflare Worker secrets`, run or inspect `Sync Worker Secrets`.
 - If a future assistant has GitHub connector access, it can inspect this file plus recent commits instead of requiring chat history.
+
+## 2026-06-05 Metadata Cleanup Notes
+
+Upload metadata cleanup was changed from Canvas-only re-encoding to a safer two-step flow:
+
+- JPEG/JPG files with normal orientation use binary segment stripping without recompression.
+- Removed JPEG metadata segments: APP1 EXIF/XMP, APP2 ICC profile, APP13 IPTC/Photoshop, COM comments.
+- JPEG files with EXIF Orientation other than `1` use Canvas fallback to preserve visual rotation after metadata removal.
+- Non-JPEG files use Canvas fallback.
+- Every cleaned file is verified with `exifr`; the UI shows cleanup method, metadata removal status, and verification details.
+- Upload sends only `cleaned.file`; if cleanup fails or verification reports remaining GPS metadata, that photo is not uploaded.
+- Manual cleaned-file download uses the same cleaner and stores the same verification data in the photo card.
+
+Verified checks:
+
+```text
+npm test: passed
+npm run build: passed
+```
 
 ## 2026-06-03 Stabilization Notes
 

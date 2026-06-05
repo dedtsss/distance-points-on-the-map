@@ -50,10 +50,13 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingGps, vio
         id: photo.id,
         cleanStatus: cleaned.ok ? 'очищенная копия скачана' : 'ошибка очистки',
         cleanWarnings: cleaned.warnings,
+        cleanMethod: cleaned.method,
+        metadataRemoved: cleaned.metadataRemoved,
+        cleanVerification: cleaned.verification,
         uploadFilename: cleaned.filename,
       });
 
-      if (cleaned.ok && cleaned.file) {
+      if (cleaned.ok && cleaned.file && cleaned.verification?.hasGps !== true) {
         okCount += 1;
         downloadBlob(cleaned.filename, cleaned.file);
       }

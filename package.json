@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "npm run test:ocr && npm run test:geo",
+    "test": "npm run test:ocr && npm run test:geo && npm run test:image-cleaner",
     "test:ocr": "node scripts/test-ocr-parser.mjs",
-    "test:geo": "node scripts/test-geo-distance.mjs"
+    "test:geo": "node scripts/test-geo-distance.mjs",
+    "test:image-cleaner": "node scripts/test-image-cleaner.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "4.3.1",

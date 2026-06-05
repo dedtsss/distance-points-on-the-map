@@ -10,6 +10,24 @@ export const HOSTING_LABELS = {
   ninjaproxy: 'NinjaBox через прокси',
 };
 
+const CLEAN_METHOD_LABELS = {
+  'binary-jpeg-strip': 'binary JPEG strip',
+  'canvas-fallback': 'Canvas fallback',
+  failed: 'ошибка очистки',
+};
+
+const cleanStatusText = (cleaned) => {
+  if (!cleaned.ok) {
+    return 'Ошибка очистки изображения';
+  }
+
+  const method = CLEAN_METHOD_LABELS[cleaned.method] || cleaned.method || 'unknown';
+  const verified = cleaned.verification?.checked
+    ? 'metadata проверены'
+    : 'metadata не проверены';
+  return `Метаданные очищены (${method}, ${verified})`;
+};
+
 const withTimeout = async (operation, timeoutMs) => {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -53,13 +71,18 @@ export async function uploadPhotosSequentially({
     const cleaned = await cleanImageForUpload(photo.file, photo.orientation);
 
     onPhotoUpdate(photo.id, {
-      cleanStatus: cleaned.ok ? 'Метаданные очищены' : 'Ошибка очистки изображения',
+      cleanStatus: cleanStatusText(cleaned),
       cleanWarnings: cleaned.warnings,
+      cleanMethod: cleaned.method,
+      metadataRemoved: cleaned.metadataRemoved,
+      cleanVerification: cleaned.verification,
       uploadFilename: cleaned.filename,
     });
 
-    if (!cleaned.ok) {
-      const details = `Ошибка очистки изображения: Фото №${photo.number}`;
+    if (!cleaned.ok || cleaned.verification?.hasGps === true) {
+      const details = cleaned.verification?.hasGps === true
+        ? `После очистки в файле остался GPS metadata: Фото №${photo.number}`
+        : `Ошибка очистки изображения: Фото №${photo.number}`;
       failedCount += 1;
       errors.push(details);
       onPhotoUpdate(photo.id, {
