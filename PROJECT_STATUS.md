@@ -21,7 +21,8 @@ Last updated: 2026-06-05
 - Distance calculation is implemented with Haversine.
 - 25 meter violations are detected across all valid point pairs.
 - GPX/KML/CSV export uses the normalized point model and valid final coordinates.
-- Upload hosting has been switched from Allwebs to ImgBB through the Cloudflare Worker.
+- Upload hosting was switched from Allwebs to ImgBB through the Cloudflare Worker, but ImgBB is now blocked.
+- Current upload blocker: the ImgBB account/API key is blocked; a new photo hosting provider must be selected.
 - The frontend does not use or store the ImgBB API key.
 - Upload image cleanup now uses binary JPEG metadata stripping first and Canvas only as fallback.
 - Cleaned upload files are verified with `exifr` before upload; files with remaining GPS metadata are blocked.
@@ -31,6 +32,8 @@ Last updated: 2026-06-05
 - Upload records per-photo failures instead of stopping silently at the first failed photo.
 
 ## Upload Flow
+
+Current status: blocked until a new photo hosting provider is chosen and implemented.
 
 Frontend uploads cleaned images to the Worker:
 
@@ -60,6 +63,33 @@ Successful Worker response is normalized:
 }
 ```
 
+This ImgBB flow should now be treated as deprecated/blocked, not as the accepted final upload path.
+
+## Current Upload Blocker
+
+As of 2026-06-05, real-photo validation reached upload but stopped at the hosting layer:
+
+```text
+node scripts/test-worker-upload.mjs: failed
+Worker target: imgbb
+HTTP status: 400
+Worker/ImgBB error: Invalid API v1 key.
+User-confirmed cause: ImgBB account and API key are blocked.
+```
+
+What still works:
+
+- OCR and missing-coordinate handling.
+- Distance filtering and avoiding false `0,0` violations.
+- Binary JPEG metadata cleanup.
+- Metadata verification before upload.
+
+What is not resolved:
+
+- Stable public photo hosting provider.
+- Worker upload target for the next provider.
+- Frontend default upload provider after replacing ImgBB.
+
 ## Required Secrets
 
 GitHub repository secrets:
@@ -72,6 +102,8 @@ Cloudflare Worker secrets:
 - `IMGBB_API_KEY` — required by the Worker for ImgBB uploads.
 
 Do not put real API keys into source code, frontend env files, README, issues, or workflow logs.
+
+Note: `IMGBB_API_KEY` is no longer sufficient for production because the ImgBB account/key is blocked. Keep the no-secrets-in-frontend rule for whichever provider replaces ImgBB.
 
 ## GitHub Actions Chain
 
@@ -96,7 +128,7 @@ Verified workflow results:
 - Test Worker Upload: success
 - Deploy to GitHub Pages: success
 
-Verified local smoke-test:
+Previously verified local smoke-test:
 
 ```text
 node scripts/test-worker-upload.mjs
@@ -109,6 +141,15 @@ target=imgbb
 HTTP 200
 ok=true
 public ImgBB URL returned
+```
+
+Current smoke-test status is blocked by ImgBB:
+
+```text
+node scripts/test-worker-upload.mjs
+target=imgbb
+HTTP 400
+error="Invalid API v1 key."
 ```
 
 ## Important Files
@@ -142,8 +183,9 @@ npm run test:image-cleaner
 - Business logic should not be changed when only checking secrets or deploy configuration.
 - Upload must stay behind the Cloudflare Worker; do not call ImgBB directly from the frontend.
 - Allwebs is legacy and should not be the default provider.
+- ImgBB is currently blocked and should not be treated as the final production provider.
 - OCR and distance logic are intentionally separate modules.
-- If upload fails with `IMGBB_API_KEY is not configured in Cloudflare Worker secrets`, run or inspect `Sync Worker Secrets`.
+- If upload fails with `Invalid API v1 key.`, do not keep debugging OCR/metadata cleanup; choose and implement a replacement photo hosting provider.
 - If a future assistant has GitHub connector access, it can inspect this file plus recent commits instead of requiring chat history.
 
 ## 2026-06-05 Metadata Cleanup Notes
@@ -164,6 +206,18 @@ Verified checks:
 npm test: passed
 npm run build: passed
 ```
+
+Real-photo validation after metadata cleanup:
+
+- Saved 5-photo attachment batch was tested locally.
+- OCR result: 3 valid points, 2 missing-coordinate photos.
+- Missing photos did not participate in distance calculation.
+- No false visible `0,0` placeholder was produced.
+- Metadata cleanup result for all 5 files: `binary JPEG strip`.
+- Metadata verification for all 5 files: `GPS/EXIF not found`.
+- Upload result: `0/5` because ImgBB returned `Invalid API v1 key.`
+
+Current result: implementation is blocked at provider selection, not at OCR, distance, or metadata cleanup.
 
 ## 2026-06-03 Stabilization Notes
 
