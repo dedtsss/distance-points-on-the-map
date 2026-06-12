@@ -15,6 +15,9 @@ import android.graphics.drawable.shapes.OvalShape;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -35,15 +38,23 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 10;
+    private static final String TAG = "RoadGpsLogger";
+    private static final int MAX_FULL_MARKERS = 300;
 
     private TextView statusText;
     private TextView mapInfoText;
     private TextView mapLegendText;
     private Button showMapButton;
+    private Button resetMapButton;
     private MapView mapView;
+    private final ExecutorService mapExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private int mapLoadGeneration = 0;
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -54,7 +65,6 @@ public class MainActivity extends Activity {
                     statusText.setText(status);
                     if (status.startsWith("Status: stopped")) {
                         updateStatusFromStorage();
-                        refreshMapFromLatestCsv();
                     }
                 }
             }
@@ -71,6 +81,7 @@ public class MainActivity extends Activity {
         mapInfoText = findViewById(R.id.mapInfoText);
         mapLegendText = findViewById(R.id.mapLegendText);
         showMapButton = findViewById(R.id.showMapButton);
+        resetMapButton = findViewById(R.id.resetMapButton);
         mapView = findViewById(R.id.mapView);
 
         mapView.setMultiTouchControls(true);
@@ -84,9 +95,11 @@ public class MainActivity extends Activity {
         stopButton.setOnClickListener(view -> stopRecording());
         shareButton.setOnClickListener(view -> shareLatestCsv());
         showMapButton.setOnClickListener(view -> refreshMapFromLatestCsv());
+        resetMapButton.setOnClickListener(view -> resetMap());
 
         updateStatusFromStorage();
-        refreshMapFromLatestCsv();
+        mapInfoText.setText("Карта не загружается автоматически. Нажмите Показать карту, когда она нужна.");
+        mapLegendText.setText("");
     }
 
     @Override
@@ -106,6 +119,13 @@ public class MainActivity extends Activity {
         unregisterReceiver(statusReceiver);
         mapView.onPause();
         super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        mapLoadGeneration++;
+        mapExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     private void startRecording() {
@@ -193,22 +213,49 @@ public class MainActivity extends Activity {
         showMapButton.setText(latestPath == null ? "Показать карту" : "Обновить карту");
 
         if (latestPath == null || !new File(latestPath).exists()) {
-            mapView.getOverlays().clear();
-            mapView.invalidate();
+            resetMap();
             mapInfoText.setText("Сначала запишите трек: Start → Stop, потом нажмите Показать карту");
-            mapLegendText.setText("");
             return;
         }
 
         File csvFile = new File(latestPath);
-        TrackData trackData = parseTrack(csvFile);
-        mapInfoText.setText("Карта показывает последний записанный CSV: " + csvFile.getName());
-        mapLegendText.setText("Зелёный — хорошо, оранжевый — задержка, красный — нет/плохо");
+        int generation = ++mapLoadGeneration;
+        mapInfoText.setText("Загрузка CSV без блокировки экрана: " + csvFile.getName());
+        mapLegendText.setText("");
+        Log.d(TAG, "CSV filename: " + csvFile.getName());
+
+        mapExecutor.execute(() -> {
+            TrackData trackData = parseTrack(csvFile);
+            mainHandler.post(() -> {
+                if (generation != mapLoadGeneration) {
+                    return;
+                }
+                renderTrack(csvFile, trackData);
+            });
+        });
+    }
+
+    private void resetMap() {
+        mapLoadGeneration++;
+        mapView.getOverlays().clear();
+        mapView.invalidate();
+        mapInfoText.setText("Карта очищена. CSV файлы не удалены.");
+        mapLegendText.setText("");
+    }
+
+    private void renderTrack(File csvFile, TrackData trackData) {
+        boolean simplifiedMode = trackData.points.size() > MAX_FULL_MARKERS;
+        List<PointData> markerPoints = simplifiedMode ? samplePoints(trackData.pointDataList, MAX_FULL_MARKERS) : trackData.pointDataList;
 
         mapView.getOverlays().clear();
 
         if (trackData.points.isEmpty()) {
+            mapInfoText.setText("CSV не содержит точек для карты: " + csvFile.getName());
+            mapLegendText.setText("");
             mapView.invalidate();
+            Log.d(TAG, "Parsed point count: 0");
+            Log.d(TAG, "Rendered marker count: 0");
+            Log.d(TAG, "Map mode: full");
             return;
         }
 
@@ -218,11 +265,16 @@ public class MainActivity extends Activity {
         line.setPoints(trackData.points);
         mapView.getOverlays().add(line);
 
-        for (PointData pointData : trackData.pointDataList) {
+        for (PointData pointData : markerPoints) {
             Marker marker = new Marker(mapView);
             marker.setPosition(pointData.point);
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
             marker.setIcon(buildMarkerIcon(pointData.color));
+            if (pointData.index == 0) {
+                marker.setTitle("Start");
+            } else if (pointData.index == trackData.points.size() - 1) {
+                marker.setTitle("End");
+            }
             mapView.getOverlays().add(marker);
         }
 
@@ -236,11 +288,35 @@ public class MainActivity extends Activity {
                 mapView.getController().setZoom(16.0);
             }
         }
+        mapInfoText.setText("Карта показывает последний записанный CSV: " + csvFile.getName()
+                + " (точек: " + trackData.points.size()
+                + ", маркеров: " + markerPoints.size()
+                + ", режим: " + (simplifiedMode ? "упрощённый" : "полный") + ")");
+        mapLegendText.setText("Синяя линия — трек. Зелёный — хорошо, оранжевый — задержка, красный — нет/плохо. Для больших треков маркеры прорежены.");
         mapView.invalidate();
+
+        Log.d(TAG, "Parsed point count: " + trackData.points.size());
+        Log.d(TAG, "Rendered marker count: " + markerPoints.size());
+        Log.d(TAG, "Map mode: " + (simplifiedMode ? "simplified" : "full"));
+    }
+
+    private List<PointData> samplePoints(List<PointData> points, int maxMarkers) {
+        if (points.size() <= maxMarkers) {
+            return points;
+        }
+
+        List<PointData> sampled = new ArrayList<>();
+        int lastIndex = points.size() - 1;
+        for (int i = 0; i < maxMarkers; i++) {
+            int sourceIndex = Math.round((float) i * lastIndex / (maxMarkers - 1));
+            sampled.add(points.get(sourceIndex));
+        }
+        return sampled;
     }
 
     private TrackData parseTrack(File csvFile) {
         List<PointData> points = new ArrayList<>();
+        int pointIndex = 0;
         try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
             String line;
             boolean firstLine = true;
@@ -257,7 +333,8 @@ public class MainActivity extends Activity {
                 double lon = Double.parseDouble(columns[2]);
                 int internetOk = Integer.parseInt(columns[8]);
                 long latencyMs = Long.parseLong(columns[9]);
-                points.add(new PointData(new GeoPoint(lat, lon), resolveColor(internetOk, latencyMs)));
+                points.add(new PointData(new GeoPoint(lat, lon), resolveColor(internetOk, latencyMs), pointIndex));
+                pointIndex++;
             }
         } catch (IOException | NumberFormatException ignored) {
         }
@@ -300,10 +377,12 @@ public class MainActivity extends Activity {
     private static class PointData {
         final GeoPoint point;
         final int color;
+        final int index;
 
-        PointData(GeoPoint point, int color) {
+        PointData(GeoPoint point, int color, int index) {
             this.point = point;
             this.color = color;
+            this.index = index;
         }
     }
 }

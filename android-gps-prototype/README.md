@@ -1,18 +1,20 @@
-# Road GPS Logger v0.2.0
+# Road GPS Logger v0.5.0
 
 Temporary Android prototype for recording phone GPS points while the phone is connected to the car router Wi-Fi.
-The prototype has no map, server, authentication, OpenWrt integration, or background upload.
+The prototype has no server, authentication, OpenWrt integration, or background upload.
 
 ## Features
 
 - Start and stop GPS recording from one simple screen.
 - Foreground service keeps recording while the app is in the background.
 - Requests `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, and `POST_NOTIFICATIONS` on Android 13+.
-- Saves CSV files in app internal storage under `gps_logs/`.
+- Saves CSV files in app internal storage under `files/gps_logs/` (the app internal `gps_logs/` directory).
 - CSV filename format: `road_gps_YYYYMMDD_HHMMSS.csv`.
 - CSV columns: `time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok,internet_latency_ms`.
 - `internet_ok` is written as `1` (reachable) or `0` (not reachable) through Android's active network check to `1.1.1.1:53`; `internet_latency_ms` stores the measured connect latency in milliseconds, or `-1` when unavailable.
-- Shares the latest CSV through the Android share sheet.
+- Shares the latest CSV through the Android share sheet without loading the map.
+- Loads the latest CSV map only after pressing **Показать карту**; large tracks render as a polyline with sampled markers to avoid UI freezes.
+- **Сбросить карту** clears map overlays without deleting CSV files.
 
 ## Build locally
 
