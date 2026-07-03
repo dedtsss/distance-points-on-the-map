@@ -78,13 +78,23 @@ Verified through a temporary real Cloudflare deployment:
 
 Temporary deployment and credentials were deleted after the test.
 
+Verified on the permanent production deployment for commit `4a41557`:
+
+- `Deploy Cloudflare Worker`: success;
+- production `bundle` smoke-test: HTTP 200 in 3253 ms;
+- complete photos: 2/2; partial/failed: 0/0;
+- Freeimage links: 2/2;
+- Ninjabox individual links: 2/2 and common gallery returned;
+- x0 calls: 0 because both default providers succeeded;
+- `Deploy to GitHub Pages`: success after the Worker deployment.
+
 ## Required GitHub secret
 
 - `CLOUDFLARE_API_TOKEN` — deploys the production Worker.
 
 No image-host API secret is required.
 
-`IMGBB_API_KEY` is no longer read by the application, Worker, or workflows. Do not delete it automatically: it can be removed manually from GitHub/Cloudflare only after the production Worker deployment and its `bundle` smoke-test complete successfully.
+`IMGBB_API_KEY` is no longer read by the application, Worker, or workflows. The production Worker deployment and `bundle` smoke-test completed successfully, so the obsolete key can now be removed manually from GitHub/Cloudflare. It was not deleted as part of this change.
 
 ## Important files
 
@@ -101,7 +111,6 @@ No image-host API secret is required.
 
 ## Remaining manual checks
 
-- Complete the production Worker -> smoke-test -> GitHub Pages release chain.
 - Test a real cleaned multi-photo batch from Android Chrome.
 - Confirm that Ninjabox keeps source order for the real-photo batch.
 - Confirm UI behavior when one provider is intentionally unavailable and x0 is used.

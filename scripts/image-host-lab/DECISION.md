@@ -2,7 +2,7 @@
 
 Decision date: 2026-07-03
 
-Status: provider evaluation and application/Worker integration are complete locally; production deploy and real-photo browser validation remain.
+Status: provider evaluation, production application/Worker integration, and synthetic production smoke-test are complete; real-photo browser validation remains.
 
 ## Accepted provider order
 
@@ -51,4 +51,5 @@ Ninjabox verdict for this link-only scenario: **PASS through Cloudflare Worker**
 - x0 fallback composition has automated tests.
 - Legacy hosting selector, manual parser, adapters, ImgBB secret sync, and old provider code are removed.
 - A temporary Cloudflare deployment passed live `bundle` and `x0` smoke tests.
-- Remaining: deploy to the permanent Worker and validate with real cleaned photos in the browser.
+- The permanent Worker passed a two-file production `bundle` smoke-test and GitHub Pages was deployed afterward.
+- Remaining: validate with real cleaned photos in the browser and exercise the production x0 fallback path.
