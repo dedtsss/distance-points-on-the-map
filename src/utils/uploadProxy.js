@@ -1,47 +1,27 @@
-export async function uploadViaProxy(file, target, proxyUrl, signal) {
-  if (!proxyUrl || !proxyUrl.trim()) {
-    throw new Error('Укажите URL прокси-загрузчика');
-  }
+export async function uploadPhotoBundleViaProxy(entries, proxyUrl, signal) {
+  if (!proxyUrl?.trim()) throw new Error('URL Worker-прокси не настроен');
+  if (!Array.isArray(entries) || entries.length === 0) throw new Error('Нет очищенных файлов для загрузки');
 
-  const normalizedProxyUrl = proxyUrl.trim();
   const formData = new FormData();
-  formData.append('target', target);
-  formData.append('file', file, file.name);
+  formData.append('target', 'bundle');
+  for (const entry of entries) {
+    formData.append('photoId', entry.photoId);
+    formData.append('files', entry.file, entry.file.name);
+  }
 
   let response;
   try {
-    response = await fetch(normalizedProxyUrl, {
-      method: 'POST',
-      body: formData,
-      signal,
-    });
+    response = await fetch(proxyUrl.trim(), { method: 'POST', body: formData, signal });
   } catch (error) {
-    throw new Error(`Не удалось отправить файл в Worker-прокси: ${error instanceof Error ? error.message : 'сетевой сбой'}`);
+    throw new Error(`Не удалось отправить фотографии в Worker: ${error instanceof Error ? error.message : 'сетевой сбой'}`);
   }
 
   const responseText = await response.text();
   let data = null;
+  try { data = JSON.parse(responseText); } catch { /* validated below */ }
 
-  try {
-    data = JSON.parse(responseText);
-  } catch {
-    data = null;
+  if (!response.ok || data?.target !== 'bundle' || !Array.isArray(data?.items)) {
+    throw new Error(data?.error || responseText.slice(0, 500) || `Worker вернул HTTP ${response.status}`);
   }
-
-  const uploadedUrl = data?.url || data?.displayUrl || null;
-
-  if (!response.ok || !data?.ok || !uploadedUrl) {
-    const attempts = Array.isArray(data?.attempts)
-      ? data.attempts.map((attempt, index) => {
-        const status = attempt.status ?? 'нет статуса';
-        const preview = attempt.responsePreview ? String(attempt.responsePreview).slice(0, 220) : 'без ответа';
-        return `${index + 1}) ${attempt.name || 'попытка'}: ${status} ${attempt.statusText || ''}; ${preview}`;
-      }).join(' | ')
-      : '';
-
-    const baseError = data?.error || responseText || `Прокси вернул ошибку: ${response.status}`;
-    throw new Error(attempts ? `${baseError}. Детали: ${attempts}` : baseError);
-  }
-
-  return uploadedUrl;
+  return data;
 }

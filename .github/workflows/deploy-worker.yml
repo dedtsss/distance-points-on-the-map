@@ -6,8 +6,15 @@ on:
     paths:
       - 'workers/host-proxy/**'
       - 'wrangler.toml'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'scripts/test-worker-upload.mjs'
+      - '.github/workflows/deploy.yml'
       - '.github/workflows/deploy-worker.yml'
-      - '.github/workflows/sync-worker-secrets.yml'
       - '.github/workflows/test-worker-upload.yml'
   workflow_dispatch:
 

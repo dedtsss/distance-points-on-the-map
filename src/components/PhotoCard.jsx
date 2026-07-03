@@ -1,3 +1,5 @@
+import { PROVIDER_LABELS } from '../utils/uploadManager';
+
 const formatCoordinate = (value) => (
   Number.isFinite(Number(value)) ? Number(value).toFixed(6) : ''
 );
@@ -174,11 +176,14 @@ export default function PhotoCard({
               <dd>{photo.uploadStatus}</dd>
             </div>
             <div>
-              <dt>Ссылка</dt>
+              <dt>Ссылки</dt>
               <dd>
-                {photo.uploadedUrl ? (
-                  <a href={photo.uploadedUrl} target="_blank" rel="noreferrer">{photo.uploadedUrl}</a>
-                ) : 'нет'}
+                {photo.uploadLinks?.length > 0 ? photo.uploadLinks.map((link) => (
+                  <div key={`${photo.id}-${link.provider}`}>
+                    {PROVIDER_LABELS[link.provider] || link.provider}: {' '}
+                    <a href={link.url} target="_blank" rel="noreferrer">{link.url}</a>
+                  </div>
+                )) : 'нет'}
               </dd>
             </div>
           </dl>
@@ -226,6 +231,9 @@ export default function PhotoCard({
           {cleanWarnings.length > 0 && (
             <p className="warning small">Очистка: {cleanWarnings.join('; ')}</p>
           )}
+          {photo.uploadWarnings?.length > 0 && (
+            <p className="warning small">Хостинги: {photo.uploadWarnings.join('; ')}</p>
+          )}
           {photo.uploadError && <p className="error small">{photo.uploadError}</p>}
 
           <div className="details">
@@ -233,7 +241,11 @@ export default function PhotoCard({
             <p>Индекс/номер: {photo.displayIndex || photo.indexFromOcr || photo.number}</p>
             <p>Координаты: {coordinateText}</p>
             <p>Расчёт расстояний: {participatesInDistance ? 'участвует' : 'не участвует'}</p>
-            <p>Ссылка на фото: {photo.uploadedUrl || 'нет'}</p>
+            <p>
+              Ссылки на фото: {photo.uploadLinks?.length > 0
+                ? photo.uploadLinks.map((link) => `${PROVIDER_LABELS[link.provider] || link.provider}: ${link.url}`).join('; ')
+                : 'нет'}
+            </p>
             <p>Описание: {photo.description || 'нет'}</p>
             <p>
               Конфликты: {conflictLabels.length > 0

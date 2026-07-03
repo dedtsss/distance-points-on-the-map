@@ -2,7 +2,7 @@ name: Test Worker Upload
 
 on:
   workflow_run:
-    workflows: ['Sync Worker Secrets']
+    workflows: ['Deploy Cloudflare Worker']
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -11,9 +11,9 @@ on:
         required: false
         default: 'https://spring-mouse-8d81.dvabobra2014.workers.dev/'
       targets:
-        description: 'Comma-separated targets: imgbb,allwebs,umbphotos,ninjabox'
+        description: 'Comma-separated targets: bundle,freeimage,ninjabox,x0'
         required: false
-        default: 'imgbb'
+        default: 'bundle'
       require_mode:
         description: 'Pass mode: all or any'
         required: false
@@ -42,7 +42,7 @@ jobs:
         continue-on-error: true
         env:
           WORKER_URL: ${{ github.event.inputs.worker_url || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/' }}
-          TARGETS: ${{ github.event.inputs.targets || 'imgbb' }}
+          TARGETS: ${{ github.event.inputs.targets || 'bundle' }}
           REQUIRE_MODE: ${{ github.event.inputs.require_mode || 'all' }}
         run: |
           set +e

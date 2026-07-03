@@ -1,0 +1,9 @@
+*
+!.gitignore
+!latest.json
+!latest.md
+!cloudflare-egress-latest.md
+!finalists-latest.md
+!integration-smoke-latest.md
+!ninjabox-cloudflare-latest.md
+!ninjabox-direct-latest.md

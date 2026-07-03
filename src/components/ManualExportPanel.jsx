@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import { cleanImageForUpload } from '../utils/imageCleaner';
-import { applyLinksByOrder, parseNinjaBoxLinks } from '../utils/linkParser';
 import {
   buildCsv,
   buildDistanceReportCsv,
@@ -24,8 +22,6 @@ const downloadBlob = (filename, blob) => {
 };
 
 export default function ManualExportPanel({ photos, setPhotos, isReadingGps, violations, setGlobalMessage }) {
-  const [manualText, setManualText] = useState('');
-  const [parsedLinks, setParsedLinks] = useState([]);
   const exportablePoints = getExportablePoints(photos);
 
   const handleDownloadCleaned = async () => {
@@ -67,20 +63,7 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingGps, vio
       return update ? { ...photo, ...update } : photo;
     }));
 
-    setGlobalMessage(`Очищенные фото скачаны: ${okCount} из ${photos.length}. Загрузи их на NinjaBox в том же порядке.`);
-  };
-
-  const handleParseLinks = () => {
-    const links = parseNinjaBoxLinks(manualText);
-    setParsedLinks(links);
-
-    if (links.length === 0) {
-      setGlobalMessage('Ссылки NinjaBox не найдены. Скопируй страницу результата или список ссылок и вставь сюда.');
-      return;
-    }
-
-    setPhotos((currentPhotos) => applyLinksByOrder(currentPhotos, links));
-    setGlobalMessage(`Найдено ссылок NinjaBox: ${links.length}. Они сопоставлены с фото по порядку.`);
+    setGlobalMessage(`Очищенные фото скачаны: ${okCount} из ${photos.length}.`);
   };
 
   const handleExport = (type) => {
@@ -113,34 +96,18 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingGps, vio
 
   return (
     <section className="panel manual-panel">
-      <h2>Ручная загрузка и экспорт</h2>
+      <h2>Скачивание и экспорт</h2>
       <p className="muted">
-        Рабочий ручной режим: приложение очищает фото и называет их gps-001.jpg, gps-002.jpg и так далее. Потом ты вручную загружаешь эти файлы на NinjaBox, копируешь страницу результата или список ссылок и вставляешь сюда.
+        Можно скачать очищенные копии отдельно или экспортировать точки и нарушения.
       </p>
 
       <div className="manual-actions">
         <button type="button" onClick={handleDownloadCleaned} disabled={photos.length === 0 || isReadingGps}>
           Скачать очищенные фото
         </button>
-        <a className="button-link" href="https://ninjabox.org/" target="_blank" rel="noreferrer">
-          Открыть NinjaBox
-        </a>
       </div>
 
-      <label className="field">
-        HTML / текст / ссылки со страницы результата NinjaBox
-        <textarea
-          value={manualText}
-          onChange={(event) => setManualText(event.target.value)}
-          placeholder="Вставь сюда содержимое страницы результата NinjaBox или список ссылок"
-          rows={7}
-        />
-      </label>
-
       <div className="manual-actions">
-        <button type="button" onClick={handleParseLinks} disabled={!manualText.trim()}>
-          Распарсить ссылки NinjaBox
-        </button>
         <button type="button" onClick={() => handleExport('gpx')} disabled={exportablePoints.length === 0}>
           Скачать GPX
         </button>
@@ -155,16 +122,6 @@ export default function ManualExportPanel({ photos, setPhotos, isReadingGps, vio
         </button>
       </div>
 
-      {parsedLinks.length > 0 && (
-        <div className="parsed-links">
-          <h3>Найденные ссылки</h3>
-          <ol>
-            {parsedLinks.map((link) => (
-              <li key={link}><a href={link} target="_blank" rel="noreferrer">{link}</a></li>
-            ))}
-          </ol>
-        </div>
-      )}
     </section>
   );
 }

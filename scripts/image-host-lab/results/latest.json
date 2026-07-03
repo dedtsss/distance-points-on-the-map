@@ -1,0 +1,460 @@
+{
+  "generatedAt": "2026-07-02T01:36:16.000Z",
+  "commit": "60234b0",
+  "nodeVersion": "v22.22.3",
+  "fixturePolicy": "Synthetic PNG files only; no user photos or personal data.",
+  "fixtures": [
+    {
+      "kind": "small",
+      "width": 1024,
+      "height": 768,
+      "fileName": "gps-checker-test-20260702013535250-small.png",
+      "mimeType": "image/png",
+      "sizeBytes": 4473,
+      "sha256": "d2412d1bd433c68a6f390f6b10e0f907bbd9572248f4500beea45c223ff8c86d"
+    },
+    {
+      "kind": "medium",
+      "width": 2500,
+      "height": 1800,
+      "fileName": "gps-checker-test-20260702013535250-medium.png",
+      "mimeType": "image/png",
+      "sizeBytes": 2483423,
+      "sha256": "73fe6d433b6a863f3536e1165f089713e0972396d63396c8af617ac321d69db5"
+    }
+  ],
+  "metadataCheck": "NOT_TESTED (synthetic fixtures contain no EXIF/GPS metadata)",
+  "providers": [
+    {
+      "name": "0x0.st",
+      "accountOrKeyRequired": false,
+      "retention": "Requested 180 days; host documents 30 days to 1 year depending on file size.",
+      "notes": [
+        "Public single-operator service; not suitable for confidential or mass automated uploads."
+      ],
+      "provider": "0x0.st",
+      "uploads": [
+        {
+          "provider": "0x0.st",
+          "ok": false,
+          "uploadStatus": 503,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 116,
+          "contentType": "image/png",
+          "sizeBytes": 4473,
+          "warnings": [
+            "The service explicitly reports that uploads are currently disabled with no ETA."
+          ],
+          "error": "Upload did not return a usable public URL (HTTP 503).",
+          "uploadResponseContentType": "application/octet-stream",
+          "responseSnippet": "uploads disabled because it’s been almost nothing but AI botnet spam for the past few months. will be back with a few changes at some point. no ETA.",
+          "verification": null
+        },
+        {
+          "provider": "0x0.st",
+          "ok": false,
+          "uploadStatus": 503,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 13,
+          "contentType": "image/png",
+          "sizeBytes": 2483423,
+          "warnings": [
+            "The service explicitly reports that uploads are currently disabled with no ETA."
+          ],
+          "error": "Upload did not return a usable public URL (HTTP 503).",
+          "uploadResponseContentType": "application/octet-stream",
+          "responseSnippet": "uploads disabled because it’s been almost nothing but AI botnet spam for the past few months. will be back with a few changes at some point. no ETA.",
+          "verification": null
+        }
+      ],
+      "result": "FAIL",
+      "suitable": "no"
+    },
+    {
+      "name": "x0.at",
+      "accountOrKeyRequired": false,
+      "retention": "3 to 100 days depending on file size; small image files should be near the upper bound.",
+      "notes": [
+        "Retention is size-dependent and cannot be requested explicitly."
+      ],
+      "provider": "x0.at",
+      "uploads": [
+        {
+          "provider": "x0.at",
+          "ok": true,
+          "uploadStatus": 200,
+          "url": "https://x0.at/C51JT9zaB54s.png",
+          "directImageUrl": "https://x0.at/C51JT9zaB54s.png",
+          "responseTimeMs": 472,
+          "contentType": "image/png",
+          "sizeBytes": 4473,
+          "warnings": [
+            "Upload response declares text/html even though its body is a plain-text URL."
+          ],
+          "error": null,
+          "uploadResponseContentType": "text/html; charset=UTF-8",
+          "responseSnippet": "https://x0.at/C51JT9zaB54s.png\n",
+          "verification": {
+            "url": "https://x0.at/C51JT9zaB54s.png",
+            "head": {
+              "status": 200,
+              "contentType": "image/png",
+              "contentLength": 4473,
+              "responseTimeMs": 46,
+              "finalUrl": "https://x0.at/C51JT9zaB54s.png"
+            },
+            "firstGet": {
+              "status": 200,
+              "contentType": "image/png",
+              "contentLength": 4473,
+              "receivedBytes": 4473,
+              "sha256": "d2412d1bd433c68a6f390f6b10e0f907bbd9572248f4500beea45c223ff8c86d",
+              "responseTimeMs": 8,
+              "finalUrl": "https://x0.at/C51JT9zaB54s.png",
+              "html": false,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "secondGet": {
+              "status": 200,
+              "contentType": "image/png",
+              "contentLength": 4473,
+              "receivedBytes": 4473,
+              "sha256": "d2412d1bd433c68a6f390f6b10e0f907bbd9572248f4500beea45c223ff8c86d",
+              "responseTimeMs": 27,
+              "finalUrl": "https://x0.at/C51JT9zaB54s.png",
+              "html": false,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "opens": true,
+            "repeatGet": true,
+            "directImage": true,
+            "exactSize": true,
+            "exactContent": true,
+            "warnings": [],
+            "error": null
+          }
+        },
+        {
+          "provider": "x0.at",
+          "ok": true,
+          "uploadStatus": 200,
+          "url": "https://x0.at/G16alBTXpBNT.png",
+          "directImageUrl": "https://x0.at/G16alBTXpBNT.png",
+          "responseTimeMs": 363,
+          "contentType": "image/png",
+          "sizeBytes": 2483423,
+          "warnings": [
+            "Upload response declares text/html even though its body is a plain-text URL."
+          ],
+          "error": null,
+          "uploadResponseContentType": "text/html; charset=UTF-8",
+          "responseSnippet": "https://x0.at/G16alBTXpBNT.png\n",
+          "verification": {
+            "url": "https://x0.at/G16alBTXpBNT.png",
+            "head": {
+              "status": 200,
+              "contentType": "image/png",
+              "contentLength": 2483423,
+              "responseTimeMs": 11,
+              "finalUrl": "https://x0.at/G16alBTXpBNT.png"
+            },
+            "firstGet": {
+              "status": 200,
+              "contentType": "image/png",
+              "contentLength": 2483423,
+              "receivedBytes": 2483423,
+              "sha256": "73fe6d433b6a863f3536e1165f089713e0972396d63396c8af617ac321d69db5",
+              "responseTimeMs": 105,
+              "finalUrl": "https://x0.at/G16alBTXpBNT.png",
+              "html": false,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "secondGet": {
+              "status": 200,
+              "contentType": "image/png",
+              "contentLength": 2483423,
+              "receivedBytes": 2483423,
+              "sha256": "73fe6d433b6a863f3536e1165f089713e0972396d63396c8af617ac321d69db5",
+              "responseTimeMs": 144,
+              "finalUrl": "https://x0.at/G16alBTXpBNT.png",
+              "html": false,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "opens": true,
+            "repeatGet": true,
+            "directImage": true,
+            "exactSize": true,
+            "exactContent": true,
+            "warnings": [],
+            "error": null
+          }
+        }
+      ],
+      "result": "PASS",
+      "suitable": "yes"
+    },
+    {
+      "name": "Pixeldrain",
+      "accountOrKeyRequired": true,
+      "retention": "60 days after the last qualifying download on the free sharing service.",
+      "notes": [
+        "Current API documentation says uploads require an account and API key.",
+        "Direct downloads can be rate-limited; CAPTCHA is served on the viewer page and hotlinking is restricted."
+      ],
+      "provider": "Pixeldrain",
+      "uploads": [
+        {
+          "provider": "Pixeldrain",
+          "ok": false,
+          "uploadStatus": 401,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 19,
+          "contentType": "image/png",
+          "sizeBytes": 4473,
+          "warnings": [
+            "Anonymous PUT was attempted without an account or API key.",
+            "Pixeldrain explicitly rejected the upload because authentication is required."
+          ],
+          "error": "This request requires API authentication. Please provide an API key in the password field of HTTP Basic Access Authentication",
+          "uploadResponseContentType": "application/json",
+          "responseSnippet": "{\"success\":false,\"value\":\"authentication_required\",\"message\":\"This request requires API authentication. Please provide an API key in the password field of HTTP Basic Access Authentication\"}\n",
+          "verification": null
+        },
+        {
+          "provider": "Pixeldrain",
+          "ok": false,
+          "uploadStatus": 401,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 22,
+          "contentType": "image/png",
+          "sizeBytes": 2483423,
+          "warnings": [
+            "Anonymous PUT was attempted without an account or API key.",
+            "Pixeldrain explicitly rejected the upload because authentication is required."
+          ],
+          "error": "This request requires API authentication. Please provide an API key in the password field of HTTP Basic Access Authentication",
+          "uploadResponseContentType": "application/json",
+          "responseSnippet": "{\"success\":false,\"value\":\"authentication_required\",\"message\":\"This request requires API authentication. Please provide an API key in the password field of HTTP Basic Access Authentication\"}\n",
+          "verification": null
+        }
+      ],
+      "result": "FAIL",
+      "suitable": "no"
+    },
+    {
+      "name": "Gofile",
+      "accountOrKeyRequired": false,
+      "retention": "Guest/free content defaults to 10 days and can last longer while actively downloaded.",
+      "forcePartial": true,
+      "notes": [
+        "Guest upload is supported without an account or token.",
+        "Official direct links for embedding/integrations are a Premium feature; guest upload normally returns a download page."
+      ],
+      "provider": "Gofile",
+      "uploads": [
+        {
+          "provider": "Gofile",
+          "ok": true,
+          "uploadStatus": 200,
+          "url": "https://gofile.io/d/uHKuHs",
+          "directImageUrl": null,
+          "responseTimeMs": 20953,
+          "contentType": "image/png",
+          "sizeBytes": 4473,
+          "warnings": [
+            "Upload returned a public download page, not a direct image URL."
+          ],
+          "error": null,
+          "uploadResponseContentType": "application/json",
+          "responseSnippet": "{\"status\":\"ok\",\"data\":{\"createTime\":1782956157,\"downloadPage\":\"https://gofile.io/d/uHKuHs\",\"id\":\"d821d3a1-45d4-489c-8473-543c60d6df5b\",\"md5\":\"623fefe6fbecb5b669b38b3b727fd8a1\",\"mimetype\":\"image/png\",\"modTime\":1782956157,\"name\":\"gps-checker-test-20260702013535250-small.png\",\"parentFolder\":\"b6630f23-5841-457c-9ac6-34cd53f392cd\",\"parentFolderCode\":\"uHKuHs\",\"servers\":[\"cold-eu-par-1\"],\"size\":4473,\"type\":\"file\"}}",
+          "folderId": "b6630f23-5841-457c-9ac6-34cd53f392cd",
+          "fileId": "d821d3a1-45d4-489c-8473-543c60d6df5b",
+          "guestManagementTokenReturned": true,
+          "verification": null,
+          "shareUrlVerification": {
+            "url": "https://gofile.io/d/uHKuHs",
+            "firstGet": {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "responseTimeMs": 63,
+              "finalUrl": "https://gofile.io/d/uHKuHs",
+              "html": true,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "secondGet": {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "responseTimeMs": 14,
+              "finalUrl": "https://gofile.io/d/uHKuHs",
+              "html": true,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "opens": true,
+            "repeatGet": true,
+            "error": null
+          }
+        },
+        {
+          "provider": "Gofile",
+          "ok": true,
+          "uploadStatus": 200,
+          "url": "https://gofile.io/d/aL2tag",
+          "directImageUrl": null,
+          "responseTimeMs": 17563,
+          "contentType": "image/png",
+          "sizeBytes": 2483423,
+          "warnings": [
+            "Upload returned a public download page, not a direct image URL."
+          ],
+          "error": null,
+          "uploadResponseContentType": "application/json",
+          "responseSnippet": "{\"status\":\"ok\",\"data\":{\"createTime\":1782956175,\"downloadPage\":\"https://gofile.io/d/aL2tag\",\"id\":\"ba6c0dc5-0070-426e-b2b2-7b9d85408961\",\"md5\":\"c51719a0c0b6ef2021a9c2dd8288889c\",\"mimetype\":\"image/png\",\"modTime\":1782956175,\"name\":\"gps-checker-test-20260702013535250-medium.png\",\"parentFolder\":\"c9b4655a-ff76-4ee9-b334-0c1afccc0514\",\"parentFolderCode\":\"aL2tag\",\"servers\":[\"store-eu-par-8\"],\"size\":2483423,\"type\":\"file\"}}",
+          "folderId": "c9b4655a-ff76-4ee9-b334-0c1afccc0514",
+          "fileId": "ba6c0dc5-0070-426e-b2b2-7b9d85408961",
+          "guestManagementTokenReturned": true,
+          "verification": null,
+          "shareUrlVerification": {
+            "url": "https://gofile.io/d/aL2tag",
+            "firstGet": {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "responseTimeMs": 48,
+              "finalUrl": "https://gofile.io/d/aL2tag",
+              "html": true,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "secondGet": {
+              "status": 200,
+              "contentType": "text/html; charset=UTF-8",
+              "responseTimeMs": 13,
+              "finalUrl": "https://gofile.io/d/aL2tag",
+              "html": true,
+              "captcha": false,
+              "cloudflareChallenge": false
+            },
+            "opens": true,
+            "repeatGet": true,
+            "error": null
+          }
+        }
+      ],
+      "result": "PARTIAL",
+      "suitable": "partial"
+    },
+    {
+      "name": "Bashify",
+      "accountOrKeyRequired": false,
+      "retention": "The form offers 6 months or 1 year; this lab requests 6 months.",
+      "notes": [
+        "Uploads are advertised as anonymous, but the web upload flow requires a reCAPTCHA v3 token.",
+        "The FAQ states that direct image access is referrer-dependent."
+      ],
+      "provider": "Bashify",
+      "uploads": [
+        {
+          "provider": "Bashify",
+          "ok": false,
+          "uploadStatus": 200,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 132,
+          "contentType": "image/png",
+          "sizeBytes": 4473,
+          "warnings": [
+            "No CAPTCHA token was supplied; the lab does not bypass anti-bot protection.",
+            "Bashify rejected the automated upload because CAPTCHA validation failed."
+          ],
+          "error": "Automated upload requires a valid CAPTCHA token.",
+          "uploadResponseContentType": "text/html; charset=utf-8",
+          "responseSnippet": "ERROR_bot",
+          "verification": null
+        },
+        {
+          "provider": "Bashify",
+          "ok": false,
+          "uploadStatus": 200,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 169,
+          "contentType": "image/png",
+          "sizeBytes": 2483423,
+          "warnings": [
+            "No CAPTCHA token was supplied; the lab does not bypass anti-bot protection.",
+            "Bashify rejected the automated upload because CAPTCHA validation failed."
+          ],
+          "error": "Automated upload requires a valid CAPTCHA token.",
+          "uploadResponseContentType": "text/html; charset=utf-8",
+          "responseSnippet": "ERROR_bot",
+          "verification": null
+        }
+      ],
+      "result": "FAIL",
+      "suitable": "no"
+    },
+    {
+      "name": "vgy.me",
+      "accountOrKeyRequired": true,
+      "retention": "No fixed retention period is stated in the public API or terms.",
+      "notes": [
+        "The public API page documents anonymous multipart uploads, but the live endpoint currently requires authorization.",
+        "Mass uploads without prior approval are prohibited; this lab sends only two files."
+      ],
+      "provider": "vgy.me",
+      "uploads": [
+        {
+          "provider": "vgy.me",
+          "ok": false,
+          "uploadStatus": 422,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 81,
+          "contentType": "image/png",
+          "sizeBytes": 4473,
+          "warnings": [
+            "The live endpoint rejected anonymous upload and requires an account user key."
+          ],
+          "error": "{\"Unauthorized\":\"Anonymous uploads are not allowed.\"}",
+          "uploadResponseContentType": "application/json",
+          "responseSnippet": "{\"error\":true,\"messages\":{\"Unauthorized\":\"Anonymous uploads are not allowed.\"}}",
+          "verification": null
+        },
+        {
+          "provider": "vgy.me",
+          "ok": false,
+          "uploadStatus": 422,
+          "url": null,
+          "directImageUrl": null,
+          "responseTimeMs": 100,
+          "contentType": "image/png",
+          "sizeBytes": 2483423,
+          "warnings": [
+            "The live endpoint rejected anonymous upload and requires an account user key."
+          ],
+          "error": "{\"Unauthorized\":\"Anonymous uploads are not allowed.\"}",
+          "uploadResponseContentType": "application/json",
+          "responseSnippet": "{\"error\":true,\"messages\":{\"Unauthorized\":\"Anonymous uploads are not allowed.\"}}",
+          "verification": null
+        }
+      ],
+      "result": "FAIL",
+      "suitable": "no"
+    }
+  ],
+  "recommendation": {
+    "best": "x0.at",
+    "second": "Gofile",
+    "avoid": "0x0.st, Pixeldrain, Bashify, vgy.me",
+    "next": "Before production integration, repeat from the deployed Cloudflare Worker egress and review x0.at usage/privacy terms."
+  }
+}

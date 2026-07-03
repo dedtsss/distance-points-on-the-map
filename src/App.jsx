@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import HostingSelector from './components/HostingSelector';
 import LinksBlock from './components/LinksBlock';
 import ManualExportPanel from './components/ManualExportPanel';
 import PhotoCard from './components/PhotoCard';
@@ -15,7 +14,7 @@ import {
   markProblemPoints,
 } from './utils/geoDistance';
 import { readGpsFromImageOcr } from './utils/ocrGpsReader';
-import { HOSTING_LABELS, uploadPhotosSequentially } from './utils/uploadManager';
+import { uploadPhotosWithRedundancy } from './utils/uploadManager';
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const DEFAULT_PROXY_URL = 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
@@ -121,8 +120,10 @@ const createPhotoModel = (file, index) => ({
   uploadFilename: '',
   uploadStatus: 'не загружено',
   uploadError: '',
-  uploadedUrl: '',
-  hostingUsed: '',
+  uploadWarnings: [],
+  uploadLinks: [],
+  uploadProviderResults: null,
+  ninjaboxGalleryUrl: '',
   expanded: false,
 });
 
@@ -130,8 +131,6 @@ function App() {
   const [photos, setPhotos] = useState([]);
   const [threshold, setThreshold] = useState(25);
   const [highlightProblems, setHighlightProblems] = useState(false);
-  const [hosting, setHosting] = useState('imgbbproxy');
-  const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL);
   const [globalMessage, setGlobalMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const debugMode = useMemo(() => new URLSearchParams(window.location.search).get('debug') === '1', []);
@@ -164,19 +163,6 @@ function App() {
     setPhotos((currentPhotos) => currentPhotos.map((photo) => (
       photo.id === id ? { ...photo, ...patch } : photo
     )));
-  };
-
-  const resetUploadsForHostingChange = (nextHosting) => {
-    setHosting(nextHosting);
-    setGlobalMessage('Хостинг изменён. Ссылки очищены, фотографии нужно загрузить заново.');
-    setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
-      ...photo,
-      imageUrl: '',
-      uploadedUrl: '',
-      uploadStatus: 'не загружено',
-      uploadError: '',
-      hostingUsed: '',
-    })));
   };
 
   const processPhotoGps = async (photo) => {
@@ -308,44 +294,34 @@ function App() {
       return;
     }
 
-    if ((hosting === 'imgbbproxy' || hosting === 'allwebsproxy' || hosting === 'umbproxy' || hosting === 'ninjaproxy') && !proxyUrl.trim()) {
-      setGlobalMessage('Укажите URL прокси-загрузчика.');
-      return;
-    }
-
     setIsUploading(true);
-    setGlobalMessage('Загрузка началась. Файлы отправляются последовательно на выбранный хостинг.');
+    setGlobalMessage('Очищенные файлы загружаются в Freeimage и Ninjabox. x0.at включится только при ошибке основного сервиса.');
     setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
       ...photo,
       imageUrl: '',
-      uploadedUrl: '',
       uploadStatus: 'в очереди',
       uploadError: '',
-      hostingUsed: HOSTING_LABELS[hosting],
+      uploadWarnings: [],
+      uploadLinks: [],
     })));
 
     try {
-      const uploadResult = await uploadPhotosSequentially({
+      const uploadResult = await uploadPhotosWithRedundancy({
         photos,
-        hosting,
-        proxyUrl,
-        timeoutMs: 30000,
+        proxyUrl: DEFAULT_PROXY_URL,
+        timeoutMs: 180000,
         onPhotoUpdate: updatePhoto,
       });
-      setPhotos((currentPhotos) => currentPhotos.map((photo) => ({
-        ...photo,
-        imageUrl: photo.uploadedUrl,
-      })));
       setGlobalMessage(
-        uploadResult.failedCount > 0
-          ? `Загрузка завершена с ошибками. Успешно: ${uploadResult.uploadedCount} из ${photos.length}, ошибок: ${uploadResult.failedCount}. Подробности в карточках фото.`
-          : `Загрузка завершена. Успешно загружено: ${uploadResult.uploadedCount} из ${photos.length}.`,
+        uploadResult.failedCount > 0 || uploadResult.partialCount > 0
+          ? `Загрузка завершена частично. Две ссылки: ${uploadResult.completeCount}; одна ссылка: ${uploadResult.partialCount}; без ссылок: ${uploadResult.failedCount}.`
+          : `Загрузка завершена. По две ссылки получено для ${uploadResult.completeCount} фото.`,
       );
     } catch (error) {
       setGlobalMessage(
         error instanceof Error
-          ? `${error.message} Выберите другой хостинг или повторите попытку.`
-          : 'Ошибка загрузки. Выберите другой хостинг или повторите попытку.',
+          ? `${error.message} Повторите попытку.`
+          : 'Ошибка загрузки. Повторите попытку.',
       );
     } finally {
       setIsUploading(false);
@@ -418,13 +394,6 @@ function App() {
         </button>
       </section>
 
-      <HostingSelector
-        hosting={hosting}
-        proxyUrl={proxyUrl}
-        onHostingChange={resetUploadsForHostingChange}
-        onProxyUrlChange={setProxyUrl}
-      />
-
       {globalMessage && <div className="status-banner">{globalMessage}</div>}
 
       <ViolationsBlock
@@ -445,14 +414,14 @@ function App() {
       <section className="panel upload-panel">
         <h2>Автоматическая загрузка очищенных копий</h2>
         <p className="muted">
-          Экспериментальный режим. Для стабильной работы сейчас лучше использовать ручную загрузку выше.
+          Каждое фото получает ссылки Freeimage и Ninjabox. Если один из них не отвечает, используется резервный x0.at.
         </p>
         <button type="button" onClick={handleUpload} disabled={isUploading || isReadingGps || photos.length === 0}>
-          {isUploading ? 'Загрузка...' : `Загрузить на ${HOSTING_LABELS[hosting]}`}
+          {isUploading ? 'Загрузка...' : 'Загрузить очищенные фото'}
         </button>
       </section>
 
-      {photos.length > 0 && <LinksBlock photos={photos} hostingLabel={HOSTING_LABELS[hosting]} />}
+      {photos.length > 0 && <LinksBlock photos={photos} />}
 
       <section className="photo-list" aria-live="polite">
         {markedPhotos.map((photo) => (

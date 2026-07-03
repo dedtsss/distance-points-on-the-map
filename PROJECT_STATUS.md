@@ -1,259 +1,107 @@
 # GPS Checker Map Photo — Project Status
 
-Last updated: 2026-06-05
+Last updated: 2026-07-03
 
-## Repository
+## Current state
 
-- GitHub: https://github.com/dedtsss/distance-points-on-the-map
-- Main project folder: `GPS-Photo-Distance-Checker`
-- Frontend: React + Vite
-- Frontend deploy: GitHub Pages
-- Upload proxy: Cloudflare Worker
-- Worker name: `spring-mouse-8d81`
-- Worker URL: https://spring-mouse-8d81.dvabobra2014.workers.dev/
-- Cloudflare account id: `977cf45e04d4066ca0b8288de1a337ed`
+- React/Vite frontend is deployed through GitHub Pages.
+- Upload proxy is the Cloudflare Worker `spring-mouse-8d81`.
+- OCR-first GPS extraction, EXIF fallback, distance validation, and GPX/KML/CSV export are implemented.
+- Originals are never uploaded. Every file is cleaned and checked for remaining GPS/EXIF metadata first.
+- The old hosting selector, manual Ninjabox link parser, ImgBB, Allwebs, Catbox, UMBPhotos, and their API/secret plumbing have been removed.
 
-## Current State
+## Final upload flow
 
-- OCR-first GPS extraction is implemented.
-- EXIF is kept as fallback when OCR does not find valid coordinates.
-- Photo cards store OCR status, raw OCR text, GPS source, coordinates, warnings, and manual edits.
-- Distance calculation is implemented with Haversine.
-- 25 meter violations are detected across all valid point pairs.
-- GPX/KML/CSV export uses the normalized point model and valid final coordinates.
-- Upload hosting was switched from Allwebs to ImgBB through the Cloudflare Worker, but ImgBB is now blocked.
-- Current upload blocker: the ImgBB account/API key is blocked; a new photo hosting provider must be selected.
-- The frontend does not use or store the ImgBB API key.
-- Upload image cleanup now uses binary JPEG metadata stripping first and Canvas only as fallback.
-- Cleaned upload files are verified with `exifr` before upload; files with remaining GPS metadata are blocked.
-- Missing coordinates are represented as `latitude: null`, `longitude: null`, `coordinates: null`, `gpsSource: "missing"`, `gpsStatus: "missing"`.
-- Missing/invalid/placeholder `0,0` points do not participate in distance calculations or main exports.
-- OCR parser exposes candidates, chosen candidate, warnings, confidence, and debug crop/preprocess previews when `?debug=1` is enabled.
-- Upload records per-photo failures instead of stopping silently at the first failed photo.
-
-## Upload Flow
-
-Current status: blocked until a new photo hosting provider is chosen and implemented.
-
-Frontend uploads cleaned images to the Worker:
+The frontend cleans all selected photos and sends one multipart batch to the Worker:
 
 ```text
 POST multipart/form-data
-target=imgbb
-file=<image>
+target=bundle
+photoId=<frontend photo id>   # repeated
+files=<cleaned image>         # repeated in the same order
 ```
 
-The Worker reads `IMGBB_API_KEY` from Cloudflare Worker secrets and sends the image to:
+Worker provider order:
 
-```text
-https://api.imgbb.com/1/upload
-```
+1. `freeimage` — primary link for every photo.
+2. `ninjabox` — secondary individual `/i/<id>` link for every photo; files are uploaded as one gallery batch.
+3. `x0` — called only for photos where Freeimage or Ninjabox failed or timed out.
 
-Successful Worker response is normalized:
+Normal result: two links per photo, Freeimage + Ninjabox. If one default provider fails, x0 replaces it. If both default providers fail, x0 can provide only one link and both failures remain visible in the response.
+
+Normalized response shape:
 
 ```json
 {
   "ok": true,
-  "target": "imgbb",
-  "url": "...",
-  "viewerUrl": "...",
-  "displayUrl": "...",
-  "deleteUrl": "...",
-  "raw": {}
+  "target": "bundle",
+  "ninjaboxGalleryUrl": "https://ninjabox.org/...",
+  "items": [
+    {
+      "photoId": "...",
+      "ok": true,
+      "links": [
+        { "provider": "freeimage", "role": "primary", "url": "..." },
+        { "provider": "ninjabox", "role": "secondary", "url": "..." }
+      ],
+      "providers": {
+        "freeimage": { "ok": true },
+        "ninjabox": { "ok": true },
+        "x0": null
+      }
+    }
+  ]
 }
 ```
 
-This ImgBB flow should now be treated as deprecated/blocked, not as the accepted final upload path.
+## Freeimage key handling
 
-## Current Upload Blocker
+No personal key or secret is stored. The Worker reads the public key and endpoint from `https://freeimage.host/api`, caches them in the warm isolate for one hour, and refreshes/retries once when the API reports a key error.
 
-As of 2026-06-05, real-photo validation reached upload but stopped at the hosting layer:
+## Verification
 
-```text
-node scripts/test-worker-upload.mjs: failed
-Worker target: imgbb
-HTTP status: 400
-Worker/ImgBB error: Invalid API v1 key.
-User-confirmed cause: ImgBB account and API key are blocked.
-```
-
-What still works:
-
-- OCR and missing-coordinate handling.
-- Distance filtering and avoiding false `0,0` violations.
-- Binary JPEG metadata cleanup.
-- Metadata verification before upload.
-
-What is not resolved:
-
-- Stable public photo hosting provider.
-- Worker upload target for the next provider.
-- Frontend default upload provider after replacing ImgBB.
-
-## Required Secrets
-
-GitHub repository secrets:
-
-- `CLOUDFLARE_API_TOKEN` — used by GitHub Actions to deploy the Cloudflare Worker and sync Worker secrets.
-- `IMGBB_API_KEY` — used only by the sync workflow to install the Cloudflare Worker secret.
-
-Cloudflare Worker secrets:
-
-- `IMGBB_API_KEY` — required by the Worker for ImgBB uploads.
-
-Do not put real API keys into source code, frontend env files, README, issues, or workflow logs.
-
-Note: `IMGBB_API_KEY` is no longer sufficient for production because the ImgBB account/key is blocked. Keep the no-secrets-in-frontend rule for whichever provider replaces ImgBB.
-
-## GitHub Actions Chain
-
-The workflow chain is now automatic:
-
-1. `Deploy Cloudflare Worker`
-2. `Sync Worker Secrets`
-3. `Test Worker Upload`
-
-The chain is triggered by a push to `main` when Worker/config/workflow files change.
-
-Latest verified commit:
+Verified locally:
 
 ```text
-58fecce Chain worker secret sync after deploy
-```
-
-Verified workflow results:
-
-- Deploy Cloudflare Worker: success
-- Sync Worker Secrets: success
-- Test Worker Upload: success
-- Deploy to GitHub Pages: success
-
-Previously verified local smoke-test:
-
-```text
-node scripts/test-worker-upload.mjs
-```
-
-Result:
-
-```text
-target=imgbb
-HTTP 200
-ok=true
-public ImgBB URL returned
-```
-
-Current smoke-test status is blocked by ImgBB:
-
-```text
-node scripts/test-worker-upload.mjs
-target=imgbb
-HTTP 400
-error="Invalid API v1 key."
-```
-
-## Important Files
-
-- `workers/host-proxy/worker.js` — Worker routing and upload target dispatch.
-- `workers/host-proxy/imgbb.js` — ImgBB upload integration.
-- `src/utils/uploadManager.js` — frontend upload orchestration through Worker proxy.
-- `src/utils/imageCleaner.js` — upload-safe image cleanup; binary JPEG segment stripper plus Canvas fallback and metadata verification.
-- `src/components/HostingSelector.jsx` — upload provider UI, ImgBB proxy is default.
-- `src/utils/ocrGpsReader.js` — OCR crop/preprocess/parser pipeline.
-- `src/utils/geoDistance.js` — pure distance and violation logic.
-- `src/utils/geoExport.js` — GPX/KML/CSV export.
-- `scripts/test-worker-upload.mjs` — Worker upload smoke-test.
-- `scripts/test-image-cleaner.mjs` — JPEG metadata stripper unit smoke-test.
-- `.github/workflows/deploy-worker.yml` — deploys Worker.
-- `.github/workflows/sync-worker-secrets.yml` — syncs `IMGBB_API_KEY` to Worker secret.
-- `.github/workflows/test-worker-upload.yml` — verifies Worker upload.
-
-## Useful Commands
-
-```bash
 npm test
 npm run build
 npx wrangler deploy --dry-run --config wrangler.toml
-node scripts/test-worker-upload.mjs
-npm run test:image-cleaner
 ```
 
-## Notes For Future Codex/ChatGPT
+Verified through a temporary real Cloudflare deployment:
 
-- Business logic should not be changed when only checking secrets or deploy configuration.
-- Upload must stay behind the Cloudflare Worker; do not call ImgBB directly from the frontend.
-- Allwebs is legacy and should not be the default provider.
-- ImgBB is currently blocked and should not be treated as the final production provider.
-- OCR and distance logic are intentionally separate modules.
-- If upload fails with `Invalid API v1 key.`, do not keep debugging OCR/metadata cleanup; choose and implement a replacement photo hosting provider.
-- If a future assistant has GitHub connector access, it can inspect this file plus recent commits instead of requiring chat history.
+- two-file `bundle`: HTTP 200;
+- two Freeimage links: returned;
+- one Ninjabox gallery and two individual links: returned;
+- x0 was not called during the successful bundle;
+- separate x0 target: HTTP 200 and a public URL returned.
 
-## 2026-06-05 Metadata Cleanup Notes
+Temporary deployment and credentials were deleted after the test.
 
-Upload metadata cleanup was changed from Canvas-only re-encoding to a safer two-step flow:
+## Required GitHub secret
 
-- JPEG/JPG files with normal orientation use binary segment stripping without recompression.
-- Removed JPEG metadata segments: APP1 EXIF/XMP, APP2 ICC profile, APP13 IPTC/Photoshop, COM comments.
-- JPEG files with EXIF Orientation other than `1` use Canvas fallback to preserve visual rotation after metadata removal.
-- Non-JPEG files use Canvas fallback.
-- Every cleaned file is verified with `exifr`; the UI shows cleanup method, metadata removal status, and verification details.
-- Upload sends only `cleaned.file`; if cleanup fails or verification reports remaining GPS metadata, that photo is not uploaded.
-- Manual cleaned-file download uses the same cleaner and stores the same verification data in the photo card.
+- `CLOUDFLARE_API_TOKEN` — deploys the production Worker.
 
-Verified checks:
+No image-host API secret is required.
 
-```text
-npm test: passed
-npm run build: passed
-```
+`IMGBB_API_KEY` is no longer read by the application, Worker, or workflows. Do not delete it automatically: it can be removed manually from GitHub/Cloudflare only after the production Worker deployment and its `bundle` smoke-test complete successfully.
 
-Real-photo validation after metadata cleanup:
+## Important files
 
-- Saved 5-photo attachment batch was tested locally.
-- OCR result: 3 valid points, 2 missing-coordinate photos.
-- Missing photos did not participate in distance calculation.
-- No false visible `0,0` placeholder was produced.
-- Metadata cleanup result for all 5 files: `binary JPEG strip`.
-- Metadata verification for all 5 files: `GPS/EXIF not found`.
-- Upload result: `0/5` because ImgBB returned `Invalid API v1 key.`
+- `workers/host-proxy/worker.js` — bundle orchestration and fallback policy.
+- `workers/host-proxy/freeimage.js` — Freeimage public API adapter.
+- `workers/host-proxy/ninjabox.js` — Ninjabox form discovery, batch upload, and gallery parsing.
+- `workers/host-proxy/x0.js` — x0.at fallback adapter.
+- `src/utils/uploadManager.js` — cleaning and frontend result mapping.
+- `src/utils/uploadProxy.js` — one batch request to the Worker.
+- `src/components/LinksBlock.jsx` — two per-photo links and fallback label.
+- `scripts/test-worker-upload.mjs` — live Worker smoke test.
+- `scripts/test-upload-routing.mjs` — parsers and fallback composition tests.
+- `scripts/image-host-lab/DECISION.md` — provider decision and evidence.
 
-Current result: implementation is blocked at provider selection, not at OCR, distance, or metadata cleanup.
+## Remaining manual checks
 
-## 2026-06-03 Stabilization Notes
-
-Fixed real-photo MVP stability issues:
-
-- `0,0`, empty strings, `null/null`, and `gpsSource: "missing"` are no longer usable coordinates.
-- Distance calculations use only `hasUsableCoordinates()` / `getValidPointsForDistance()`.
-- `markProblemPoints()` marks missing/invalid photos as `missing_coordinates` without creating false violations.
-- GPX/KML/CSV export filters through the same usable-coordinate logic.
-- OCR parser rejects `0,0`, one-coordinate results, and low-confidence parser results.
-- OCR tries multiple bottom-right crop/preprocess variants before EXIF fallback.
-- OCR also supports a real-photo gray/light overlay case with short Karelia-like coordinate precision, such as `64,60272, 30,62`.
-- OCR index fallback avoids using unlabeled one/two-digit noise, all-zero OCR noise such as `000`, or altitude fragments as `indexFromOcr`.
-- UI shows `нет координат` and `не участвует в расчёте` for missing points.
-- Debug mode is available with `?debug=1`.
-
-Verified checks:
-
-```text
-npm test: passed
-npm run build: passed
-npx wrangler deploy --dry-run --config wrangler.toml: passed
-node scripts/test-worker-upload.mjs: passed, ImgBB target returned HTTP 200
-```
-
-Verified browser E2E with 5 real attached photos:
-
-- OCR recognized 5/5 photo coordinate blocks.
-- OCR indexes recognized: `5130`, `5285`, `5917`, `5291`, `5241`.
-- Distance stats: 5 valid points, 0 missing points, 0 violations at 25 m.
-- ImgBB upload through Worker succeeded for 5/5 cleaned images.
-
-Real-photo fixture folder:
-
-```text
-tests/fixtures/photos/
-```
-
-Use that folder for local private photo checks. Do not commit private production photos unless intentional.
+- Complete the production Worker -> smoke-test -> GitHub Pages release chain.
+- Test a real cleaned multi-photo batch from Android Chrome.
+- Confirm that Ninjabox keeps source order for the real-photo batch.
+- Confirm UI behavior when one provider is intentionally unavailable and x0 is used.

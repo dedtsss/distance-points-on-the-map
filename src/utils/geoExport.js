@@ -35,7 +35,7 @@ export function getExportablePoints(photos) {
   return photos
     .filter(hasUsableCoordinates)
     .map((photo, index) => {
-      const imageUrl = photo.imageUrl || photo.uploadedUrl || '';
+      const imageUrl = photo.imageUrl || '';
 
       return {
         id: photo.id,

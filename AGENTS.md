@@ -54,7 +54,7 @@ Main behavior:
 - Do not add a backend, account system, database, maps, or history unless the task explicitly requires it.
 - Do not hardcode ImgBB keys or any other secrets.
 - Be careful with browser canvas behavior: metadata stripping and EXIF orientation can differ by browser/device.
-- Keep Catbox/ImgBB upload behavior explicit and session-bound.
+- Keep uploads behind the Cloudflare Worker: Freeimage and Ninjabox are the defaults, x0.at is conditional fallback.
 - Do not weaken privacy behavior by sending original images or raw metadata to external services.
 
 ## Useful commands

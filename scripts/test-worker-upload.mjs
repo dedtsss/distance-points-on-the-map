@@ -1,77 +1,94 @@
+import { deflateSync } from 'node:zlib';
+
 const WORKER_URL = process.env.WORKER_URL || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
-const TARGETS = (process.env.TARGETS || 'imgbb')
-  .split(',')
-  .map((item) => item.trim())
-  .filter(Boolean);
-const REQUIRE_MODE = process.env.REQUIRE_MODE || 'all'; // all | any
+const TARGETS = (process.env.TARGETS || 'bundle').split(',').map((item) => item.trim()).filter(Boolean);
+const REQUIRE_MODE = process.env.REQUIRE_MODE || 'all';
 
-// Smoke test marker: trigger workflow after enabling push event.
-// 1x1 JPEG. Enough for testing multipart upload without committing real photos.
-const JPEG_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/ASP/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/ASP/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/Al//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/IV//2gAMAwEAAgADAAAAEP/EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8QH//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8QH//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAT8QH//Z';
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+  return value >>> 0;
+});
 
-const makeTestFile = () => {
-  const bytes = Uint8Array.from(Buffer.from(JPEG_BASE64, 'base64'));
-  return new File([bytes], `worker-smoke-${Date.now()}.jpg`, { type: 'image/jpeg' });
+const crc32 = (buffer) => {
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff];
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const pngChunk = (type, data) => {
+  const typeBytes = Buffer.from(type);
+  const length = Buffer.alloc(4);
+  const checksum = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  checksum.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])));
+  return Buffer.concat([length, typeBytes, data, checksum]);
+};
+
+const makeTestFile = (index) => {
+  const width = 1024;
+  const height = 768;
+  const raw = Buffer.alloc((width + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width + 1);
+    for (let x = 0; x < width; x += 1) raw[row + x + 1] = (x + y + index * 17) & 0xff;
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  const bytes = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(raw, { level: 9 })),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+  return new File([bytes], `worker-smoke-${Date.now()}-${index}.png`, { type: 'image/png' });
 };
 
 const isValidHttpUrl = (value) => {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
+  try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; }
 };
 
 async function testTarget(target) {
   const formData = new FormData();
   formData.append('target', target);
-  formData.append('file', makeTestFile());
+  if (target === 'bundle' || target === 'ninjabox') {
+    for (let index = 0; index < 2; index += 1) {
+      formData.append('photoId', `smoke-${index + 1}`);
+      formData.append('files', makeTestFile(index), `worker-smoke-${index + 1}.png`);
+    }
+  } else {
+    formData.append('file', makeTestFile(0));
+  }
 
-  const started = Date.now();
-  let response;
-  let text;
-
+  const startedAt = Date.now();
   try {
-    response = await fetch(WORKER_URL, {
-      method: 'POST',
-      body: formData,
-    });
-    text = await response.text();
-  } catch (error) {
+    const response = await fetch(WORKER_URL, { method: 'POST', body: formData });
+    const text = await response.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* included below */ }
+
+    const bundleOk = target === 'bundle'
+      && data?.items?.length === 2
+      && data.items.every((item) => item.links?.length === 2
+        && item.providers?.freeimage?.ok
+        && item.providers?.ninjabox?.ok
+        && item.providers?.x0 === null);
+    const singleUrl = data?.url || data?.items?.[0]?.url || null;
+    const ok = response.ok && (bundleOk || (data?.ok === true && (isValidHttpUrl(singleUrl) || target === 'ninjabox')));
+
     return {
       target,
-      ok: false,
-      networkError: error instanceof Error ? error.message : String(error),
-      durationMs: Date.now() - started,
+      ok,
+      httpStatus: response.status,
+      durationMs: Date.now() - startedAt,
+      url: target === 'bundle' ? data?.items?.[0]?.links?.[0]?.url || null : singleUrl,
+      response: data || text.slice(0, 4000),
     };
+  } catch (error) {
+    return { target, ok: false, networkError: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt };
   }
-
-  let data = null;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = null;
-  }
-
-  const uploadedUrl = data?.url || data?.displayUrl || null;
-  const ok = Boolean(
-    response.ok
-    && data?.ok === true
-    && data?.target === target
-    && isValidHttpUrl(uploadedUrl)
-  );
-
-  return {
-    target,
-    ok,
-    httpStatus: response.status,
-    durationMs: Date.now() - started,
-    url: data?.url || null,
-    viewerUrl: data?.viewerUrl || null,
-    displayUrl: data?.displayUrl || null,
-    response: data || text.slice(0, 4000),
-  };
 }
 
 const results = [];
@@ -83,24 +100,8 @@ for (const target of TARGETS) {
 }
 
 console.log('SMOKE_TEST_SUMMARY_BEGIN');
-for (const result of results) {
-  console.log(`${result.ok ? 'OK' : 'FAIL'} ${result.target} status=${result.httpStatus ?? 'network'} durationMs=${result.durationMs} url=${result.url || '-'}`);
-}
+for (const result of results) console.log(`${result.ok ? 'OK' : 'FAIL'} ${result.target} status=${result.httpStatus ?? 'network'} durationMs=${result.durationMs} url=${result.url || '-'}`);
 console.log('SMOKE_TEST_SUMMARY_END');
 
-const anyOk = results.some((result) => result.ok);
-const allOk = results.every((result) => result.ok);
-
-if (REQUIRE_MODE === 'any') {
-  if (!anyOk) {
-    console.error('All Worker upload targets failed. See JSON responses above.');
-    process.exit(1);
-  }
-  console.log('At least one Worker upload target works.');
-} else {
-  if (!allOk) {
-    console.error('One or more Worker upload targets failed. See JSON responses above.');
-    process.exit(1);
-  }
-  console.log('All Worker upload targets work.');
-}
+const passed = REQUIRE_MODE === 'any' ? results.some((result) => result.ok) : results.every((result) => result.ok);
+if (!passed) process.exit(1);

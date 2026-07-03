@@ -43,18 +43,6 @@ button:disabled {
   opacity: 0.55;
 }
 
-.button-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: #1f6feb;
-  color: #fff;
-  font-weight: 700;
-  padding: 0.85rem 1rem;
-  text-decoration: none;
-}
-
 input[type="file"],
 input[type="number"],
 input[type="password"],
@@ -147,29 +135,6 @@ textarea {
   font-weight: 700;
 }
 
-.hosting-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 14px 0;
-}
-
-.radio-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid #d9e3f2;
-  border-radius: 14px;
-  cursor: pointer;
-  font-weight: 700;
-  padding: 14px;
-}
-
-.radio-card.disabled-card {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
 .status-banner {
   border-left: 5px solid #1f6feb;
   border-radius: 12px;
@@ -214,49 +179,14 @@ textarea {
   font-size: 0.9rem;
 }
 
-.parsed-links ol,
 .links-panel ol {
   padding-left: 1.35rem;
   word-break: break-word;
 }
 
-.host-lab-actions {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(2, minmax(220px, max-content));
-  margin: 22px 0 28px;
-}
-
-.host-lab-actions button {
-  min-height: 54px;
-  padding-left: 1.35rem;
-  padding-right: 1.35rem;
-}
-
-.host-lab-result {
-  border-top: 1px solid #e5edf7;
-  margin-top: 18px;
-  padding-top: 18px;
-}
-
-.host-lab-attempts {
-  display: grid;
-  gap: 18px;
-  margin-top: 14px;
-}
-
-.host-lab-attempt {
-  border: 1px solid #e5edf7;
-  border-radius: 14px;
-  background: #f8fafc;
-  padding: 14px;
-}
-
-.host-lab-attempt pre {
-  max-height: 260px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+.provider-links {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
 }
 
 .photo-list {
@@ -531,17 +461,10 @@ textarea {
 
 @media (max-width: 780px) {
   .controls,
-  .hosting-options,
-  .host-lab-actions,
   .stats-grid,
   .coordinate-editor,
   .ocr-debug-images {
     grid-template-columns: 1fr;
-  }
-
-  .host-lab-actions {
-    gap: 18px;
-    margin: 24px 0 30px;
   }
 
   .manual-actions {
