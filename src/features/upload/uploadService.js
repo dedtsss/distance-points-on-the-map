@@ -1,10 +1,14 @@
 import { normalizeBundleResult } from './providerPolicy.js';
+import { providerRequestPolicy } from './providerPolicy.js';
 
 export const DEFAULT_PROXY_URL = 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
 
-export async function requestUploadBundle(entries, proxyUrl, signal) {
+export async function requestUploadBundle(entries, proxyUrl, signal, policy) {
   const formData = new FormData();
   formData.append('target', 'bundle');
+  formData.append('providers', policy.providers);
+  formData.append('includeX0', String(policy.includeX0));
+  formData.append('fallback', policy.fallback);
   entries.forEach((entry) => {
     formData.append('photoId', entry.photoId);
     formData.append('files', entry.file, entry.file.name);
@@ -25,6 +29,8 @@ export async function uploadCleanedPhotos(entries, options = {}) {
   if (!Array.isArray(entries) || entries.length === 0) return new Map();
   const proxyUrl = String(options.proxyUrl || DEFAULT_PROXY_URL).trim();
   if (!proxyUrl) throw new Error('Worker URL не настроен');
+  const policy = providerRequestPolicy(options.providerSettings);
+  if (!policy.valid) throw new Error(policy.error);
 
   entries.forEach((entry) => {
     if (!entry.cleaned || !entry.file || entry.file === entry.originalFile) {
@@ -37,7 +43,7 @@ export async function uploadCleanedPhotos(entries, options = {}) {
   const timeoutId = globalThis.setTimeout(() => controller.abort(), options.timeoutMs || 180_000);
 
   try {
-    const bundle = await request(entries, proxyUrl, options.signal || controller.signal);
+    const bundle = await request(entries, proxyUrl, options.signal || controller.signal, policy);
     return normalizeBundleResult(bundle, entries);
   } finally {
     globalThis.clearTimeout(timeoutId);

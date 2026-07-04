@@ -4,6 +4,7 @@ import { parseFreeimageApiPage } from '../workers/host-proxy/freeimage.js';
 import { parseNinjaboxForm, parseNinjaboxGallery } from '../workers/host-proxy/ninjabox.js';
 import { composeBundleItem, uploadBundle } from '../workers/host-proxy/worker.js';
 import { uploadCleanedPhotos } from '../src/features/upload/uploadService.js';
+import { validateProviderSettings } from '../src/features/upload/providerPolicy.js';
 
 const freeimage = parseFreeimageApiPage(`
   <h2>API Key</h2><div><input value="public-test-key"></div>
@@ -90,15 +91,55 @@ const fallbackBundle = await uploadBundle([files[0]], ['a'], {
 assert.deepEqual(fallbackCalls, ['a.jpg']);
 assert.deepEqual(fallbackBundle.items[0].links.map((link) => link.provider), ['ninjabox', 'x0']);
 
+let selectedNinjaCalls = 0;
+let selectedX0Calls = 0;
+const selectedBundle = await uploadBundle([files[0]], ['selected'], {
+  freeimage: async () => ({ provider: 'freeimage', ok: true, url: 'https://free.test/selected', directUrl: 'https://free.test/d/selected' }),
+  ninjabox: async () => { selectedNinjaCalls += 1; throw new Error('must not run'); },
+  x0: async () => { selectedX0Calls += 1; throw new Error('must not run'); },
+}, { selectedProviders: ['freeimage'], includeX0: false, fallback: 'none' });
+assert.equal(selectedNinjaCalls, 0);
+assert.equal(selectedX0Calls, 0);
+assert.deepEqual(selectedBundle.selectedProviders, ['freeimage']);
+assert.deepEqual(selectedBundle.items[0].links.map((link) => link.provider), ['freeimage']);
+
+let mandatoryX0Calls = 0;
+const mandatoryBundle = await uploadBundle([files[0]], ['mandatory'], {
+  freeimage: async () => ({ provider: 'freeimage', ok: true, url: 'https://free.test/mandatory', directUrl: 'https://free.test/d/mandatory' }),
+  x0: async () => {
+    mandatoryX0Calls += 1;
+    return { provider: 'x0', ok: true, url: 'https://x0.test/mandatory', directUrl: 'https://x0.test/mandatory' };
+  },
+}, { selectedProviders: ['freeimage'], includeX0: true, fallback: 'none' });
+assert.equal(mandatoryX0Calls, 1);
+assert.deepEqual(mandatoryBundle.items[0].links.map((link) => link.provider), ['freeimage', 'x0']);
+assert.equal(mandatoryBundle.items[0].links[1].role, 'required');
+
+let disabledFallbackCalls = 0;
+const disabledFallbackBundle = await uploadBundle([files[0]], ['disabled'], {
+  freeimage: async () => { throw new Error('freeimage down'); },
+  x0: async () => { disabledFallbackCalls += 1; return fallback; },
+}, { selectedProviders: ['freeimage'], includeX0: false, fallback: 'none' });
+assert.equal(disabledFallbackCalls, 0);
+assert.equal(disabledFallbackBundle.items[0].links.length, 0);
+assert.equal(validateProviderSettings({ freeimage: false, ninjabox: false }).valid, false);
+assert.equal(validateProviderSettings({ freeimage: true, ninjabox: false }).valid, true);
+
 const cleanedEntries = files.map((file, index) => ({ photoId: String(index), file, originalFile: null, cleaned: true }));
 let requestEntries = null;
+let requestPolicy = null;
 const normalized = await uploadCleanedPhotos(cleanedEntries, {
   proxyUrl: 'https://worker.test/',
+  providerSettings: { freeimage: true, ninjabox: false, includeX0: true, fallbackX0: false },
   dependencies: {
-    requestBundle: async (entries) => {
+    requestBundle: async (entries, _proxyUrl, _signal, policy) => {
       requestEntries = entries;
+      requestPolicy = policy;
       return {
         target: 'bundle',
+        selectedProviders: ['freeimage'],
+        includeX0: true,
+        fallback: 'none',
         ninjaboxGalleryUrl: 'https://ninja.test/gallery',
         items: entries.map((entry, index) => ({
           index,
@@ -115,6 +156,9 @@ const normalized = await uploadCleanedPhotos(cleanedEntries, {
   },
 });
 assert.equal(requestEntries, cleanedEntries);
+assert.equal(requestPolicy.providers, 'freeimage');
+assert.equal(requestPolicy.includeX0, true);
+assert.equal(requestPolicy.fallback, 'none');
 assert.equal(normalized.get('0').freeimageUrl, 'https://free.test/0');
 assert.equal(normalized.get('0').ninjaboxUrl, 'https://ninja.test/0');
 assert.equal(normalized.get('0').fallbackUrl, '');
@@ -134,7 +178,18 @@ const mismatched = await uploadCleanedPhotos([cleanedEntries[0]], {
     }),
   },
 });
-assert.equal(mismatched.get('0').links.length, 0);
+assert.equal(mismatched.get('0').links.length, 1);
 assert.match(mismatched.get('0').technicalError, /order mismatch/);
+assert.match(mismatched.get('0').uploadWarnings.join(' '), /photoId/);
+
+await assert.rejects(
+  () => uploadCleanedPhotos([{
+    photoId: 'original',
+    file: files[0],
+    originalFile: files[0],
+    cleaned: true,
+  }], { proxyUrl: 'https://worker.test/' }),
+  /только очищенные копии/,
+);
 
 console.log('Upload routing tests passed');

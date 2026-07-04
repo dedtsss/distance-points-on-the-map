@@ -4,6 +4,7 @@ import {
   stripJpegMetadataFromArrayBuffer,
 } from '../src/features/cleanup/jpegMetadataStripper.js';
 import { cleanImageForUpload } from '../src/features/cleanup/cleanImageForUpload.js';
+import { calculateMemorySafeSize } from '../src/features/cleanup/canvasFallbackCleaner.js';
 
 const bytes = (...values) => new Uint8Array(values);
 
@@ -108,16 +109,64 @@ assert.throws(
 );
 
 const stableJpeg = new File([jpegWithMetadata], 'stable.jpg', { type: 'image/jpeg' });
+let canvasCalledForOrientedJpeg = false;
 const cleaned = await cleanImageForUpload(stableJpeg, {
-  orientation: 1,
+  orientation: 6,
   preferredFilename: 'cleaned.jpg',
   dependencies: {
     verify: async () => ({ checked: true, hasGps: false, hasExif: false, remainingKeys: [] }),
+    cleanCanvas: async () => { canvasCalledForOrientedJpeg = true; throw new Error('must not run'); },
   },
 });
 assert.equal(cleaned.ok, true);
 assert.equal(cleaned.method, 'binary-jpeg-strip');
+assert.equal(canvasCalledForOrientedJpeg, false);
 assert.notEqual(cleaned.file, stableJpeg);
 assert.deepEqual(findSegmentMarkersBeforeScan(await cleaned.file.arrayBuffer()), [0xe0]);
+assert.equal(cleaned.debug.orientation, 6);
+assert.equal(cleaned.debug.selectedCleanupPath, 'binary-jpeg-strip');
+
+assert.deepEqual(calculateMemorySafeSize(6000, 4000, 2800), {
+  width: 2800,
+  height: 1867,
+  scale: 2800 / 6000,
+  maxSide: 2800,
+  resized: true,
+});
+
+let receivedCanvasMaxSide = 0;
+const canvasFile = new File(['png'], 'source.png', { type: 'image/png' });
+const canvasCleaned = await cleanImageForUpload(canvasFile, {
+  orientation: 1,
+  preferredFilename: 'canvas.jpg',
+  dependencies: {
+    cleanCanvas: async (_file, _orientation, filename, options) => {
+      receivedCanvasMaxSide = options.maxSide;
+      return {
+        file: new File(['clean'], filename, { type: 'image/jpeg' }),
+        debug: {
+          sourceDimensions: { width: 6000, height: 4000 },
+          outputDimensions: { width: 2800, height: 1867 },
+          resize: calculateMemorySafeSize(6000, 4000, options.maxSide),
+        },
+      };
+    },
+    verify: async () => ({ checked: true, hasGps: false, hasExif: false, remainingKeys: [] }),
+  },
+});
+assert.equal(canvasCleaned.ok, true);
+assert.equal(canvasCleaned.method, 'canvas-fallback');
+assert.equal(receivedCanvasMaxSide, 2800);
+assert.equal(canvasCleaned.debug.canvasFallback.resize.resized, true);
+
+const controlledFailure = await cleanImageForUpload(canvasFile, {
+  dependencies: {
+    cleanCanvas: async () => { throw new Error('Android decode failed'); },
+  },
+});
+assert.equal(controlledFailure.ok, false);
+assert.equal(controlledFailure.method, 'failed');
+assert.equal(controlledFailure.debug.selectedCleanupPath, 'canvas-fallback');
+assert.match(controlledFailure.debug.canvasFallback.error, /Android decode failed/);
 
 console.log('image cleaner tests passed');

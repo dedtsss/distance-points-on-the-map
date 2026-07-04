@@ -106,8 +106,26 @@ export async function runPhotoPipeline(options) {
       const cleaned = await clean(jobs.get(photo.id).stableFile, {
         orientation: jobs.get(photo.id).orientation,
         preferredFilename: `gps-${String(photo.number).padStart(3, '0')}.jpg`,
+        originalName: jobs.get(photo.id).fileName,
+        safeName: jobs.get(photo.id).safeName,
+        type: jobs.get(photo.id).type,
+        size: jobs.get(photo.id).size,
       });
-      if (!cleaned.ok || !cleaned.file) throw new Error(cleaned.error || 'cleanup failed');
+      if (!cleaned.ok || !cleaned.file) {
+        patchPhoto(photo.id, {
+          status: PHOTO_STATUS.FAILED,
+          statusText: 'Фото не загружено',
+          cleanupStatus: 'failed',
+          uploadStatus: 'skipped',
+          userError: USER_ERRORS.CLEANUP_FAILED,
+          debug: {
+            ...jobs.get(photo.id).debug,
+            cleanup: cleaned.debug || null,
+            cleanupError: cleaned.error || 'cleanup failed',
+          },
+        });
+        continue;
+      }
 
       patchPhoto(photo.id, {
         status: PHOTO_STATUS.CLEANED,
@@ -119,7 +137,7 @@ export async function runPhotoPipeline(options) {
           cleanup: {
             method: cleaned.method,
             verification: cleaned.verification,
-            attempts: cleaned.debug?.attempts || [],
+            ...cleaned.debug,
           },
         },
       });
@@ -155,6 +173,7 @@ export async function runPhotoPipeline(options) {
       const uploadResults = await upload(cleanedEntries, {
         proxyUrl: options.proxyUrl,
         signal: options.signal,
+        providerSettings: options.providerSettings,
       });
 
       cleanedEntries.forEach((entry) => {
@@ -177,7 +196,7 @@ export async function runPhotoPipeline(options) {
 
         patchPhoto(entry.photoId, {
           status: PHOTO_STATUS.UPLOADED,
-          statusText: result.complete ? 'Загружено: две ссылки' : 'Загружено частично',
+          statusText: result.complete ? `Загружено: ${result.links.length} ссылок` : `Загружено частично: ${result.links.length}`,
           uploadStatus: result.complete ? 'done' : 'partial',
           uploadResult: result,
           userError: '',

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createStableFileCopy } from '../src/features/files/stableFileStore.js';
+import { bufferSelectedFiles, createStableFileCopy } from '../src/features/files/stableFileStore.js';
 
 const original = new File([new Uint8Array([1, 2, 3, 4])], 'Фото с GPS.jpg', { type: 'image/jpeg' });
 let originalReads = 0;
@@ -31,5 +31,20 @@ const noMime = await createStableFileCopy({
   arrayBuffer: async () => new Uint8Array([0xff, 0xd8]).buffer,
 });
 assert.equal(noMime.stableFile.type, 'image/jpeg');
+
+const thumbnailOrder = [];
+const buffered = await bufferSelectedFiles([
+  new File(['one'], 'one.jpg', { type: 'image/jpeg' }),
+  new File(['two'], 'two.jpg', { type: 'image/jpeg' }),
+  new File(['three'], 'three.jpg', { type: 'image/jpeg' }),
+], {
+  thumbnailFactory: async (file) => {
+    thumbnailOrder.push(file.name);
+    return `data:image/jpeg;base64,${file.name}`;
+  },
+});
+assert.deepEqual(buffered.bufferedFiles.map((file) => file.originalName), ['one.jpg', 'two.jpg', 'three.jpg']);
+assert.deepEqual(thumbnailOrder, ['one.jpg', 'two.jpg', 'three.jpg']);
+assert.equal(buffered.bufferedFiles[1].thumbnailDataUrl, 'data:image/jpeg;base64,two.jpg');
 
 console.log('Stable file store tests passed');

@@ -60,6 +60,12 @@ export function releasePhotoBuffers(photo) {
   };
 }
 
+export function replacePhotoBatch(currentPhotos, bufferedFiles) {
+  const releasedPrevious = (currentPhotos || []).map(releasePhotoBuffers);
+  const photos = (bufferedFiles || []).map(createPhotoJob);
+  return { releasedPrevious, photos };
+}
+
 export function getProgressSummary(photos) {
   const total = photos.length;
   return {
