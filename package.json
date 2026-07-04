@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "npm run test:ocr && npm run test:geo && npm run test:image-cleaner && npm run test:upload-routing",
+    "test": "npm run test:ocr && npm run test:files && npm run test:geo && npm run test:image-cleaner && npm run test:upload-routing && npm run test:pipeline",
     "test:ocr": "node scripts/test-ocr-parser.mjs",
+    "test:files": "node scripts/test-stable-file-store.mjs",
     "test:geo": "node scripts/test-geo-distance.mjs",
     "test:image-cleaner": "node scripts/test-image-cleaner.mjs",
     "test:upload-routing": "node scripts/test-upload-routing.mjs",
+    "test:pipeline": "node scripts/test-pipeline.mjs",
+    "test:browser-audit": "node artifacts/browser-audit/run-browser-audit.mjs",
     "test:image-hosts": "node scripts/image-host-lab/test-hosts.mjs",
     "test:image-hosts:round2": "node scripts/image-host-lab/test-hosts.mjs --providers=gofile,bashify,vgy",
     "test:image-hosts:round3": "node scripts/image-host-lab/test-hosts.mjs --providers=freeimage,postimages,usapic,imgbox,pixsafe,filesfm",
@@ -22,10 +25,12 @@
   "dependencies": {
     "@vitejs/plugin-react": "4.3.1",
     "exifr": "7.1.3",
-    "vite": "5.4.21",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "tesseract.js": "5.1.1"
+    "tesseract.js": "5.1.1",
+    "vite": "5.4.21"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
 }

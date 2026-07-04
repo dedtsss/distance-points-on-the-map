@@ -7,7 +7,6 @@ import {
   haversineDistanceMeters,
   isValidCoordinate,
 } from '../src/utils/geoDistance.js';
-import { getExportablePoints } from '../src/utils/geoExport.js';
 
 const point = (id, latitude, longitude, extra = {}) => ({
   id,
@@ -80,12 +79,7 @@ const ocrZeroViolations = findDistanceViolations([
 assert.equal(ocrZeroViolations.length, 0);
 assert.equal(hasUsableCoordinates(point('ocr-zero-a', 0, 0, { gpsWarnings: ['zero_zero_placeholder'] })), false);
 assert.equal(getValidPointsForDistance([point('ok', 64.588123, 30.601234), point('bad', null, null, { gpsSource: 'missing', gpsStatus: 'missing' })]).length, 1);
-
-const exportable = getExportablePoints([
-  point('ok', 64.588123, 30.601234),
-  point('missing-export', null, null, { gpsSource: 'missing', gpsStatus: 'missing' }),
-  point('zero-export', 0, 0, { gpsSource: 'missing', gpsStatus: 'missing' }),
-]);
-assert.deepEqual(exportable.map((item) => item.id), ['ok']);
+assert.equal(hasUsableCoordinates(point('pipeline-zero', 0, 0, { gpsStatus: 'done' })), false);
+assert.equal(getValidPointsForDistance([point('pipeline-ok', 62.1, 34.1, { gpsStatus: 'done' })]).length, 1);
 
 console.log('Geo distance tests passed');

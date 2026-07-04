@@ -6,7 +6,7 @@ Last updated: 2026-07-03
 
 - React/Vite frontend is deployed through GitHub Pages.
 - Upload proxy is the Cloudflare Worker `spring-mouse-8d81`.
-- OCR-first GPS extraction, EXIF fallback, distance validation, and GPX/KML/CSV export are implemented.
+- The frontend uses one automatic flow: stable buffering, OCR-first GPS extraction, EXIF fallback, distance validation, cleanup, and upload.
 - Originals are never uploaded. Every file is cleaned and checked for remaining GPS/EXIF metadata first.
 - The old hosting selector, manual Ninjabox link parser, ImgBB, Allwebs, Catbox, UMBPhotos, and their API/secret plumbing have been removed.
 
@@ -102,9 +102,11 @@ No image-host API secret is required.
 - `workers/host-proxy/freeimage.js` — Freeimage public API adapter.
 - `workers/host-proxy/ninjabox.js` — Ninjabox form discovery, batch upload, and gallery parsing.
 - `workers/host-proxy/x0.js` — x0.at fallback adapter.
-- `src/utils/uploadManager.js` — cleaning and frontend result mapping.
-- `src/utils/uploadProxy.js` — one batch request to the Worker.
-- `src/components/LinksBlock.jsx` — two per-photo links and fallback label.
+- `src/app/pipeline.js` — per-photo state machine and batch orchestration.
+- `src/features/files/stableFileStore.js` — stable Android-safe in-memory copies.
+- `src/features/cleanup/cleanImageForUpload.js` — binary JPEG strip and Canvas fallback.
+- `src/features/upload/uploadService.js` — cleaned-only batch request and result mapping.
+- `src/components/PhotoResultCard.jsx` — concise per-photo status and links.
 - `scripts/test-worker-upload.mjs` — live Worker smoke test.
 - `scripts/test-upload-routing.mjs` — parsers and fallback composition tests.
 - `scripts/image-host-lab/DECISION.md` — provider decision and evidence.
