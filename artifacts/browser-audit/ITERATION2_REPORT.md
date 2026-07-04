@@ -22,4 +22,10 @@ Evidence:
 - `09-iteration2-results.png`
 - `10-iteration2-session-restored.png`
 
-The physical Android file picker and the two user-reported source files remain the required manual validation. Production Worker behavior for the new optional provider fields cannot be exercised until deployment is explicitly approved.
+## Real-file local check
+
+Five user-supplied JPEG files were processed through the local production frontend. All five passed stable buffering, binary JPEG cleanup, metadata verification and reached the intercepted upload request as `gps-001.jpg` through `gps-005.jpg`. No image was sent to a public provider. Four files produced OCR coordinates; the fifth remained GPS-missing but correctly continued through cleanup and upload.
+
+The physical Android file picker and the two originally failing files on the user's Android device remain the required manual validation. Desktop Chromium with a Pixel 7 profile cannot reproduce Android's file-provider lifecycle exactly. Production Worker behavior for the new optional provider fields cannot be exercised until deployment is explicitly approved.
+
+Deployment: not performed.
