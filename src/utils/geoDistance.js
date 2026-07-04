@@ -64,7 +64,7 @@ export function hasUsableCoordinates(point) {
     return point.gpsSource === 'manual' && point.zeroZeroConfirmed === true;
   }
 
-  return point.gpsStatus === 'found' || point.gpsSource === 'manual';
+  return point.gpsStatus === 'found' || point.gpsStatus === 'done' || point.gpsSource === 'manual';
 }
 
 export const isUsablePointCoordinate = hasUsableCoordinates;

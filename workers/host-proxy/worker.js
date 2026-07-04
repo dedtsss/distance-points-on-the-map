@@ -88,10 +88,13 @@ export function composeBundleItem({ index, photoId, fileName, freeimage, ninjabo
   };
 }
 
-async function uploadBundle(files, photoIds) {
-  const ninjaPromise = uploadNinjabox(files)
+export async function uploadBundle(files, photoIds, providerOverrides = {}) {
+  const freeimageUpload = providerOverrides.freeimage || uploadFreeimage;
+  const ninjaboxUpload = providerOverrides.ninjabox || uploadNinjabox;
+  const x0Upload = providerOverrides.x0 || uploadX0;
+  const ninjaPromise = ninjaboxUpload(files)
     .catch((error) => ({ ok: false, provider: 'ninjabox', galleryUrl: null, items: [], error: errorMessage(error) }));
-  const freeimagePromise = uploadIndividually(files, 'freeimage', uploadFreeimage);
+  const freeimagePromise = uploadIndividually(files, 'freeimage', freeimageUpload);
   const [ninjabox, freeimage] = await Promise.all([ninjaPromise, freeimagePromise]);
 
   const primaryResults = files.map((file, index) => ({
@@ -108,7 +111,7 @@ async function uploadBundle(files, photoIds) {
     .filter((item) => !item.freeimage.ok || !item.ninjabox.ok)
     .map((item) => item.index);
   const fallbackFiles = fallbackIndexes.map((index) => files[index]);
-  const fallbackUploads = await uploadIndividually(fallbackFiles, 'x0', uploadX0);
+  const fallbackUploads = await uploadIndividually(fallbackFiles, 'x0', x0Upload);
   const fallbackByIndex = new Map(fallbackIndexes.map((index, offset) => [index, fallbackUploads[offset]]));
 
   const items = primaryResults.map((item) => composeBundleItem({

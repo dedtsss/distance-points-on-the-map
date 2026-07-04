@@ -99,7 +99,10 @@ export function cropBottomRight(image, options = {}) {
 
 export function preprocessForOcr(canvas, options = {}) {
   const preprocessOptions = { ...DEFAULT_PREPROCESS_OPTIONS, ...options };
-  const scale = Math.max(1, Math.min(4, Number(preprocessOptions.upscale) || 3));
+  const requestedScale = Math.max(1, Math.min(4, Number(preprocessOptions.upscale) || 3));
+  const maxWidth = Math.max(800, Number(preprocessOptions.maxWidth) || 2400);
+  const maxHeight = Math.max(600, Number(preprocessOptions.maxHeight) || 1600);
+  const scale = Math.min(requestedScale, maxWidth / canvas.width, maxHeight / canvas.height);
 
   const output = document.createElement('canvas');
   output.width = Math.max(1, Math.round(canvas.width * scale));
@@ -157,6 +160,7 @@ export async function recognizeTextFromCanvas(canvas, options = {}) {
   };
 
   let worker = null;
+  let recognitionTimeoutId = null;
 
   try {
     worker = await createWorker('eng', 1, { logger });
@@ -166,12 +170,23 @@ export async function recognizeTextFromCanvas(canvas, options = {}) {
       preserve_interword_spaces: '1',
     });
 
-    const result = await worker.recognize(canvas);
+    const timeoutMs = Math.max(10_000, Number(options.recognitionTimeoutMs) || 45_000);
+    const timeout = new Promise((_, reject) => {
+      recognitionTimeoutId = globalThis.setTimeout(() => {
+        worker?.terminate().catch(() => {});
+        const error = new Error('OCR recognition timed out');
+        error.name = 'TimeoutError';
+        reject(error);
+      }, timeoutMs);
+    });
+    const result = await Promise.race([worker.recognize(canvas), timeout]);
+    globalThis.clearTimeout(recognitionTimeoutId);
     return {
       text: result?.data?.text || '',
       confidence: Number(result?.data?.confidence) || 0,
     };
   } finally {
+    if (recognitionTimeoutId) globalThis.clearTimeout(recognitionTimeoutId);
     if (worker) {
       await worker.terminate().catch(() => {});
     }

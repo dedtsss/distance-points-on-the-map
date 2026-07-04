@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {
   isJpegArrayBuffer,
   stripJpegMetadataFromArrayBuffer,
-} from '../src/utils/imageCleaner.js';
+} from '../src/features/cleanup/jpegMetadataStripper.js';
+import { cleanImageForUpload } from '../src/features/cleanup/cleanImageForUpload.js';
 
 const bytes = (...values) => new Uint8Array(values);
 
@@ -105,5 +106,18 @@ assert.throws(
   () => stripJpegMetadataFromArrayBuffer(bytes(0x89, 0x50, 0x4e, 0x47).buffer),
   /JPEG/,
 );
+
+const stableJpeg = new File([jpegWithMetadata], 'stable.jpg', { type: 'image/jpeg' });
+const cleaned = await cleanImageForUpload(stableJpeg, {
+  orientation: 1,
+  preferredFilename: 'cleaned.jpg',
+  dependencies: {
+    verify: async () => ({ checked: true, hasGps: false, hasExif: false, remainingKeys: [] }),
+  },
+});
+assert.equal(cleaned.ok, true);
+assert.equal(cleaned.method, 'binary-jpeg-strip');
+assert.notEqual(cleaned.file, stableJpeg);
+assert.deepEqual(findSegmentMarkersBeforeScan(await cleaned.file.arrayBuffer()), [0xe0]);
 
 console.log('image cleaner tests passed');
