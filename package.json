@@ -16,7 +16,7 @@
     "test:pipeline": "node scripts/test-pipeline.mjs",
     "test:links": "node scripts/test-link-formatting.mjs",
     "test:session": "node scripts/test-session-store.mjs",
-    "test:browser-audit": "node artifacts/browser-audit/iteration2-browser-check.mjs",
+    "test:browser-audit": "node artifacts/browser-audit/iteration3-browser-check.mjs",
     "test:image-hosts": "node scripts/image-host-lab/test-hosts.mjs",
     "test:image-hosts:round2": "node scripts/image-host-lab/test-hosts.mjs --providers=gofile,bashify,vgy",
     "test:image-hosts:round3": "node scripts/image-host-lab/test-hosts.mjs --providers=freeimage,postimages,usapic,imgbox,pixsafe,filesfm",

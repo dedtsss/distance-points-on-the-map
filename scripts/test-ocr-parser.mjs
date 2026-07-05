@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseGpsFromOcrText } from '../src/utils/ocrGpsReader.js';
+import { parseGpsFromOcrText, selectBestOcrAttempt } from '../src/utils/ocrGpsReader.js';
 
 const assertCoordinates = (text, latitude, longitude) => {
   const result = parseGpsFromOcrText(text);
@@ -12,6 +12,9 @@ const assertCoordinates = (text, latitude, longitude) => {
 assertCoordinates('64.588123, 30.601234', 64.588123, 30.601234);
 assertCoordinates('Lat: 64.588123 Lon: 30.601234', 64.588123, 30.601234);
 assertCoordinates('N 64.588123 E 30.601234', 64.588123, 30.601234);
+assertCoordinates('LAT 62.123456 / LON 34.123456', 62.123456, 34.123456);
+assertCoordinates('64.6O2319N 3O.6O9952E', 64.602319, 30.609952);
+assertCoordinates('64.6S2319N 30.60B952E', 64.652319, 30.608952);
 assertCoordinates('64,588123 30,601234', 64.588123, 30.601234);
 assertCoordinates('мусор до 64.588123, 30.601234 мусор после', 64.588123, 30.601234);
 assertCoordinates('64.6028, 30.6258 (±4м)', 64.6028, 30.6258);
@@ -62,5 +65,27 @@ assert.equal(swapped.longitude, 30.601234);
 assert.ok(swapped.warnings.includes('coordinates_swapped'));
 assert.ok(Array.isArray(swapped.candidates));
 assert.ok(swapped.chosenCandidate);
+
+const degreesMinutes = parseGpsFromOcrText('62°12.3456 N, 34°12.3456 E');
+assert.equal(degreesMinutes.ok, true);
+assert.ok(Math.abs(degreesMinutes.latitude - 62.20576) < 0.000001);
+assert.ok(Math.abs(degreesMinutes.longitude - 34.20576) < 0.000001);
+
+const degreesMinutesSeconds = parseGpsFromOcrText('62 12 34 N / 34 12 34 E');
+assert.equal(degreesMinutesSeconds.ok, true);
+assert.ok(Math.abs(degreesMinutesSeconds.latitude - 62.2094444444) < 0.000001);
+assert.ok(Math.abs(degreesMinutesSeconds.longitude - 34.2094444444) < 0.000001);
+
+const bestAttempt = selectBestOcrAttempt([
+  {
+    name: 'corrected-low-confidence', parserConfidence: 0.7, ocrConfidence: 0.7, correctionCount: 3,
+    warnings: [], parsed: { ok: true, chosenCandidate: { latitude: 62.1, longitude: 34.1 } },
+  },
+  {
+    name: 'directional-high-confidence', parserConfidence: 0.9, ocrConfidence: 0.8, correctionCount: 0,
+    warnings: [], parsed: { ok: true, chosenCandidate: { latitude: 62.2, longitude: 34.2 } },
+  },
+]);
+assert.equal(bestAttempt.name, 'directional-high-confidence');
 
 console.log('OCR parser tests passed');

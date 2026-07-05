@@ -28,6 +28,9 @@ const makeJpeg = async (label) => Buffer.from(await page.evaluate(async (text) =
   context2d.fillStyle = '#174b7a';
   context2d.font = 'bold 44px Arial';
   context2d.fillText(text, 60, 100);
+  context2d.fillStyle = '#000';
+  context2d.font = 'bold 32px Arial';
+  context2d.fillText('64.602319N 30.609952E', 410, 555);
   const blob = await new Promise((resolveBlob) => canvas.toBlob(resolveBlob, 'image/jpeg', 0.86));
   return [...new Uint8Array(await blob.arrayBuffer())];
 }, label));
@@ -75,6 +78,7 @@ await page.route('https://spring-mouse-8d81.dvabobra2014.workers.dev/**', async 
 });
 
 await page.goto(baseUrl, { waitUntil: 'networkidle' });
+assert.match(await page.locator('.build-info').textContent(), /Версия приложения/);
 const files = [
   { name: 'first.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg('FIRST') },
   { name: 'second.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg('SECOND') },
@@ -82,20 +86,42 @@ const files = [
 await page.locator('input[type=file]').setInputFiles(files);
 await page.locator('.photo-thumbnail').first().waitFor();
 assert.equal(await page.locator('.photo-thumbnail').count(), 2);
+assert.equal(await page.getByRole('heading', { name: 'Куда загружать' }).isVisible(), true);
+await page.waitForTimeout(200);
+const bufferedSession = JSON.parse(await page.evaluate(() => localStorage.getItem('gps-checker-last-session-v1')));
+assert.equal(bufferedSession.photos.length, 2);
+assert.equal(bufferedSession.photos[0].status, 'buffered');
 
 await page.getByLabel('Freeimage').uncheck();
 await page.getByLabel('Ninjabox').uncheck();
-assert.equal(await page.getByRole('button', { name: 'Проверить и загрузить' }).isDisabled(), true);
+assert.equal(await page.getByRole('button', { name: 'Проверить и загрузить всё' }).isDisabled(), true);
 assert.equal(await page.getByText('Выберите хотя бы один основной сервис загрузки.').isVisible(), true);
 await page.getByLabel('Freeimage').check();
 await page.getByLabel('x0.at как обязательная третья ссылка').check();
 await page.getByLabel('Использовать x0.at как fallback при ошибке').uncheck();
 
-await page.getByRole('button', { name: 'Проверить и загрузить' }).click();
-await page.getByRole('button', { name: 'Обработка завершена' }).waitFor({ timeout: 180_000 });
+await page.getByRole('button', { name: 'Только распознать координаты' }).click();
+await page.getByText('Координаты найдены уверенно').first().waitFor({ timeout: 180_000 });
+
+await page.getByRole('button', { name: 'Исправить координаты' }).first().click();
+await page.getByLabel('Latitude фото 1').fill('62,100000');
+await page.getByLabel('Longitude фото 1').fill('34,100000');
+await page.getByRole('button', { name: 'Применить координаты' }).first().click();
+assert.equal(await page.getByText('Координаты заданы вручную').first().isVisible(), true);
+
+await page.getByRole('button', { name: 'Очистить metadata' }).click();
+await page.getByText('Metadata очищены').first().waitFor({ timeout: 60_000 });
+assert.equal(await page.getByRole('button', { name: 'Загрузить очищенные' }).isDisabled(), false);
+await page.getByRole('button', { name: 'Загрузить очищенные' }).click();
+await page.getByText('https://free.test/1', { exact: true }).waitFor({ timeout: 60_000 });
 assert.equal(await page.locator('.full-link-block').count(), 4);
 assert.equal(await page.getByText('https://free.test/1', { exact: true }).isVisible(), true);
 assert.equal(await page.getByText('https://x0.test/1', { exact: true }).isVisible(), true);
+
+await page.waitForTimeout(200);
+const manuallyCorrectedSession = JSON.parse(await page.evaluate(() => localStorage.getItem('gps-checker-last-session-v1')));
+assert.equal(manuallyCorrectedSession.photos[0].manualCoordinates, true);
+assert.deepEqual(manuallyCorrectedSession.photos[0].coordinates, { latitude: 62.1, longitude: 34.1 });
 
 await page.getByRole('button', { name: 'Сформировать все ссылки' }).click();
 const expectedLinks = [
@@ -111,16 +137,26 @@ assert.ok(stored);
 for (const forbidden of ['sourceBuffer', 'stableBlob', 'stableFile', 'cleanedBlob', 'previewObjectUrl', '"debug"']) {
   assert.equal(stored.includes(forbidden), false);
 }
-await page.screenshot({ path: resolve(outputDir, '09-iteration2-results.png'), fullPage: true });
+await page.screenshot({ path: resolve(outputDir, '11-iteration3-results.png'), fullPage: true });
 
+await page.evaluate(() => {
+  const session = JSON.parse(localStorage.getItem('gps-checker-last-session-v1'));
+  session.photos[1].thumbnailDataUrl = null;
+  localStorage.setItem('gps-checker-last-session-v1', JSON.stringify(session));
+});
 await page.reload({ waitUntil: 'networkidle' });
 assert.match(await page.locator('.session-prompt').textContent(), /Найден последний результат/);
 await page.getByRole('button', { name: 'Восстановить' }).click();
 assert.equal(await page.locator('.photo-result').count(), 2);
-assert.equal(await page.locator('.photo-thumbnail').count(), 2);
+assert.equal(await page.locator('.photo-thumbnail').count(), 1);
+assert.equal(await page.getByText('Превью недоступно').count(), 1);
 assert.equal(await page.getByText('https://free.test/1', { exact: true }).isVisible(), true);
+assert.equal(await page.getByText(/Восстановлен сохранённый результат/).isVisible(), true);
+assert.equal(await page.getByText('Координаты заданы вручную').first().isVisible(), true);
+await page.getByRole('button', { name: 'Показать журнал' }).click();
+assert.match(await page.locator('.journal-list').textContent(), /Сессия восстановлена/);
 await page.locator('.photo-results').scrollIntoViewIfNeeded();
-await page.screenshot({ path: resolve(outputDir, '10-iteration2-session-restored.png'), fullPage: false });
+await page.screenshot({ path: resolve(outputDir, '12-iteration3-session-restored.png'), fullPage: false });
 
 await page.getByRole('button', { name: 'Очистить результат' }).last().click();
 assert.equal(await page.locator('.photo-result').count(), 0);
@@ -129,4 +165,4 @@ assert.deepEqual(errors, []);
 
 await context.close();
 await browser.close();
-console.log('Iteration 2 browser check passed');
+console.log('Iteration 3 browser check passed');

@@ -19,18 +19,26 @@ const snapshot = saveLastSession({
   thresholdMeters: 25,
   providerSettings: { freeimage: true, ninjabox: true, includeX0: false, fallbackX0: true },
   photos: [{
+    id: 'photo-1',
     number: 1,
     fileName: 'source.jpg',
     safeName: 'source.jpg',
     size: heavyFile.size,
     coordinates: { latitude: 62.1, longitude: 34.1 },
     gpsSource: 'exif',
+    gpsStatus: 'done',
+    gpsConfidence: 0.88,
+    ocrStatus: 'uncertain',
+    manualCoordinates: true,
+    coordinateQuality: 'manual',
+    status: 'uploaded',
     distanceStatus: 'ok',
     distanceConflicts: [],
     cleanupStatus: 'done',
     uploadStatus: 'done',
     statusText: 'Загружено: 2 ссылок',
     userError: '',
+    userWarnings: ['review coordinates'],
     uploadResult: {
       freeimageUrl: 'https://free.test/1',
       ninjaboxUrl: 'https://ninja.test/1',
@@ -60,11 +68,19 @@ for (const forbidden of ['sourceBuffer', 'stableBlob', 'stableFile', 'cleanedBlo
 assert.equal(snapshot.photos[0].freeimageUrl, 'https://free.test/1');
 const loaded = loadLastSession(storage);
 assert.equal(loaded.sessionId, 'session-1');
+assert.equal(loaded.version, 1);
 const restored = restoreSessionPhotos(loaded);
 assert.equal(restored[0].stableFile, null);
+assert.equal(restored[0].id, 'photo-1');
 assert.equal(restored[0].uploadResult.links.length, 2);
 assert.equal(restored[0].uploadResult.ninjaboxGalleryUrl, 'https://ninja.test/gallery');
 assert.equal(restored[0].status, 'uploaded');
 assert.equal(restored[0].thumbnailDataUrl, 'data:image/jpeg;base64,dGVzdA==');
+assert.equal(restored[0].gpsConfidence, 0.88);
+assert.equal(restored[0].ocrStatus, 'uncertain');
+assert.equal(restored[0].manualCoordinates, true);
+assert.equal(restored[0].coordinateQuality, 'manual');
+assert.deepEqual(restored[0].userWarnings, ['review coordinates']);
+assert.equal(restored[0].canResumeUpload, false);
 
 console.log('Session store tests passed');

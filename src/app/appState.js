@@ -35,6 +35,12 @@ export function createPhotoJob(bufferedFile, index) {
     latitude: null,
     longitude: null,
     gpsSource: null,
+    gpsConfidence: 0,
+    ocrStatus: 'idle',
+    manualCoordinates: false,
+    coordinateQuality: 'missing',
+    swapSuggested: false,
+    ocrAttemptCount: 0,
     orientation: 1,
     distanceStatus: 'pending',
     distanceConflicts: [],
@@ -70,9 +76,36 @@ export function getProgressSummary(photos) {
   const total = photos.length;
   return {
     total,
-    buffered: photos.filter((photo) => photo.status !== PHOTO_STATUS.IDLE).length,
-    gps: photos.filter((photo) => ['done', 'missing'].includes(photo.gpsStatus)).length,
+    selected: total,
+    ocrAttempts: photos.reduce((sum, photo) => sum + (Number(photo.ocrAttemptCount) || 0), 0),
+    confident: photos.filter((photo) => photo.coordinateQuality === 'confident').length,
+    suspicious: photos.filter((photo) => photo.coordinateQuality === 'suspicious').length,
+    missing: photos.filter((photo) => photo.coordinateQuality === 'missing').length,
+    manual: photos.filter((photo) => photo.coordinateQuality === 'manual').length,
     cleaned: photos.filter((photo) => photo.cleanupStatus === 'done').length,
     uploaded: photos.filter((photo) => photo.uploadResult?.links?.length > 0).length,
+    errors: photos.filter((photo) => ['failed', 'skipped'].includes(photo.cleanupStatus) || ['failed', 'skipped'].includes(photo.uploadStatus)).length,
   };
+}
+
+export function applyManualCoordinateCorrection(photos, photoId, coordinates, calculate) {
+  const corrected = photos.map((photo) => photo.id === photoId ? {
+    ...photo,
+    coordinates,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+    gpsStatus: 'done',
+    gpsSource: 'manual',
+    gpsConfidence: 1,
+    ocrStatus: 'manual',
+    manualCoordinates: true,
+    coordinateQuality: 'manual',
+    swapSuggested: false,
+    userError: '',
+  } : photo);
+  const distanceResult = calculate(corrected);
+  return corrected.map((photo) => ({
+    ...photo,
+    ...(distanceResult.byPhotoId.get(photo.id) || { distanceStatus: 'missing_coordinates', distanceConflicts: [] }),
+  }));
 }

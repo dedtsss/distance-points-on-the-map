@@ -52,6 +52,8 @@ export function hasUsableCoordinates(point) {
     return false;
   }
 
+  if (point.coordinateQuality && !['confident', 'manual'].includes(point.coordinateQuality)) return false;
+
   if (point.gpsSource === 'missing' || point.gpsStatus === 'missing') {
     return false;
   }

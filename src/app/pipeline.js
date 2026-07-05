@@ -2,6 +2,7 @@ import { PHOTO_STATUS, releasePhotoBuffers } from './appState.js';
 import { cleanImageForUpload } from '../features/cleanup/cleanImageForUpload.js';
 import { calculateDistances } from '../features/distance/distanceService.js';
 import { readGpsPipeline } from '../features/gps/readGpsPipeline.js';
+import { validateCoordinateBatch } from '../features/gps/coordinateSanity.js';
 import { uploadCleanedPhotos } from '../features/upload/uploadService.js';
 import { USER_ERRORS, technicalErrorMessage } from '../utils/errors.js';
 
@@ -17,7 +18,9 @@ export async function runPhotoPipeline(options) {
   const calculate = options.dependencies?.calculateDistances || calculateDistances;
   const clean = options.dependencies?.clean || cleanImageForUpload;
   const upload = options.dependencies?.upload || uploadCleanedPhotos;
+  const stages = { gps: true, cleanup: true, upload: true, ...options.stages };
   const jobs = new Map(options.photos.map((photo) => [photo.id, { ...photo }]));
+  const log = (message, photoId = null, type = 'info') => options.onLog?.({ message, photoId, type });
 
   const patchPhoto = (photoId, patch) => {
     const next = { ...jobs.get(photoId), ...patch };
@@ -26,7 +29,8 @@ export async function runPhotoPipeline(options) {
     return next;
   };
 
-  for (const initialPhoto of options.photos) {
+  if (stages.gps) for (const initialPhoto of options.photos) {
+    log(`OCR started: фото ${initialPhoto.number}`, initialPhoto.id);
     patchPhoto(initialPhoto.id, {
       status: PHOTO_STATUS.READING_GPS,
       statusText: 'Поиск координат',
@@ -37,9 +41,10 @@ export async function runPhotoPipeline(options) {
     try {
       const gps = await readGps(jobs.get(initialPhoto.id).stableFile, {
         debug: options.debug === true,
-        onProgress: (progress) => patchPhoto(initialPhoto.id, {
-          statusText: progressText(progress),
-        }),
+        onProgress: (progress) => {
+          patchPhoto(initialPhoto.id, { statusText: progressText(progress) });
+          if (String(progress.status).startsWith('cropping:')) log(`OCR ${progress.status.replace('cropping:', '')}`, initialPhoto.id);
+        },
       });
       const foundPatch = gps.found ? {
         status: PHOTO_STATUS.GPS_DONE,
@@ -49,6 +54,11 @@ export async function runPhotoPipeline(options) {
         latitude: gps.coordinates.latitude,
         longitude: gps.coordinates.longitude,
         gpsSource: gps.source,
+        gpsConfidence: gps.confidence ?? (gps.source === 'exif' ? 1 : 0),
+        ocrStatus: gps.ocrStatus || (gps.source === 'exif' ? 'exif' : 'uncertain'),
+        manualCoordinates: false,
+        coordinateQuality: gps.source === 'exif' || gps.ocrStatus === 'confident' ? 'confident' : 'suspicious',
+        ocrAttemptCount: gps.ocrAttemptCount || 0,
       } : {
         status: PHOTO_STATUS.GPS_MISSING,
         statusText: 'Координаты не найдены',
@@ -57,12 +67,18 @@ export async function runPhotoPipeline(options) {
         latitude: null,
         longitude: null,
         gpsSource: null,
+        gpsConfidence: gps.confidence || 0,
+        ocrStatus: gps.ocrStatus || 'missing',
+        manualCoordinates: false,
+        coordinateQuality: gps.ocrStatus === 'suspect' ? 'suspicious' : 'missing',
+        ocrAttemptCount: gps.ocrAttemptCount || 0,
       };
       patchPhoto(initialPhoto.id, {
         ...foundPatch,
         orientation: gps.orientation || 1,
         debug: { ...jobs.get(initialPhoto.id).debug, gps: gps.debug },
       });
+      log(gps.found ? `OCR/EXIF result: ${gps.coordinates.latitude}, ${gps.coordinates.longitude}` : 'Координаты не найдены', initialPhoto.id, gps.found ? 'success' : 'warning');
     } catch (error) {
       patchPhoto(initialPhoto.id, {
         status: PHOTO_STATUS.GPS_MISSING,
@@ -72,6 +88,10 @@ export async function runPhotoPipeline(options) {
         latitude: null,
         longitude: null,
         gpsSource: null,
+        gpsConfidence: 0,
+        ocrStatus: 'error',
+        manualCoordinates: false,
+        coordinateQuality: 'missing',
         debug: {
           ...jobs.get(initialPhoto.id).debug,
           gpsError: technicalErrorMessage(error),
@@ -80,22 +100,34 @@ export async function runPhotoPipeline(options) {
     }
   }
 
-  const gpsReadyPhotos = [...jobs.values()];
-  const distanceResult = calculate(gpsReadyPhotos, options.thresholdMeters);
-  gpsReadyPhotos.forEach((photo) => {
+  let distanceResult = calculate([...jobs.values()], options.thresholdMeters);
+  if (stages.gps) {
+    const sanity = validateCoordinateBatch([...jobs.values()], { regionMode: options.regionMode });
+    for (const photo of [...jobs.values()]) {
+      const sanityPatch = sanity.byPhotoId.get(photo.id) || {};
+      patchPhoto(photo.id, sanityPatch);
+      if (sanityPatch.coordinateQuality === 'suspicious') log('OCR result rejected: suspicious coordinates', photo.id, 'warning');
+    }
+    const gpsReadyPhotos = [...jobs.values()];
+    distanceResult = calculate(gpsReadyPhotos, options.thresholdMeters);
+    gpsReadyPhotos.forEach((photo) => {
     const result = distanceResult.byPhotoId.get(photo.id) || {
       distanceStatus: 'missing_coordinates',
       distanceConflicts: [],
     };
     patchPhoto(photo.id, {
       status: PHOTO_STATUS.DISTANCE_READY,
-      statusText: photo.coordinates ? 'Расстояния рассчитаны' : 'Без расчёта расстояний',
+      statusText: photo.coordinateQuality === 'suspicious'
+        ? 'Координаты подозрительные — нужна проверка'
+        : photo.coordinates ? 'Расстояния рассчитаны' : 'Без расчёта расстояний',
       ...result,
     });
-  });
+    });
+  }
 
   const cleanedEntries = [];
-  for (const photo of [...jobs.values()]) {
+  if (stages.cleanup) for (const photo of [...jobs.values()]) {
+    log(`Cleanup started: фото ${photo.number}`, photo.id);
     patchPhoto(photo.id, {
       status: PHOTO_STATUS.CLEANING,
       statusText: 'Очистка metadata',
@@ -147,6 +179,7 @@ export async function runPhotoPipeline(options) {
         originalFile: jobs.get(photo.id).stableFile,
         cleaned: true,
       });
+      log(`Cleanup done: фото ${photo.number}`, photo.id, 'success');
     } catch (error) {
       patchPhoto(photo.id, {
         status: PHOTO_STATUS.FAILED,
@@ -162,7 +195,16 @@ export async function runPhotoPipeline(options) {
     }
   }
 
-  if (cleanedEntries.length > 0) {
+  if (!stages.cleanup && stages.upload) {
+    for (const photo of [...jobs.values()]) {
+      if (!photo.cleanedBlob) continue;
+      cleanedEntries.push({ photoId: photo.id, file: photo.cleanedBlob, originalFile: photo.stableFile, cleaned: true });
+    }
+  }
+
+  if (stages.upload && cleanedEntries.length > 0) {
+    const selectedProviders = ['freeimage', 'ninjabox'].filter((provider) => options.providerSettings?.[provider] !== false);
+    cleanedEntries.forEach((entry) => selectedProviders.forEach((provider) => log(`Upload ${provider}: started`, entry.photoId)));
     cleanedEntries.forEach((entry) => patchPhoto(entry.photoId, {
       status: PHOTO_STATUS.UPLOADING,
       statusText: 'Загрузка фотографий',
@@ -206,6 +248,10 @@ export async function runPhotoPipeline(options) {
             providerResponses: result.providerResults,
           },
         });
+        for (const provider of selectedProviders) {
+          log(`Upload ${provider}: ${result.links.some((link) => link.provider === provider) ? 'done' : 'error'}`, entry.photoId, result.links.some((link) => link.provider === provider) ? 'success' : 'error');
+        }
+        if (result.links.some((link) => link.provider === 'x0')) log('Upload x0 fallback: done', entry.photoId, 'success');
         const released = releasePhotoBuffers(jobs.get(entry.photoId));
         jobs.set(entry.photoId, released);
         options.onPhotoUpdate?.(entry.photoId, {

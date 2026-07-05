@@ -35,18 +35,28 @@ const serializeUploadResult = (result) => {
 export function serializePhotoForSession(photo) {
   const uploadResult = serializeUploadResult(photo.uploadResult);
   return {
+    photoId: photo.id || photo.photoId || '',
     number: photo.number,
     fileName: photo.fileName || '',
     safeName: photo.safeName || '',
     size: Number(photo.size) || 0,
     coordinates: photo.coordinates ? { ...photo.coordinates } : null,
     gpsSource: photo.gpsSource || null,
+    gpsStatus: photo.gpsStatus || 'idle',
+    gpsConfidence: Number(photo.gpsConfidence) || 0,
+    ocrStatus: photo.ocrStatus || 'idle',
+    manualCoordinates: photo.manualCoordinates === true,
+    coordinateQuality: photo.coordinateQuality || 'missing',
+    swapSuggested: photo.swapSuggested === true,
+    ocrAttemptCount: Number(photo.ocrAttemptCount) || 0,
+    status: photo.status || PHOTO_STATUS.IDLE,
     distanceStatus: photo.distanceStatus || 'pending',
     distanceConflicts: Array.isArray(photo.distanceConflicts) ? [...photo.distanceConflicts] : [],
     cleanupStatus: photo.cleanupStatus || 'idle',
     uploadStatus: photo.uploadStatus || 'idle',
     statusText: photo.statusText || '',
     userError: photo.userError || '',
+    userWarnings: Array.isArray(photo.userWarnings) ? [...photo.userWarnings] : [],
     uploadResult,
     freeimageUrl: uploadResult?.freeimageUrl || '',
     ninjaboxUrl: uploadResult?.ninjaboxUrl || '',
@@ -59,9 +69,22 @@ export function serializePhotoForSession(photo) {
   };
 }
 
+export function getSessionDiagnostics(storage = globalThis.localStorage) {
+  const raw = storage?.getItem(LAST_SESSION_KEY);
+  if (!raw) return { found: false, accepted: false, reason: 'key_not_found', version: null, photoCount: 0 };
+  try {
+    const parsed = JSON.parse(raw);
+    const accepted = Boolean(parsed?.sessionId && Array.isArray(parsed.photos));
+    return { found: true, accepted, reason: accepted ? null : 'invalid_shape', version: parsed?.version || null, photoCount: parsed?.photos?.length || 0 };
+  } catch {
+    return { found: true, accepted: false, reason: 'invalid_json', version: null, photoCount: 0 };
+  }
+}
+
 export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, photos, providerSettings }) {
   const timestamp = nowIso();
   return {
+    version: 1,
     sessionId: sessionId || makeSessionId(),
     createdAt: createdAt || timestamp,
     updatedAt: timestamp,
@@ -106,26 +129,33 @@ export function restoreSessionPhotos(session) {
       ninjaboxGalleryUrl: photo.uploadResult.ninjaboxGalleryUrl || photo.ninjaboxGalleryUrl || '',
     } : null;
     return {
-      id: `restored-${session.sessionId}-${photo.number || index + 1}`,
+      id: photo.photoId || `restored-${session.sessionId}-${photo.number || index + 1}`,
       number: photo.number || index + 1,
       fileName: photo.fileName,
       safeName: photo.safeName,
       size: photo.size,
       type: '',
-      status: uploadResult?.links?.length ? PHOTO_STATUS.UPLOADED : PHOTO_STATUS.FAILED,
+      status: photo.status || (uploadResult?.links?.length ? PHOTO_STATUS.UPLOADED : PHOTO_STATUS.FAILED),
       statusText: photo.statusText,
-      gpsStatus: photo.coordinates ? 'done' : 'missing',
+      gpsStatus: photo.gpsStatus || (photo.coordinates ? 'done' : 'missing'),
       cleanupStatus: photo.cleanupStatus,
       uploadStatus: photo.uploadStatus,
       coordinates: photo.coordinates,
       latitude: photo.coordinates?.latitude ?? null,
       longitude: photo.coordinates?.longitude ?? null,
       gpsSource: photo.gpsSource,
+      gpsConfidence: Number(photo.gpsConfidence) || 0,
+      ocrStatus: photo.ocrStatus || (photo.coordinates ? 'uncertain' : 'missing'),
+      manualCoordinates: photo.manualCoordinates === true,
+      coordinateQuality: photo.coordinateQuality || (photo.manualCoordinates ? 'manual' : photo.coordinates ? 'suspicious' : 'missing'),
+      swapSuggested: photo.swapSuggested === true,
+      ocrAttemptCount: Number(photo.ocrAttemptCount) || 0,
       orientation: 1,
       distanceStatus: photo.distanceStatus,
       distanceConflicts: photo.distanceConflicts || [],
       uploadResult,
       userError: photo.userError,
+      userWarnings: photo.userWarnings || [],
       thumbnailDataUrl: photo.thumbnailDataUrl || null,
       sourceBuffer: null,
       stableBlob: null,
@@ -134,6 +164,7 @@ export function restoreSessionPhotos(session) {
       previewObjectUrl: null,
       debug: {},
       restored: true,
+      canResumeUpload: false,
     };
   });
 }

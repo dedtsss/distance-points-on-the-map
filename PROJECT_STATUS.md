@@ -8,7 +8,7 @@ The application has one automatic flow:
 
 1. Copy every picker `File` immediately into a stable in-memory `ArrayBuffer`/`Blob`/`File`.
 2. Create a lightweight thumbnail with a maximum side of 320 px.
-3. Read coordinates once with OCR, then use EXIF as fallback.
+3. Read coordinates through a sequential, memory-bounded multi-pass OCR session, then use EXIF as fallback.
 4. Calculate distances only for photos with usable coordinates.
 5. Clean metadata independently for every photo.
 6. Upload only successfully cleaned copies through the Cloudflare Worker.
@@ -93,6 +93,16 @@ Never stored:
 - full debug or raw image data.
 
 On reload the user may restore or delete the saved result. “Clear result” removes both current UI state and the stored session.
+
+The snapshot is refreshed after meaningful photo-state updates, not only after the final batch result. Restored sessions contain display-only data: cleanup/upload cannot resume without selecting the source files again. OCR confidence/status and manual-coordinate flags are preserved.
+
+## OCR policy
+
+OCR uses one Tesseract worker per photo and evaluates memory-safe candidates sequentially. The candidate list covers bottom 35%, bottom-right 45%, bottom-center 60%, then the full image only as fallback. Resized original, grayscale/contrast, threshold and inverted-threshold treatments are used without parallel image decoding. A strong parsed result exits early; otherwise the best candidate is selected using parser confidence, Tesseract confidence, directional/label context and OCR correction count.
+
+The coordinate parser accepts decimal, LAT/LON, cardinal-direction, degrees/decimal-minutes and degrees/minutes/seconds formats. Common character corrections are applied only inside numeric-looking tokens. Cards show OCR quality and allow manual latitude/longitude correction; applying a correction recalculates all distance results without selecting photos again.
+
+Parsed values are not automatically trusted. Batch sanity validation builds a median cluster from the current selection and marks distant outliers as `suspicious`; an optional Karelia filter is available. Only `confident` and manually confirmed coordinates participate in distance calculations. OCR, cleanup and upload can be run as separate stages, and the collapsed processing journal exposes the active step and elapsed time.
 
 ## Preview policy
 

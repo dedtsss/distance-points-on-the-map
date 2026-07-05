@@ -2,13 +2,15 @@ import { normalizeCoordinates } from './coordinateParser.js';
 import { readCoordinatesFromExif } from './exifFallback.js';
 import { readCoordinatesWithOcr } from './ocrReader.js';
 
-const debugOcr = (ocr) => ({
+const debugOcr = (ocr, includeDetails = false) => ({
   rawText: ocr?.rawText || '',
   normalizedText: ocr?.normalizedText || '',
   confidence: ocr?.confidence || 0,
+  ocrConfidence: ocr?.ocrConfidence || 0,
+  ocrStatus: ocr?.ocrStatus || 'missing',
   candidates: ocr?.candidates || [],
   chosenCandidate: ocr?.chosenCandidate || null,
-  attempts: ocr?.attempts || [],
+  attempts: includeDetails ? (ocr?.attempts || []) : [],
   cropPreview: ocr?.cropPreview || '',
   processedPreview: ocr?.processedPreview || '',
   warnings: ocr?.warnings || [],
@@ -42,8 +44,11 @@ export async function readGpsPipeline(stableFile, options = {}) {
       found: true,
       coordinates: ocrCoordinates,
       source: 'ocr',
+      confidence: ocr.confidence || 0,
+      ocrStatus: ocr.ocrStatus || 'uncertain',
+      ocrAttemptCount: ocr.attempts?.length || 0,
       orientation: orientationExif?.orientation || 1,
-      debug: { ocr: debugOcr(ocr), ocrError, exif: orientationExif, exifError },
+      debug: { ocr: debugOcr(ocr, options.debug === true), ocrError, exif: orientationExif, exifError },
     };
   }
 
@@ -63,8 +68,11 @@ export async function readGpsPipeline(stableFile, options = {}) {
       found: true,
       coordinates: exifCoordinates,
       source: 'exif',
+      confidence: 1,
+      ocrStatus: 'exif',
+      ocrAttemptCount: ocr?.attempts?.length || 0,
       orientation: exif?.orientation || 1,
-      debug: { ocr: debugOcr(ocr), ocrError, exif, exifError },
+      debug: { ocr: debugOcr(ocr, options.debug === true), ocrError, exif, exifError },
     };
   }
 
@@ -72,9 +80,12 @@ export async function readGpsPipeline(stableFile, options = {}) {
     found: false,
     coordinates: null,
     source: null,
+    confidence: ocr?.confidence || 0,
+    ocrStatus: ocr?.ocrStatus || (ocrError ? 'error' : 'missing'),
+    ocrAttemptCount: ocr?.attempts?.length || 0,
     orientation: exif?.orientation || 1,
     debug: {
-      ocr: debugOcr(ocr),
+      ocr: debugOcr(ocr, options.debug === true),
       ocrError,
       exif,
       exifError: exifError || exif?.exifError || null,

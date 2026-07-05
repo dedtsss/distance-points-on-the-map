@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { replacePhotoBatch } from '../src/app/appState.js';
+import { applyManualCoordinateCorrection, getProgressSummary, replacePhotoBatch } from '../src/app/appState.js';
 import { runPhotoPipeline } from '../src/app/pipeline.js';
+import { calculateDistances } from '../src/features/distance/distanceService.js';
 import { readGpsPipeline } from '../src/features/gps/readGpsPipeline.js';
+import { validateCoordinateBatch } from '../src/features/gps/coordinateSanity.js';
 
 const ocrWithOrientation = await readGpsPipeline(new File(['gps'], 'ocr.jpg', { type: 'image/jpeg' }), {
   dependencies: {
@@ -31,6 +33,9 @@ const makePhoto = async (id, number) => {
     latitude: null,
     longitude: null,
     gpsSource: null,
+    gpsConfidence: 0,
+    ocrStatus: 'idle',
+    manualCoordinates: false,
     orientation: 1,
     distanceStatus: 'pending',
     distanceConflicts: [],
@@ -80,7 +85,7 @@ const missingResult = await runPhotoPipeline({
   dependencies: {
     readGps: async (file) => file.name === 'missing.jpg'
       ? Promise.reject(new Error('OCR failed'))
-      : { found: true, coordinates: { latitude: 62.1, longitude: 34.1 }, source: 'ocr', orientation: 1, debug: {} },
+      : { found: true, coordinates: { latitude: 62.1, longitude: 34.1 }, source: 'ocr', confidence: 0.9, ocrStatus: 'confident', orientation: 1, debug: {} },
     clean: async (file) => { cleanedIds.push(file.name); return cleanSuccess(file); },
     upload: async (entries) => { uploadedEntries = entries; return uploadSuccess(entries); },
   },
@@ -93,10 +98,32 @@ assert.equal(uploadedEntries.length, 2);
 assert.ok(uploadedEntries.every((entry, index) => entry.cleaned && entry.file !== missingPhotos[index].stableFile));
 assert.ok(missingResult.photos.every((photo) => photo.stableFile === null && photo.thumbnailDataUrl));
 
+// A suspicious OCR candidate is informational and does not block cleanup/upload.
+const suspiciousResult = await runPhotoPipeline({
+  photos: [await makePhoto('suspicious-ocr', 1)],
+  dependencies: {
+    readGps: async () => ({
+      found: false,
+      coordinates: null,
+      source: null,
+      confidence: 0.42,
+      ocrStatus: 'suspect',
+      orientation: 1,
+      debug: { ocr: { chosenCandidate: { latitude: 62.1, longitude: 34.1 } } },
+    }),
+    clean: cleanSuccess,
+    upload: uploadSuccess,
+  },
+});
+assert.equal(suspiciousResult.photos[0].ocrStatus, 'suspect');
+assert.equal(suspiciousResult.photos[0].gpsStatus, 'missing');
+assert.equal(suspiciousResult.photos[0].uploadStatus, 'done');
+
 // A distance conflict is informational and does not block cleanup/upload.
 const closePhotos = [await makePhoto('close-a', 1), await makePhoto('close-b', 2)];
 let closeCleanCount = 0;
 let closeUploadCount = 0;
+const journalEvents = [];
 const closeResult = await runPhotoPipeline({
   photos: closePhotos,
   dependencies: {
@@ -105,16 +132,40 @@ const closeResult = await runPhotoPipeline({
       coordinates: file.name === 'close-a.jpg'
         ? { latitude: 62.1, longitude: 34.1 }
         : { latitude: 62.10001, longitude: 34.10001 },
-      source: 'ocr', orientation: 1, debug: {},
+      source: 'ocr', confidence: 0.9, ocrStatus: 'confident', orientation: 1, debug: {},
     }),
     clean: async (file) => { closeCleanCount += 1; return cleanSuccess(file); },
     upload: async (entries) => { closeUploadCount = entries.length; return uploadSuccess(entries); },
   },
+  onLog: (entry) => journalEvents.push(entry.message),
 });
 assert.equal(closeResult.distanceResult.violations.length, 1);
 assert.equal(closeCleanCount, 2);
 assert.equal(closeUploadCount, 2);
 assert.ok(closeResult.photos.every((photo) => photo.uploadStatus === 'done'));
+assert.ok(journalEvents.some((message) => message.startsWith('OCR started')));
+assert.ok(journalEvents.some((message) => message.startsWith('Cleanup started')));
+assert.ok(journalEvents.some((message) => message.startsWith('Upload freeimage')));
+
+const sanityPhotos = [
+  { id: 'a', coordinates: { latitude: 64.6, longitude: 30.6 }, gpsConfidence: 0.9, ocrStatus: 'confident' },
+  { id: 'b', coordinates: { latitude: 64.61, longitude: 30.61 }, gpsConfidence: 0.9, ocrStatus: 'confident' },
+  { id: 'bad', coordinates: { latitude: 30.591181, longitude: 164.60467 }, gpsConfidence: 0.9, ocrStatus: 'confident' },
+];
+const sanity = validateCoordinateBatch(sanityPhotos);
+assert.equal(sanity.byPhotoId.get('bad').coordinateQuality, 'suspicious');
+const summary = getProgressSummary(sanityPhotos.map((photo) => ({ ...photo, ...sanity.byPhotoId.get(photo.id) })));
+assert.equal(summary.confident, 2);
+assert.equal(summary.suspicious, 1);
+
+const manuallyCorrected = applyManualCoordinateCorrection(
+  sanityPhotos.map((photo) => ({ ...photo, ...sanity.byPhotoId.get(photo.id), number: 1 })),
+  'bad',
+  { latitude: 64.60001, longitude: 30.60001 },
+  (items) => calculateDistances(items, 25),
+);
+assert.equal(manuallyCorrected.find((photo) => photo.id === 'bad').coordinateQuality, 'manual');
+assert.equal(manuallyCorrected.find((photo) => photo.id === 'bad').distanceStatus, 'too_close');
 
 // Cleanup failure skips only failed photos; the rest still upload.
 const mixedPhotos = [await makePhoto('broken', 1), await makePhoto('ok-a', 2), await makePhoto('ok-b', 3)];

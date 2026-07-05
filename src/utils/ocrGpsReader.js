@@ -1,53 +1,58 @@
-const DEFAULT_CROP_OPTIONS = {
-  widthRatio: 0.52,
-  heightRatio: 0.32,
-  rightPaddingRatio: 0,
-  bottomPaddingRatio: 0,
-};
-
+const DEFAULT_CROP_OPTIONS = { xRatio: 0.48, yRatio: 0.68, widthRatio: 0.52, heightRatio: 0.32 };
 const DEFAULT_PREPROCESS_OPTIONS = {
-  upscale: 3,
-  threshold: 145,
-  contrast: 1.35,
-  invert: true,
+  method: 'threshold',
+  upscale: 2,
+  threshold: 150,
+  contrast: 1.5,
+  maxWidth: 2200,
+  maxHeight: 1800,
+  maxPixels: 3_200_000,
 };
 
 const DEFAULT_MIN_PARSER_CONFIDENCE = 0.55;
 
-const OCR_ATTEMPT_VARIANTS = [
-  {
-    name: 'default',
-    crop: {},
-    preprocess: {},
-  },
-  {
-    name: 'wider_bottom_right',
-    crop: { widthRatio: 0.62, heightRatio: 0.36 },
-    preprocess: { threshold: 135, contrast: 1.45, invert: true },
-  },
-  {
-    name: 'lower_strip',
-    crop: { widthRatio: 0.72, heightRatio: 0.22 },
-    preprocess: { threshold: 150, contrast: 1.35, invert: true },
-  },
-  {
-    name: 'no_invert',
-    crop: { widthRatio: 0.62, heightRatio: 0.34 },
-    preprocess: { threshold: 145, contrast: 1.45, invert: false },
-  },
-  {
-    name: 'light_overlay_high_threshold',
-    crop: { widthRatio: 0.62, heightRatio: 0.32 },
-    preprocess: { threshold: 210, contrast: 1.2, invert: false },
-  },
-  {
-    name: 'wide_lower_light_overlay',
-    crop: { widthRatio: 0.78, heightRatio: 0.24 },
-    preprocess: { threshold: 205, contrast: 1.25, invert: false },
-  },
+const OCR_ROIS = [
+  { name: 'bottom_35', crop: { xRatio: 0, yRatio: 0.65, widthRatio: 1, heightRatio: 0.35 } },
+  { name: 'bottom_right_45', crop: { xRatio: 0.55, yRatio: 0.55, widthRatio: 0.45, heightRatio: 0.45 } },
+  { name: 'bottom_center_60', crop: { xRatio: 0.2, yRatio: 0.4, widthRatio: 0.6, heightRatio: 0.6 } },
+  { name: 'full_image', crop: { xRatio: 0, yRatio: 0, widthRatio: 1, heightRatio: 1 }, fallback: true },
 ];
 
-const OCR_CHAR_WHITELIST = '0123456789.,-+ NSEWnsew°\'": LATlatLONlonIndex№#НомерИндексаиндекса';
+const OCR_PREPROCESS_VARIANTS = [
+  { name: 'original_resized', preprocess: { method: 'original', upscale: 2 } },
+  { name: 'grayscale_contrast', preprocess: { method: 'grayscale', upscale: 2, contrast: 1.8 } },
+  { name: 'threshold', preprocess: { method: 'threshold', upscale: 2, threshold: 155, contrast: 1.55 } },
+  { name: 'inverted_threshold', preprocess: { method: 'inverted_threshold', upscale: 2, threshold: 155, contrast: 1.55 } },
+];
+
+const attemptVariant = (roiName, preprocessName) => {
+  const roi = OCR_ROIS.find((item) => item.name === roiName);
+  const variant = OCR_PREPROCESS_VARIANTS.find((item) => item.name === preprocessName);
+  return {
+    name: `${roi.name}:${variant.name}`,
+    cropName: roi.name,
+    preprocessName: variant.name,
+    fallback: roi.fallback === true,
+    crop: roi.crop,
+    preprocess: variant.preprocess,
+  };
+};
+
+// The sequence covers every requested ROI and preprocessing family without a
+// 4×4 Cartesian explosion. Each ROI gets a second visual treatment only when
+// earlier candidates did not produce a strong result.
+export const OCR_ATTEMPT_VARIANTS = [
+  attemptVariant('bottom_35', 'original_resized'),
+  attemptVariant('bottom_right_45', 'original_resized'),
+  attemptVariant('bottom_center_60', 'original_resized'),
+  attemptVariant('bottom_35', 'grayscale_contrast'),
+  attemptVariant('bottom_right_45', 'threshold'),
+  attemptVariant('bottom_center_60', 'inverted_threshold'),
+  attemptVariant('bottom_35', 'inverted_threshold'),
+  attemptVariant('full_image', 'grayscale_contrast'),
+];
+
+const OCR_CHAR_WHITELIST = '0123456789.,-+ NSEWnsew LATLON:°′″ /';
 const DECIMAL_NUMBER_RE = /[-+]?\d{1,3}\.\d{3,10}/g;
 const KARELIA_SHORT_DECIMAL_PAIR_RE = /((?:6[0-9]|70)\.\d{2,10})\D{0,30}((?:2[5-9]|3[0-9]|40)\.\d{2,10})/g;
 
@@ -68,7 +73,7 @@ export function loadImageFromFile(file) {
   });
 }
 
-export function cropBottomRight(image, options = {}) {
+export function cropImageRegion(image, options = {}) {
   const cropOptions = { ...DEFAULT_CROP_OPTIONS, ...options };
   const sourceWidth = image.naturalWidth || image.width;
   const sourceHeight = image.naturalHeight || image.height;
@@ -79,10 +84,8 @@ export function cropBottomRight(image, options = {}) {
 
   const cropWidth = Math.max(1, Math.min(sourceWidth, Math.round(sourceWidth * cropOptions.widthRatio)));
   const cropHeight = Math.max(1, Math.min(sourceHeight, Math.round(sourceHeight * cropOptions.heightRatio)));
-  const rightPadding = Math.max(0, Math.round(sourceWidth * cropOptions.rightPaddingRatio));
-  const bottomPadding = Math.max(0, Math.round(sourceHeight * cropOptions.bottomPaddingRatio));
-  const cropX = Math.max(0, sourceWidth - cropWidth - rightPadding);
-  const cropY = Math.max(0, sourceHeight - cropHeight - bottomPadding);
+  const cropX = Math.max(0, Math.min(sourceWidth - cropWidth, Math.round(sourceWidth * cropOptions.xRatio)));
+  const cropY = Math.max(0, Math.min(sourceHeight - cropHeight, Math.round(sourceHeight * cropOptions.yRatio)));
 
   const canvas = document.createElement('canvas');
   canvas.width = cropWidth;
@@ -97,12 +100,26 @@ export function cropBottomRight(image, options = {}) {
   return canvas;
 }
 
+export function cropBottomRight(image, options = {}) {
+  const widthRatio = options.widthRatio ?? DEFAULT_CROP_OPTIONS.widthRatio;
+  const heightRatio = options.heightRatio ?? DEFAULT_CROP_OPTIONS.heightRatio;
+  return cropImageRegion(image, {
+    ...options,
+    xRatio: 1 - widthRatio - (options.rightPaddingRatio || 0),
+    yRatio: 1 - heightRatio - (options.bottomPaddingRatio || 0),
+    widthRatio,
+    heightRatio,
+  });
+}
+
 export function preprocessForOcr(canvas, options = {}) {
   const preprocessOptions = { ...DEFAULT_PREPROCESS_OPTIONS, ...options };
   const requestedScale = Math.max(1, Math.min(4, Number(preprocessOptions.upscale) || 3));
-  const maxWidth = Math.max(800, Number(preprocessOptions.maxWidth) || 2400);
-  const maxHeight = Math.max(600, Number(preprocessOptions.maxHeight) || 1600);
-  const scale = Math.min(requestedScale, maxWidth / canvas.width, maxHeight / canvas.height);
+  const maxWidth = Math.max(800, Number(preprocessOptions.maxWidth) || DEFAULT_PREPROCESS_OPTIONS.maxWidth);
+  const maxHeight = Math.max(600, Number(preprocessOptions.maxHeight) || DEFAULT_PREPROCESS_OPTIONS.maxHeight);
+  const maxPixels = Math.max(1_000_000, Number(preprocessOptions.maxPixels) || DEFAULT_PREPROCESS_OPTIONS.maxPixels);
+  const pixelScale = Math.sqrt(maxPixels / Math.max(1, canvas.width * canvas.height));
+  const scale = Math.max(0.25, Math.min(requestedScale, maxWidth / canvas.width, maxHeight / canvas.height, pixelScale));
 
   const output = document.createElement('canvas');
   output.width = Math.max(1, Math.round(canvas.width * scale));
@@ -117,6 +134,8 @@ export function preprocessForOcr(canvas, options = {}) {
   context.imageSmoothingQuality = 'high';
   context.drawImage(canvas, 0, 0, output.width, output.height);
 
+  if (preprocessOptions.method === 'original') return output;
+
   const imageData = context.getImageData(0, 0, output.width, output.height);
   const { data } = imageData;
   const threshold = Number(preprocessOptions.threshold) || DEFAULT_PREPROCESS_OPTIONS.threshold;
@@ -125,11 +144,11 @@ export function preprocessForOcr(canvas, options = {}) {
   for (let i = 0; i < data.length; i += 4) {
     const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
     const contrasted = Math.max(0, Math.min(255, ((gray - 128) * contrast) + 128));
-    let value = contrasted >= threshold ? 255 : 0;
-
-    if (preprocessOptions.invert) {
-      value = 255 - value;
+    let value = contrasted;
+    if (preprocessOptions.method === 'threshold' || preprocessOptions.method === 'inverted_threshold') {
+      value = contrasted >= threshold ? 255 : 0;
     }
+    if (preprocessOptions.method === 'inverted_threshold') value = 255 - value;
 
     data[i] = value;
     data[i + 1] = value;
@@ -149,37 +168,20 @@ const safeCanvasDataUrl = (canvas) => {
 };
 
 export async function recognizeTextFromCanvas(canvas, options = {}) {
-  const { createWorker } = await import('tesseract.js');
-  const logger = (message) => {
-    if (typeof options.onProgress === 'function') {
-      options.onProgress({
-        status: message.status || 'ocr',
-        progress: Number.isFinite(message.progress) ? message.progress : 0,
-      });
-    }
-  };
-
-  let worker = null;
+  const session = options.session || await createSequentialOcrSession(options);
+  const ownsSession = !options.session;
   let recognitionTimeoutId = null;
 
   try {
-    worker = await createWorker('eng', 1, { logger });
-    await worker.setParameters({
-      tessedit_char_whitelist: options.whitelist || OCR_CHAR_WHITELIST,
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '1',
-    });
-
     const timeoutMs = Math.max(10_000, Number(options.recognitionTimeoutMs) || 45_000);
     const timeout = new Promise((_, reject) => {
       recognitionTimeoutId = globalThis.setTimeout(() => {
-        worker?.terminate().catch(() => {});
         const error = new Error('OCR recognition timed out');
         error.name = 'TimeoutError';
         reject(error);
       }, timeoutMs);
     });
-    const result = await Promise.race([worker.recognize(canvas), timeout]);
+    const result = await Promise.race([session.worker.recognize(canvas), timeout]);
     globalThis.clearTimeout(recognitionTimeoutId);
     return {
       text: result?.data?.text || '',
@@ -187,17 +189,44 @@ export async function recognizeTextFromCanvas(canvas, options = {}) {
     };
   } finally {
     if (recognitionTimeoutId) globalThis.clearTimeout(recognitionTimeoutId);
-    if (worker) {
-      await worker.terminate().catch(() => {});
-    }
+    if (ownsSession) await session.terminate();
   }
 }
 
-const normalizeDigitOcrMistakes = (value) => value
-  .replace(/([0-9])[OoОо](?=[0-9])/g, (_, digit) => `${digit}0`)
-  .replace(/\b[OoОо](?=[0-9])/g, '0')
-  .replace(/([0-9])[lI|](?=[0-9])/g, (_, digit) => `${digit}1`)
-  .replace(/\b[lI|](?=[0-9])/g, '1');
+export async function createSequentialOcrSession(options = {}) {
+  const { createWorker } = await import('tesseract.js');
+  const logger = (message) => options.onProgress?.({
+    status: message.status || 'ocr',
+    progress: Number.isFinite(message.progress) ? message.progress : 0,
+  });
+  const worker = await createWorker('eng', 1, { logger });
+  await worker.setParameters({
+    tessedit_char_whitelist: options.whitelist || OCR_CHAR_WHITELIST,
+    tessedit_pageseg_mode: '6',
+    preserve_interword_spaces: '1',
+  });
+  return {
+    worker,
+    terminate: () => worker.terminate().catch(() => {}),
+  };
+}
+
+const normalizeDigitOcrMistakes = (value) => {
+  let correctionCount = 0;
+  const text = value.replace(/[0-9OoОоIl|SBbs.,+\-]+/g, (token) => {
+    if (!/\d/.test(token)) return token;
+    return [...token].map((character, index) => {
+      let replacement = character;
+      if (/[OoОо]/.test(character)) replacement = '0';
+      if (/[Il|]/.test(character)) replacement = '1';
+      if (/[Bb]/.test(character)) replacement = '8';
+      if (/[Ss]/.test(character) && index > 0 && index < token.length - 1) replacement = '5';
+      if (replacement !== character) correctionCount += 1;
+      return replacement;
+    }).join('');
+  });
+  return { text, correctionCount };
+};
 
 const normalizeOcrText = (text) => {
   let value = String(text || '').normalize('NFKC');
@@ -206,13 +235,14 @@ const normalizeOcrText = (text) => {
     .replace(/[−–—]/g, '-')
     .replace(/[º˚]/g, '°')
     .replace(/[;]+/g, ',');
-  value = normalizeDigitOcrMistakes(value);
+  const corrected = normalizeDigitOcrMistakes(value);
+  value = corrected.text;
   value = value
     .replace(/(\d),(\d)/g, '$1.$2')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return value;
+  return { text: value, correctionCount: corrected.correctionCount };
 };
 
 const toNumber = (value) => Number(String(value).replace(',', '.'));
@@ -300,21 +330,19 @@ const parseIndex = (normalizedText) => {
   return null;
 };
 
-const scoreCandidate = ({ latitude, longitude, baseConfidence, warnings }) => {
+const scoreCandidate = ({ latitude, longitude, baseConfidence, warnings, correctionCount = 0, contextStrength = 0 }) => {
   let confidence = baseConfidence;
 
-  if (isKareliaLike(latitude, longitude)) {
-    confidence += 0.16;
-  }
+  confidence += contextStrength;
+  if (isKareliaLike(latitude, longitude)) confidence += 0.06;
 
-  if (warnings.length === 0) {
-    confidence += 0.04;
-  }
+  if (warnings.length === 0) confidence += 0.04;
+  confidence -= Math.min(0.2, correctionCount * 0.035);
 
   return Math.max(0, Math.min(0.95, Number(confidence.toFixed(2))));
 };
 
-const addCandidate = (candidates, latitude, longitude, source, baseConfidence, warnings = []) => {
+const addCandidate = (candidates, latitude, longitude, source, baseConfidence, warnings = [], metadata = {}) => {
   const lat = Number(latitude);
   const lon = Number(longitude);
 
@@ -328,7 +356,16 @@ const addCandidate = (candidates, latitude, longitude, source, baseConfidence, w
       longitude: lon,
       source,
       warnings: candidateWarnings,
-      confidence: scoreCandidate({ latitude: lat, longitude: lon, baseConfidence, warnings: candidateWarnings }),
+      correctionCount: metadata.correctionCount || 0,
+      contextStrength: metadata.contextStrength || 0,
+      confidence: scoreCandidate({
+        latitude: lat,
+        longitude: lon,
+        baseConfidence,
+        warnings: candidateWarnings,
+        correctionCount: metadata.correctionCount,
+        contextStrength: metadata.contextStrength,
+      }),
     });
   }
 
@@ -342,11 +379,15 @@ const addCandidate = (candidates, latitude, longitude, source, baseConfidence, w
       longitude: lat,
       source,
       warnings: swapWarnings,
+      correctionCount: metadata.correctionCount || 0,
+      contextStrength: metadata.contextStrength || 0,
       confidence: scoreCandidate({
         latitude: lon,
         longitude: lat,
         baseConfidence: baseConfidence + 0.05,
         warnings: swapWarnings,
+        correctionCount: metadata.correctionCount,
+        contextStrength: metadata.contextStrength,
       }),
     });
   }
@@ -379,12 +420,24 @@ const collectKareliaShortDecimalPairs = (normalizedText) => (
     .map((match) => [match[1], match[2]])
 );
 
+const degreesMinutesToDecimal = (degrees, minutes, direction) => withDirection(
+  Math.abs(toNumber(degrees)) + (toNumber(minutes) / 60),
+  direction,
+);
+
+const degreesMinutesSecondsToDecimal = (degrees, minutes, seconds, direction) => withDirection(
+  Math.abs(toNumber(degrees)) + (toNumber(minutes) / 60) + (toNumber(seconds) / 3600),
+  direction,
+);
+
 export function parseGpsFromOcrText(text, options = {}) {
   const minimumConfidence = Number.isFinite(Number(options.minimumConfidence))
     ? Number(options.minimumConfidence)
     : DEFAULT_MIN_PARSER_CONFIDENCE;
   const rawText = String(text || '');
-  const normalizedText = normalizeOcrText(rawText);
+  const normalized = normalizeOcrText(rawText);
+  const normalizedText = normalized.text;
+  const correctionCount = normalized.correctionCount;
   const warnings = [];
   const indexFromOcr = parseIndex(normalizedText);
   const candidates = [];
@@ -398,7 +451,10 @@ export function parseGpsFromOcrText(text, options = {}) {
     /(?:lat(?:itude)?|широта)\D{0,24}([-+]?\d{1,3}\.\d{3,10})\D{0,48}(?:lon(?:gitude)?|lng|long|долгота)\D{0,24}([-+]?\d{1,3}\.\d{3,10})/i,
   );
   if (labelPair) {
-    addCandidate(candidates, toNumber(labelPair[1]), toNumber(labelPair[2]), 'labels', 0.68);
+    addCandidate(candidates, toNumber(labelPair[1]), toNumber(labelPair[2]), 'labels', 0.68, [], {
+      correctionCount,
+      contextStrength: 0.18,
+    });
   }
 
   const directionBefore = normalizedText.match(
@@ -411,6 +467,8 @@ export function parseGpsFromOcrText(text, options = {}) {
       withDirection(directionBefore[4], directionBefore[3]),
       'direction_before',
       0.72,
+      [],
+      { correctionCount, contextStrength: 0.18 },
     );
   }
 
@@ -424,11 +482,61 @@ export function parseGpsFromOcrText(text, options = {}) {
       withDirection(directionAfter[3], directionAfter[4]),
       'direction_after',
       0.72,
+      [],
+      { correctionCount, contextStrength: 0.18 },
+    );
+  }
+
+  const dmsPair = normalizedText.match(
+    /([-+]?\d{1,3})\s*°?\s*(\d{1,2})\s*[′']\s*(\d{1,2}(?:\.\d+)?)\s*[″"]?\s*([NS])\D{0,36}([-+]?\d{1,3})\s*°?\s*(\d{1,2})\s*[′']\s*(\d{1,2}(?:\.\d+)?)\s*[″"]?\s*([EW])/i,
+  );
+  if (dmsPair) {
+    addCandidate(
+      candidates,
+      degreesMinutesSecondsToDecimal(dmsPair[1], dmsPair[2], dmsPair[3], dmsPair[4]),
+      degreesMinutesSecondsToDecimal(dmsPair[5], dmsPair[6], dmsPair[7], dmsPair[8]),
+      'degrees_minutes_seconds',
+      0.72,
+      [],
+      { correctionCount, contextStrength: 0.2 },
+    );
+  }
+
+  const spaceDmsPair = normalizedText.match(
+    /([-+]?\d{1,3})\s+(\d{1,2})\s+(\d{1,2}(?:\.\d+)?)\s*([NS])\D{0,24}([-+]?\d{1,3})\s+(\d{1,2})\s+(\d{1,2}(?:\.\d+)?)\s*([EW])/i,
+  );
+  if (spaceDmsPair) {
+    addCandidate(
+      candidates,
+      degreesMinutesSecondsToDecimal(spaceDmsPair[1], spaceDmsPair[2], spaceDmsPair[3], spaceDmsPair[4]),
+      degreesMinutesSecondsToDecimal(spaceDmsPair[5], spaceDmsPair[6], spaceDmsPair[7], spaceDmsPair[8]),
+      'space_degrees_minutes_seconds',
+      0.7,
+      [],
+      { correctionCount, contextStrength: 0.2 },
+    );
+  }
+
+  const degreesMinutesPair = normalizedText.match(
+    /([-+]?\d{1,3})\s*°\s*(\d{1,2}(?:\.\d+)?)\s*[′']?\s*([NS])\D{0,36}([-+]?\d{1,3})\s*°\s*(\d{1,2}(?:\.\d+)?)\s*[′']?\s*([EW])/i,
+  );
+  if (degreesMinutesPair) {
+    addCandidate(
+      candidates,
+      degreesMinutesToDecimal(degreesMinutesPair[1], degreesMinutesPair[2], degreesMinutesPair[3]),
+      degreesMinutesToDecimal(degreesMinutesPair[4], degreesMinutesPair[5], degreesMinutesPair[6]),
+      'degrees_decimal_minutes',
+      0.7,
+      [],
+      { correctionCount, contextStrength: 0.2 },
     );
   }
 
   collectDecimalPairs(normalizedText).forEach(([latitude, longitude]) => {
-    addCandidate(candidates, toNumber(latitude), toNumber(longitude), 'decimal_pair', 0.52);
+    addCandidate(candidates, toNumber(latitude), toNumber(longitude), 'decimal_pair', 0.52, [], {
+      correctionCount,
+      contextStrength: 0,
+    });
   });
 
   collectKareliaShortDecimalPairs(normalizedText).forEach(([latitude, longitude]) => {
@@ -442,6 +550,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       'karelia_short_decimal_pair',
       0.56,
       warningsForCandidate,
+      { correctionCount, contextStrength: 0 },
     );
   });
 
@@ -457,6 +566,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       indexFromOcr,
       rawText,
       normalizedText,
+      correctionCount,
       confidence: 0,
       candidates: [],
       chosenCandidate: null,
@@ -467,10 +577,6 @@ export function parseGpsFromOcrText(text, options = {}) {
   const best = candidates.sort((a, b) => b.confidence - a.confidence)[0];
   const resultWarnings = new Set([...warnings, ...best.warnings]);
 
-  if (!isKareliaLike(best.latitude, best.longitude)) {
-    resultWarnings.add('outside_expected_region');
-  }
-
   if (isZeroZeroLatLon(best.latitude, best.longitude)) {
     resultWarnings.add('zero_zero_placeholder');
     return {
@@ -480,6 +586,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       indexFromOcr,
       rawText,
       normalizedText,
+      correctionCount,
       confidence: best.confidence,
       candidates,
       chosenCandidate: best,
@@ -496,6 +603,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       indexFromOcr,
       rawText,
       normalizedText,
+      correctionCount,
       confidence: best.confidence,
       candidates,
       chosenCandidate: best,
@@ -510,6 +618,7 @@ export function parseGpsFromOcrText(text, options = {}) {
     indexFromOcr,
     rawText,
     normalizedText,
+    correctionCount,
     confidence: best.confidence,
     candidates,
     chosenCandidate: best,
@@ -517,103 +626,161 @@ export function parseGpsFromOcrText(text, options = {}) {
   };
 }
 
-export async function readGpsFromImageOcr(file, options = {}) {
-  try {
-    const debugEnabled = options.debug === true;
-    const variants = Array.isArray(options.variants) && options.variants.length > 0
-      ? options.variants
-      : OCR_ATTEMPT_VARIANTS;
-    const maxAttempts = Math.max(1, Number(options.maxAttempts) || variants.length);
-    const attempts = [];
-    let bestRejected = null;
+export const scoreOcrAttempt = (attempt) => {
+  const parserConfidence = Number(attempt?.parserConfidence) || 0;
+  const ocrConfidence = Number(attempt?.ocrConfidence) || 0;
+  const correctionPenalty = Math.min(0.18, (Number(attempt?.correctionCount) || 0) * 0.03);
+  const warningPenalty = (attempt?.warnings || []).includes('low_precision_coordinate') ? 0.08 : 0;
+  return Math.max(0, Math.min(0.99, Number((
+    (parserConfidence * 0.78) + (ocrConfidence * 0.22) - correctionPenalty - warningPenalty
+  ).toFixed(3))));
+};
 
+export function selectBestOcrAttempt(attempts) {
+  return [...(attempts || [])]
+    .filter((attempt) => attempt?.parsed?.chosenCandidate)
+    .map((attempt) => ({ ...attempt, score: scoreOcrAttempt(attempt) }))
+    .sort((left, right) => (
+      right.score - left.score
+      || (left.correctionCount || 0) - (right.correctionCount || 0)
+      || (right.parserConfidence || 0) - (left.parserConfidence || 0)
+    ))[0] || null;
+}
+
+const qualityForAttempt = (attempt) => {
+  if (!attempt?.parsed?.ok) return attempt?.parsed?.chosenCandidate ? 'suspect' : 'missing';
+  return attempt.score >= 0.76 && (attempt.correctionCount || 0) <= 1 ? 'confident' : 'uncertain';
+};
+
+export async function readGpsFromImageOcr(file, options = {}) {
+  const debugEnabled = options.debug === true;
+  const variants = Array.isArray(options.variants) && options.variants.length > 0
+    ? options.variants
+    : OCR_ATTEMPT_VARIANTS;
+  const maxAttempts = Math.max(1, Number(options.maxAttempts) || variants.length);
+  const timeBudgetMs = Math.max(20_000, Number(options.timeBudgetMs) || 75_000);
+  const startedAt = Date.now();
+  const attempts = [];
+  let image = null;
+  let session = null;
+
+  try {
     options.onProgress?.({ status: 'loading_image', progress: 0 });
-    const image = await loadImageFromFile(file);
+    image = await (options.dependencies?.loadImage || loadImageFromFile)(file);
+    session = await (options.dependencies?.createSession || createSequentialOcrSession)(options);
 
     for (let index = 0; index < Math.min(maxAttempts, variants.length); index += 1) {
       const variant = variants[index];
-      const attemptProgressBase = index / variants.length;
-      const cropOptions = {
-        ...variant.crop,
-        ...(index === 0 ? options.crop : {}),
-      };
-      const preprocessOptions = {
-        ...variant.preprocess,
-        ...(index === 0 ? options.preprocess : {}),
-      };
-
-      options.onProgress?.({
-        status: `cropping:${variant.name}`,
-        progress: Math.min(0.08 + attemptProgressBase * 0.15, 0.85),
-      });
-      const crop = cropBottomRight(image, cropOptions);
-      const prepared = preprocessForOcr(crop, preprocessOptions);
-      options.onProgress?.({
-        status: `recognizing:${variant.name}`,
-        progress: Math.min(0.12 + attemptProgressBase * 0.2, 0.9),
-      });
-      const recognized = await recognizeTextFromCanvas(prepared, options);
-      const parsed = parseGpsFromOcrText(recognized.text, {
-        minimumConfidence: options.minimumConfidence,
-      });
-      const ocrConfidence = Math.max(0, Math.min(0.99, recognized.confidence / 100));
-      const attempt = {
-        name: variant.name,
-        ok: parsed.ok,
-        rawText: parsed.rawText,
-        normalizedText: parsed.normalizedText,
-        parserConfidence: parsed.confidence,
-        ocrConfidence,
-        candidates: parsed.candidates || [],
-        chosenCandidate: parsed.chosenCandidate || null,
-        warnings: parsed.warnings || [],
-        cropPreview: debugEnabled ? safeCanvasDataUrl(crop) : '',
-        processedPreview: debugEnabled ? safeCanvasDataUrl(prepared) : '',
-      };
-      attempts.push(attempt);
-
-      const rejectedScore = parsed.confidence || (parsed.candidates?.length ? 0.1 : 0);
-      if (!bestRejected || rejectedScore > (bestRejected.confidence || 0)) {
-        bestRejected = {
-          ...parsed,
-          confidence: rejectedScore,
-          ocrConfidence,
-          ocrStatus: parsed.candidates?.length ? 'suspect' : 'missing',
-          cropPreview: attempt.cropPreview,
-          processedPreview: attempt.processedPreview,
-        };
+      if (Date.now() - startedAt >= timeBudgetMs) {
+        attempts.push({
+          name: 'time_budget',
+          cropName: null,
+          preprocessingMethod: null,
+          parsed: null,
+          parseResult: null,
+          warnings: ['ocr_time_budget_exhausted'],
+          rejectionReason: 'ocr_time_budget_exhausted',
+          score: 0,
+        });
+        break;
       }
+      const currentBest = selectBestOcrAttempt(attempts);
+      if (variant.fallback && currentBest?.parsed?.ok) break;
 
-      if (parsed.ok) {
-        return {
-          ...parsed,
-          confidence: Math.max(parsed.confidence, Number(ocrConfidence.toFixed(2))),
+      const attemptProgressBase = index / Math.min(maxAttempts, variants.length);
+      const cropOptions = { ...variant.crop, ...(index === 0 ? options.crop : {}) };
+      const preprocessOptions = { ...variant.preprocess, ...(index === 0 ? options.preprocess : {}) };
+      let crop = null;
+      let prepared = null;
+
+      try {
+        options.onProgress?.({ status: `cropping:${variant.name}`, progress: attemptProgressBase });
+        crop = (options.dependencies?.crop || cropImageRegion)(image, cropOptions);
+        prepared = (options.dependencies?.preprocess || preprocessForOcr)(crop, preprocessOptions);
+        options.onProgress?.({ status: `recognizing:${variant.name}`, progress: attemptProgressBase });
+        const recognized = await (options.dependencies?.recognize || recognizeTextFromCanvas)(prepared, {
+          ...options,
+          session,
+        });
+        const parsed = parseGpsFromOcrText(recognized.text, { minimumConfidence: options.minimumConfidence });
+        const ocrConfidence = Math.max(0, Math.min(0.99, Number(recognized.confidence) / 100));
+        const attempt = {
+          name: variant.name,
+          cropName: variant.cropName || variant.name,
+          cropDimensions: { width: crop.width, height: crop.height },
+          preparedDimensions: { width: prepared.width, height: prepared.height },
+          preprocessingMethod: variant.preprocessName || preprocessOptions.method,
+          rawText: parsed.rawText,
+          normalizedText: parsed.normalizedText,
+          parserConfidence: parsed.confidence,
           ocrConfidence,
-          ocrStatus: 'found',
-          attempts,
-          cropPreview: attempt.cropPreview,
-          processedPreview: attempt.processedPreview,
+          correctionCount: parsed.correctionCount || 0,
+          parsed,
+          parseResult: parsed.chosenCandidate,
+          warnings: parsed.warnings || [],
+          rejectionReason: parsed.ok ? null : parsed.chosenCandidate ? 'parser_low_confidence' : 'coordinates_not_found',
+          cropPreview: debugEnabled ? safeCanvasDataUrl(crop) : '',
+          processedPreview: debugEnabled ? safeCanvasDataUrl(prepared) : '',
         };
+        attempt.score = scoreOcrAttempt(attempt);
+        attempts.push(attempt);
+
+        if (parsed.ok && attempt.score >= 0.78 && attempt.correctionCount <= 1) break;
+      } catch (error) {
+        attempts.push({
+          name: variant.name,
+          cropName: variant.cropName || variant.name,
+          cropDimensions: crop ? { width: crop.width, height: crop.height } : null,
+          preparedDimensions: prepared ? { width: prepared.width, height: prepared.height } : null,
+          preprocessingMethod: variant.preprocessName || preprocessOptions.method,
+          rawText: '',
+          normalizedText: '',
+          parserConfidence: 0,
+          ocrConfidence: 0,
+          correctionCount: 0,
+          parsed: null,
+          parseResult: null,
+          warnings: ['ocr_attempt_error'],
+          rejectionReason: error instanceof Error ? error.message : String(error),
+          score: 0,
+        });
+        if (error?.name === 'TimeoutError') {
+          await session?.terminate?.();
+          session = await (options.dependencies?.createSession || createSequentialOcrSession)(options);
+        }
       }
     }
 
+    const best = selectBestOcrAttempt(attempts);
+    if (best?.parsed?.ok) {
+      return {
+        ...best.parsed,
+        confidence: best.score,
+        ocrConfidence: best.ocrConfidence,
+        ocrStatus: qualityForAttempt(best),
+        attempts,
+        cropPreview: best.cropPreview || '',
+        processedPreview: best.processedPreview || '',
+      };
+    }
+
     return {
-      ...(bestRejected || {
-        ok: false,
-        latitude: null,
-        longitude: null,
-        indexFromOcr: null,
-        rawText: '',
-        normalizedText: '',
-        confidence: 0,
-        ocrConfidence: 0,
-        ocrStatus: 'missing',
-        warnings: ['coordinates_not_found'],
-      }),
+      ...(best?.parsed || {}),
       ok: false,
       latitude: null,
       longitude: null,
+      indexFromOcr: best?.parsed?.indexFromOcr || null,
+      rawText: best?.rawText || '',
+      normalizedText: best?.normalizedText || '',
+      confidence: best?.score || 0,
+      ocrConfidence: best?.ocrConfidence || 0,
+      ocrStatus: best?.parsed?.chosenCandidate ? 'suspect' : 'missing',
+      candidates: best?.parsed?.candidates || [],
+      chosenCandidate: best?.parsed?.chosenCandidate || null,
       attempts,
+      cropPreview: best?.cropPreview || '',
+      processedPreview: best?.processedPreview || '',
+      warnings: best?.warnings || ['coordinates_not_found'],
     };
   } catch (error) {
     return {
@@ -628,13 +795,13 @@ export async function readGpsFromImageOcr(file, options = {}) {
       ocrStatus: 'error',
       candidates: [],
       chosenCandidate: null,
-      attempts: [],
+      attempts,
       cropPreview: '',
       processedPreview: '',
-      warnings: [
-        'ocr_error',
-        error instanceof Error ? error.message : 'Ошибка OCR',
-      ],
+      warnings: ['ocr_error', error instanceof Error ? error.message : 'Ошибка OCR'],
     };
+  } finally {
+    await session?.terminate?.();
+    image = null;
   }
 }
