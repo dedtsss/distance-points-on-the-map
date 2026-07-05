@@ -55,3 +55,11 @@ Session snapshots are saved incrementally after meaningful state changes and exc
 Browser QA verifies thumbnail creation, provider settings, staged actions, session reload/restore, preview fallback, shared all-links output and journal events. The five supplied JPEGs passed the staged flow; photos 1–4 were confident and photo 5 was correctly retained as suspicious pending manual review.
 
 Deployment: not performed. Merge: not performed.
+
+## Black overlay OCR follow-up
+
+Added an overlay-first strategy for white coordinate text on a black bottom-right panel. OCR first detects a dark rectangle in the lower-right search area, crops only its top coordinate row, applies memory-bounded 3× inverted-threshold preprocessing, and recognizes it with single-line PSM 7 plus a coordinate-only whitelist. A static bottom-right first-line crop remains as fallback before the general ROI queue.
+
+Debug attempts now record overlay detection, bounds, crop/prepared dimensions, preprocessing, page segmentation mode, raw/normalized text, parser candidate and rejection reason. The journal reports whether the overlay ROI was found.
+
+Regression parser and browser tests pass for `64,604344N 30,591954E ±3,48m`, producing latitude `64.604344`, longitude `30.591954` and confident quality. The named source file `1000081818.jpg` was not available in the provided attachments, so the browser regression uses a generated JPEG with the equivalent black bottom-right overlay.

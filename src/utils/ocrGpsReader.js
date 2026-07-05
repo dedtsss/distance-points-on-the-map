@@ -42,6 +42,24 @@ const attemptVariant = (roiName, preprocessName) => {
 // 4×4 Cartesian explosion. Each ROI gets a second visual treatment only when
 // earlier candidates did not produce a strong result.
 export const OCR_ATTEMPT_VARIANTS = [
+  {
+    name: 'bottom_right_black_overlay:detected_first_line',
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: 'inverted_threshold_3x',
+    overlayDetection: true,
+    preprocess: { method: 'inverted_threshold', upscale: 3, threshold: 150, contrast: 1.9 },
+    pageSegMode: '7',
+    whitelist: '0123456789., NSEWnsew+-±m',
+  },
+  {
+    name: 'bottom_right_overlay_line:static',
+    cropName: 'bottom_right_overlay_line',
+    preprocessName: 'inverted_threshold_3x',
+    crop: { xRatio: 0.45, yRatio: 0.76, widthRatio: 0.55, heightRatio: 0.11 },
+    preprocess: { method: 'inverted_threshold', upscale: 3, threshold: 150, contrast: 1.9 },
+    pageSegMode: '7',
+    whitelist: '0123456789., NSEWnsew+-±m',
+  },
   attemptVariant('bottom_35', 'original_resized'),
   attemptVariant('bottom_right_45', 'original_resized'),
   attemptVariant('bottom_center_60', 'original_resized'),
@@ -112,6 +130,73 @@ export function cropBottomRight(image, options = {}) {
   });
 }
 
+export function detectBottomRightBlackOverlay(image) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const search = {
+    x: Math.round(sourceWidth * 0.38),
+    y: Math.round(sourceHeight * 0.62),
+    width: Math.round(sourceWidth * 0.62),
+    height: Math.round(sourceHeight * 0.38),
+  };
+  const sample = document.createElement('canvas');
+  sample.width = 248;
+  sample.height = Math.max(80, Math.round(248 * search.height / search.width));
+  const context = sample.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Canvas 2D недоступен для overlay detection');
+  context.drawImage(image, search.x, search.y, search.width, search.height, 0, 0, sample.width, sample.height);
+  const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+  const isDark = (x, y) => {
+    const offset = ((y * sample.width) + x) * 4;
+    return ((pixels[offset] * 0.299) + (pixels[offset + 1] * 0.587) + (pixels[offset + 2] * 0.114)) < 72;
+  };
+  const rowRatios = Array.from({ length: sample.height }, (_, y) => {
+    let count = 0;
+    for (let x = 0; x < sample.width; x += 1) if (isDark(x, y)) count += 1;
+    return count / sample.width;
+  });
+  let bestStart = -1;
+  let bestEnd = -1;
+  let runStart = -1;
+  for (let y = 0; y <= rowRatios.length; y += 1) {
+    if (y < rowRatios.length && rowRatios[y] >= 0.28) {
+      if (runStart < 0) runStart = y;
+    } else if (runStart >= 0) {
+      if (y - runStart > bestEnd - bestStart) [bestStart, bestEnd] = [runStart, y];
+      runStart = -1;
+    }
+  }
+  if (bestStart < 0 || bestEnd - bestStart < 5) return { found: false, reason: 'dark_rectangle_not_found' };
+
+  let firstDarkColumn = sample.width;
+  for (let x = 0; x < sample.width; x += 1) {
+    let count = 0;
+    for (let y = bestStart; y < bestEnd; y += 1) if (isDark(x, y)) count += 1;
+    if (count / (bestEnd - bestStart) >= 0.45) { firstDarkColumn = x; break; }
+  }
+  if (firstDarkColumn === sample.width) return { found: false, reason: 'dark_rectangle_left_edge_not_found' };
+
+  const scaleX = search.width / sample.width;
+  const scaleY = search.height / sample.height;
+  const x = Math.max(0, Math.round(search.x + (firstDarkColumn * scaleX) - (sourceWidth * 0.01)));
+  const y = Math.max(0, Math.round(search.y + (bestStart * scaleY)));
+  const width = sourceWidth - x;
+  const detectedHeight = Math.round((bestEnd - bestStart) * scaleY);
+  const height = Math.max(24, Math.min(detectedHeight, Math.round(sourceHeight * 0.085)));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = Math.min(height, sourceHeight - y);
+  const outputContext = canvas.getContext('2d');
+  if (!outputContext) throw new Error('Canvas 2D недоступен для overlay crop');
+  outputContext.drawImage(image, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  return {
+    found: true,
+    canvas,
+    bounds: { x, y, width: canvas.width, height: canvas.height },
+    sampleDimensions: { width: sample.width, height: sample.height },
+  };
+}
+
 export function preprocessForOcr(canvas, options = {}) {
   const preprocessOptions = { ...DEFAULT_PREPROCESS_OPTIONS, ...options };
   const requestedScale = Math.max(1, Math.min(4, Number(preprocessOptions.upscale) || 3));
@@ -173,6 +258,11 @@ export async function recognizeTextFromCanvas(canvas, options = {}) {
   let recognitionTimeoutId = null;
 
   try {
+    await session.worker.setParameters({
+      tessedit_char_whitelist: options.whitelist || OCR_CHAR_WHITELIST,
+      tessedit_pageseg_mode: String(options.pageSegMode || '6'),
+      preserve_interword_spaces: '1',
+    });
     const timeoutMs = Math.max(10_000, Number(options.recognitionTimeoutMs) || 45_000);
     const timeout = new Promise((_, reject) => {
       recognitionTimeoutId = globalThis.setTimeout(() => {
@@ -692,15 +782,49 @@ export async function readGpsFromImageOcr(file, options = {}) {
       const preprocessOptions = { ...variant.preprocess, ...(index === 0 ? options.preprocess : {}) };
       let crop = null;
       let prepared = null;
+      let overlayDetection = null;
 
       try {
         options.onProgress?.({ status: `cropping:${variant.name}`, progress: attemptProgressBase });
-        crop = (options.dependencies?.crop || cropImageRegion)(image, cropOptions);
+        if (variant.overlayDetection) {
+          overlayDetection = (options.dependencies?.detectOverlay || detectBottomRightBlackOverlay)(image);
+          options.onProgress?.({
+            status: overlayDetection.found ? 'overlay:found' : 'overlay:not_found',
+            progress: attemptProgressBase,
+          });
+          if (!overlayDetection.found) {
+            attempts.push({
+              name: variant.name,
+              cropName: variant.cropName,
+              overlayDetected: false,
+              overlayDetection,
+              cropDimensions: null,
+              preparedDimensions: null,
+              preprocessingMethod: variant.preprocessName,
+              rawText: '',
+              normalizedText: '',
+              parserConfidence: 0,
+              ocrConfidence: 0,
+              correctionCount: 0,
+              parsed: null,
+              parseResult: null,
+              warnings: ['overlay_not_found'],
+              rejectionReason: overlayDetection.reason || 'overlay_not_found',
+              score: 0,
+            });
+            continue;
+          }
+          crop = overlayDetection.canvas;
+        } else {
+          crop = (options.dependencies?.crop || cropImageRegion)(image, cropOptions);
+        }
         prepared = (options.dependencies?.preprocess || preprocessForOcr)(crop, preprocessOptions);
         options.onProgress?.({ status: `recognizing:${variant.name}`, progress: attemptProgressBase });
         const recognized = await (options.dependencies?.recognize || recognizeTextFromCanvas)(prepared, {
           ...options,
           session,
+          whitelist: variant.whitelist || OCR_CHAR_WHITELIST,
+          pageSegMode: variant.pageSegMode || '6',
         });
         const parsed = parseGpsFromOcrText(recognized.text, { minimumConfidence: options.minimumConfidence });
         const ocrConfidence = Math.max(0, Math.min(0.99, Number(recognized.confidence) / 100));
@@ -710,6 +834,13 @@ export async function readGpsFromImageOcr(file, options = {}) {
           cropDimensions: { width: crop.width, height: crop.height },
           preparedDimensions: { width: prepared.width, height: prepared.height },
           preprocessingMethod: variant.preprocessName || preprocessOptions.method,
+          pageSegMode: variant.pageSegMode || '6',
+          overlayDetected: variant.overlayDetection ? true : null,
+          overlayDetection: variant.overlayDetection ? {
+            found: true,
+            bounds: overlayDetection.bounds,
+            sampleDimensions: overlayDetection.sampleDimensions,
+          } : null,
           rawText: parsed.rawText,
           normalizedText: parsed.normalizedText,
           parserConfidence: parsed.confidence,
@@ -733,6 +864,8 @@ export async function readGpsFromImageOcr(file, options = {}) {
           cropDimensions: crop ? { width: crop.width, height: crop.height } : null,
           preparedDimensions: prepared ? { width: prepared.width, height: prepared.height } : null,
           preprocessingMethod: variant.preprocessName || preprocessOptions.method,
+          pageSegMode: variant.pageSegMode || '6',
+          overlayDetected: variant.overlayDetection ? Boolean(overlayDetection?.found) : null,
           rawText: '',
           normalizedText: '',
           parserConfidence: 0,

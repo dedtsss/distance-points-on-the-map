@@ -28,9 +28,11 @@ const makeJpeg = async (label) => Buffer.from(await page.evaluate(async (text) =
   context2d.fillStyle = '#174b7a';
   context2d.font = 'bold 44px Arial';
   context2d.fillText(text, 60, 100);
-  context2d.fillStyle = '#000';
-  context2d.font = 'bold 32px Arial';
-  context2d.fillText('64.602319N 30.609952E', 410, 555);
+  context2d.fillStyle = '#050505';
+  context2d.fillRect(390, 470, 510, 130);
+  context2d.fillStyle = '#fff';
+  context2d.font = 'bold 29px Arial';
+  context2d.fillText('64,604344N 30,591954E +3,48m', 410, 520);
   const blob = await new Promise((resolveBlob) => canvas.toBlob(resolveBlob, 'image/jpeg', 0.86));
   return [...new Uint8Array(await blob.arrayBuffer())];
 }, label));
@@ -101,7 +103,11 @@ await page.getByLabel('x0.at как обязательная третья ссы
 await page.getByLabel('Использовать x0.at как fallback при ошибке').uncheck();
 
 await page.getByRole('button', { name: 'Только распознать координаты' }).click();
-await page.getByText('Координаты найдены уверенно').first().waitFor({ timeout: 180_000 });
+await page.waitForFunction(() => {
+  const qualities = [...document.querySelectorAll('.coordinate-quality')];
+  return qualities.length === 2 && qualities.every((node) => node.textContent.includes('Координаты найдены уверенно'));
+}, null, { timeout: 180_000 });
+assert.equal(await page.locator('.result-fields dd').filter({ hasText: '64.604344, 30.591954' }).count(), 2);
 
 await page.getByRole('button', { name: 'Исправить координаты' }).first().click();
 await page.getByLabel('Latitude фото 1').fill('62,100000');

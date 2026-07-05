@@ -44,6 +44,7 @@ export async function runPhotoPipeline(options) {
         onProgress: (progress) => {
           patchPhoto(initialPhoto.id, { statusText: progressText(progress) });
           if (String(progress.status).startsWith('cropping:')) log(`OCR ${progress.status.replace('cropping:', '')}`, initialPhoto.id);
+          if (String(progress.status).startsWith('overlay:')) log(`Overlay ROI: ${progress.status.endsWith('found') && !progress.status.endsWith('not_found') ? 'найден' : 'не найден'}`, initialPhoto.id);
         },
       });
       const foundPatch = gps.found ? {

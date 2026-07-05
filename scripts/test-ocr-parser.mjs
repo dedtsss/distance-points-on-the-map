@@ -20,6 +20,10 @@ assertCoordinates('мусор до 64.588123, 30.601234 мусор после', 
 assertCoordinates('64.6028, 30.6258 (±4м)', 64.6028, 30.6258);
 assertCoordinates('61,792040N 34,323477E ±1,00m Номер индекса: 4469', 61.79204, 34.323477);
 assertCoordinates('61,792040N 34,323477E ±1,00m Номер индекса: 4468', 61.79204, 34.323477);
+assertCoordinates('64,604344N 30,591954E ±3,48m', 64.604344, 30.591954);
+assertCoordinates('64.604344N 30.591954E', 64.604344, 30.591954);
+assertCoordinates('64,604344 N 30,591954 E', 64.604344, 30.591954);
+assertCoordinates('64.604344 N 30.591954 E', 64.604344, 30.591954);
 
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4469').indexFromOcr, '4469');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4468').indexFromOcr, '4468');
