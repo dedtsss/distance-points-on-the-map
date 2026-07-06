@@ -1,41 +1,48 @@
-# PR #18 — overlay OCR crop/parser fix
+# PR #18 — real overlay OCR fix
 
 Date: 2026-07-06
 
-## Root cause
+## Root causes confirmed on the originals
 
-The overlay detector found the black panel, but immediately truncated it to one fixed-height crop. That mixed detection and line selection, so a real-device layout could cut glyph tops/bottoms or the right edge before preprocessing. Debug previews were stored as data URLs inside JSON, so the UI did not display the images needed to diagnose the crop.
+- The black detector measured darkness across the entire search area. White glyph rows split the dark run, so its ROI started inside the coordinate line and its right edge stopped inside the panel.
+- There was no gray-caption detector. `1000081829.jpg` could only succeed later through an expensive general bottom-image OCR attempt, which is unreliable within the Android time budget.
+- Compact decimal-comma text such as `64,60271,30,61999` was normalized ambiguously, and the third altitude/accuracy number did not produce a strong early-exit candidate.
+- Overlay debug data existed, but the detector identity was not explicit in each rendered attempt.
 
 ## Fix
 
-- Detection now keeps the complete overlay bounds and reuses them across line attempts.
-- Overlay OCR tries a 6 px padded first line, slightly shifted crops, the top 40% of the panel and a left crop without the accuracy suffix.
-- Preprocessing covers grayscale/contrast, inverted grayscale and thresholds 120/150/180 at memory-bounded 4x scale.
-- Overlay attempts use Tesseract PSM 7 and the coordinate whitelist.
-- The direct directional parser accepts comma/dot decimals, optional spaces, compact coordinates and an ignored accuracy suffix.
-- Direction-only OCR corrections normalize `M` to `N` and `£` to `E` only inside a complete directional coordinate pair.
-- `?debug=1` card details render ROI status, exact crop bounds, source and processed previews, raw/normalized OCR, parser candidates and rejection reason.
+- Added explicit `black_bottom_right_overlay` and `gray_bottom_caption_overlay` detectors.
+- Black detection finds the bottom/right dark panel first, then derives the padded top line, exact top line and left-before-accuracy crops.
+- Gray detection finds the caption's top/bottom edges and left edge, then derives the bottom numeric line, second line and right numeric-line crops.
+- Overlay crops use PSM 7 and whitelist `0123456789., NSEWnsew+-±mм`.
+- Coordinate normalization repairs internal OCR spacing such as `30,59 1954E` only before a direction token.
+- Compact decimal-comma pairs retain the separator: `64,60271,30,61999,238,5м` becomes `64.60271, 30.61999, 238.5м`.
+- A Karelia-like first/second pair with a third number creates a high-confidence `karelia_pair_with_ignored_extra` candidate; the third value is ignored.
+- Card details now render detector name, found state, exact crop bounds, source/processed previews, raw/normalized OCR, candidates and rejection reason.
 
-## Automated QA
+## Real-original QA
 
-- `npm test`: passed.
-- `npm run build`: passed.
-- `npx wrangler deploy --dry-run --config wrangler.toml`: passed.
-- Pixel 7 Playwright QA with real Tesseract: passed on a generated JPEG containing `64,604344N 30,591954E +3,48m` in a bottom-right black overlay.
-- The first accepted crop was `x: 381, y: 464, width: 525, height: 64`; its source and processed previews contain the complete coordinate line without the lower part of the panel.
-- Parsed result: latitude `64.604344`, longitude `30.591954`, confident quality.
-- Distance calculation, manual correction, cleanup and intercepted upload completed; upload was not blocked.
+Pixel 7 Chromium profile, production Vite build, real Tesseract:
 
-## Manual Android QA — `1000081818.jpg`
+| Source | Detector / crop | Raw OCR | Result |
+| --- | --- | --- | --- |
+| `1000081818.jpg` | `black_bottom_right_overlay`, ROI `661,1169,299,111`; crop `655,1163,305,59` | `64,604344N 30,591954E +3,48m` | `64.604344, 30.591954`, confident, one attempt |
+| `1000081829.jpg` | `gray_bottom_caption_overlay`, ROI `421,1177,520,77`; accepted crop `418,1208,526,49` | `64,60271,30,61999, 238,5m` | `64.60271, 30.61999`, confident; `238.5` ignored |
 
-The original file is not present in this checkout or the available QA artifacts, so the following real-photo check remains explicit rather than being reported as passed:
+Both photos are non-missing and enter distance calculation. Debug previews and raw OCR are visible in the card UI. Evidence: `13-real-overlay-originals-debug.png`.
 
-- [ ] Overlay ROI is found.
-- [ ] Source crop contains exactly `64,604344N 30,591954E ±3,48m`; no index, icons, lower row or excess black panel is present.
-- [ ] Glyph tops/bottoms, `N`, `E` and the right edge are not clipped.
-- [ ] Raw and normalized OCR are visible in card details.
-- [ ] Parsed coordinates are `64.604344`, `30.591954` and quality is not `missing`.
-- [ ] Distance participates after confident/manual confirmation.
-- [ ] Cleanup and upload remain available and are not blocked.
+## Regression coverage
+
+- Parser cases cover directional comma/dot forms, compact `N/E`, contextual `M/£`, internal digit spacing and the gray-caption three-number format.
+- Two committed fixtures retain the real lower 35% while replacing the rest of each scene with a neutral background.
+- `npm run test:overlay-fixtures` verifies both detectors, PSM 7 overlay attempts, raw normalized coordinate text and final confident coordinates with real Tesseract.
+- `npm test`, `npm run build`, `npx wrangler deploy --dry-run --config wrangler.toml` and `npm run test:browser-audit` passed.
+
+## Manual Android QA on the updated preview
+
+- [ ] `1000081818.jpg` returns `64.604344, 30.591954`, not missing.
+- [ ] `1000081829.jpg` returns `64.60271, 30.61999`, not missing; `238,5м` is ignored.
+- [ ] Both detector names, raw OCR and both crop previews are visible under `?debug=1`.
+- [ ] Cleanup/upload remain available after OCR.
 
 Merge: not performed. Production deployment: not performed.

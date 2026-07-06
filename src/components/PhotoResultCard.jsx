@@ -67,6 +67,7 @@ function OverlayOcrDebug({ attempts }) {
           <section className="overlay-debug-attempt" key={`${attempt.name || 'overlay'}-${index}`}>
             <h4>{attempt.name || `Overlay попытка ${index + 1}`}</h4>
             <dl className="overlay-debug-fields">
+              <div><dt>Detector</dt><dd>{attempt.detectorName || attempt.overlayDetection?.detectorName || 'нет'}</dd></div>
               <div><dt>Overlay ROI</dt><dd>{overlayStatusText(attempt)}</dd></div>
               <div><dt>Crop</dt><dd>{boundsText(attempt)}</dd></div>
               <div><dt>Preprocessing</dt><dd>{attempt.preprocessingMethod || 'нет'}</dd></div>

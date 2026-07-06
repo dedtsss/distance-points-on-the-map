@@ -28,8 +28,15 @@ assertCoordinates('64,604344N30,591954E', 64.604344, 30.591954);
 assertCoordinates('64.604344N30.591954E', 64.604344, 30.591954);
 assertCoordinates('64,604344N 30,591954E +3.48m', 64.604344, 30.591954);
 assertCoordinates('64,604344N 30,591954E 3,48m', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,59 1954E +3 48m', 64.604344, 30.591954);
 assertCoordinates('64,604344M 30,591954E', 64.604344, 30.591954);
 assertCoordinates('64,604344N 30,591954£', 64.604344, 30.591954);
+assertCoordinates('64,60271, 30,61999, 238,5м', 64.60271, 30.61999);
+assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60271, 30,61999, 238,5м', 64.60271, 30.61999);
+assert.equal(
+  parseGpsFromOcrText('64,60271, 30,61999, 238,5м').chosenCandidate.source,
+  'karelia_pair_with_ignored_extra',
+);
 
 assert.equal(parseGpsFromOcrText('64,604344M 30,591954E').normalizedText, '64.604344N 30.591954E');
 assert.equal(parseGpsFromOcrText('64,604344N 30,591954£').normalizedText, '64.604344N 30.591954E');

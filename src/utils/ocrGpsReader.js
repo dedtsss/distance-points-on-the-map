@@ -10,7 +10,7 @@ const DEFAULT_PREPROCESS_OPTIONS = {
 };
 
 const DEFAULT_MIN_PARSER_CONFIDENCE = 0.55;
-const OVERLAY_OCR_WHITELIST = '0123456789., NSEWnsew+-±m';
+const OVERLAY_OCR_WHITELIST = '0123456789., NSEWnsew+-±mм';
 
 const OCR_ROIS = [
   { name: 'bottom_35', crop: { xRatio: 0, yRatio: 0.65, widthRatio: 1, heightRatio: 0.35 } },
@@ -39,86 +39,64 @@ const attemptVariant = (roiName, preprocessName) => {
   };
 };
 
-// The sequence covers every requested ROI and preprocessing family without a
-// 4×4 Cartesian explosion. Each ROI gets a second visual treatment only when
-// earlier candidates did not produce a strong result.
 export const OCR_ATTEMPT_VARIANTS = [
   {
-    name: 'bottom_right_black_overlay:padded_line_grayscale',
-    cropName: 'bottom_right_black_overlay',
-    preprocessName: 'grayscale_contrast_4x',
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, paddingPx: 6 },
-    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
+    name: 'black_bottom_right_overlay:top_line_padded',
+    cropName: 'black_top_line_padded',
+    detectorName: 'black_bottom_right_overlay',
+    preprocessName: 'original_4x',
+    overlayCrop: { yRatio: 0, heightRatio: 0.42, paddingPx: 6 },
+    preprocess: { method: 'original', upscale: 4 },
     pageSegMode: '7',
     whitelist: OVERLAY_OCR_WHITELIST,
   },
   {
-    name: 'bottom_right_black_overlay:padded_line_inverted',
-    cropName: 'bottom_right_black_overlay',
+    name: 'black_bottom_right_overlay:top_line',
+    cropName: 'black_top_line',
+    detectorName: 'black_bottom_right_overlay',
+    preprocessName: 'grayscale_contrast_4x',
+    overlayCrop: { yRatio: 0, heightRatio: 0.42, paddingPx: 2 },
+    preprocess: { method: 'grayscale', upscale: 4, contrast: 1.7 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'black_bottom_right_overlay:left_before_accuracy',
+    cropName: 'black_top_line_left_before_accuracy',
+    detectorName: 'black_bottom_right_overlay',
+    preprocessName: 'threshold_150_4x',
+    overlayCrop: { yRatio: 0, widthRatio: 0.82, heightRatio: 0.42, paddingPx: 6 },
+    preprocess: { method: 'threshold', upscale: 4, threshold: 150, contrast: 1.9 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'gray_bottom_caption_overlay:bottom_numeric_line',
+    cropName: 'gray_bottom_numeric_line',
+    detectorName: 'gray_bottom_caption_overlay',
+    preprocessName: 'original_4x',
+    overlayCrop: { yRatio: 0.5, heightRatio: 0.5, paddingPx: 4 },
+    preprocess: { method: 'original', upscale: 4 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'gray_bottom_caption_overlay:second_line',
+    cropName: 'gray_second_line',
+    detectorName: 'gray_bottom_caption_overlay',
+    preprocessName: 'grayscale_contrast_4x',
+    overlayCrop: { yRatio: 0.44, heightRatio: 0.56, paddingPx: 3 },
+    preprocess: { method: 'grayscale', upscale: 4, contrast: 1.8 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'gray_bottom_caption_overlay:numeric_line_right',
+    cropName: 'gray_numeric_line_right',
+    detectorName: 'gray_bottom_caption_overlay',
     preprocessName: 'inverted_grayscale_4x',
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, paddingPx: 6 },
-    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 2.1 },
-    pageSegMode: '7',
-    whitelist: OVERLAY_OCR_WHITELIST,
-  },
-  {
-    name: 'bottom_right_black_overlay:line_shifted_up',
-    cropName: 'bottom_right_black_overlay',
-    preprocessName: 'grayscale_contrast_4x',
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, paddingPx: 6, offsetYPx: -6 },
-    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
-    pageSegMode: '7',
-    whitelist: OVERLAY_OCR_WHITELIST,
-  },
-  {
-    name: 'bottom_right_black_overlay:line_shifted_down',
-    cropName: 'bottom_right_black_overlay',
-    preprocessName: 'inverted_grayscale_4x',
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, paddingPx: 6, offsetYPx: 6 },
-    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 2.1 },
-    pageSegMode: '7',
-    whitelist: OVERLAY_OCR_WHITELIST,
-  },
-  ...[120, 150, 180].map((threshold) => ({
-    name: `bottom_right_black_overlay:padded_line_threshold_${threshold}`,
-    cropName: 'bottom_right_black_overlay',
-    preprocessName: `threshold_${threshold}_4x`,
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, paddingPx: 6 },
-    preprocess: { method: 'threshold', upscale: 4, threshold, contrast: 1.9 },
-    pageSegMode: '7',
-    whitelist: OVERLAY_OCR_WHITELIST,
-  })),
-  {
-    name: 'bottom_right_black_overlay:top_40_percent',
-    cropName: 'bottom_right_black_overlay',
-    preprocessName: 'grayscale_contrast_4x',
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, paddingPx: 0 },
-    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
-    pageSegMode: '7',
-    whitelist: OVERLAY_OCR_WHITELIST,
-  },
-  {
-    name: 'bottom_right_black_overlay:left_without_accuracy',
-    cropName: 'bottom_right_black_overlay',
-    preprocessName: 'grayscale_contrast_4x',
-    overlayDetection: true,
-    overlayCrop: { heightRatio: 0.4, widthRatio: 0.86, paddingPx: 6 },
-    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
-    pageSegMode: '7',
-    whitelist: OVERLAY_OCR_WHITELIST,
-  },
-  {
-    name: 'bottom_right_overlay_line:static',
-    cropName: 'bottom_right_overlay_line',
-    preprocessName: 'inverted_grayscale_4x',
-    crop: { xRatio: 0.42, yRatio: 0.745, widthRatio: 0.58, heightRatio: 0.13 },
-    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 2.1 },
+    overlayCrop: { xRatio: 0.2, yRatio: 0.48, widthRatio: 0.8, heightRatio: 0.52, paddingPx: 4 },
+    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 1.8 },
     pageSegMode: '7',
     whitelist: OVERLAY_OCR_WHITELIST,
   },
@@ -193,70 +171,186 @@ export function cropBottomRight(image, options = {}) {
   });
 }
 
-export function detectBottomRightBlackOverlay(image) {
+const luminanceAt = (pixels, width, x, y) => {
+  const offset = ((y * width) + x) * 4;
+  return (pixels[offset] * 0.299) + (pixels[offset + 1] * 0.587) + (pixels[offset + 2] * 0.114);
+};
+
+const runsAboveThreshold = (values, threshold, maxGap = 0) => {
+  const runs = [];
+  let start = -1;
+  let lastMatch = -1;
+  let gaps = 0;
+  for (let index = 0; index <= values.length; index += 1) {
+    if (index < values.length && values[index] >= threshold) {
+      if (start < 0) start = index;
+      lastMatch = index;
+      gaps = 0;
+    } else if (start >= 0 && index < values.length && gaps < maxGap) {
+      gaps += 1;
+    } else if (start >= 0) {
+      runs.push({ start, end: lastMatch + 1 });
+      start = -1;
+      lastMatch = -1;
+      gaps = 0;
+    }
+  }
+  return runs;
+};
+
+const canvasFromBounds = (image, bounds, errorMessage) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = bounds.width;
+  canvas.height = bounds.height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error(errorMessage);
+  context.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+  canvas.sourceBounds = { ...bounds };
+  return canvas;
+};
+
+export function detectBlackBottomRightOverlay(image) {
   const sourceWidth = image.naturalWidth || image.width;
   const sourceHeight = image.naturalHeight || image.height;
   const search = {
-    x: Math.round(sourceWidth * 0.38),
-    y: Math.round(sourceHeight * 0.62),
-    width: Math.round(sourceWidth * 0.62),
-    height: Math.round(sourceHeight * 0.38),
+    x: Math.round(sourceWidth * 0.42),
+    y: Math.round(sourceHeight * 0.72),
+    width: Math.round(sourceWidth * 0.58),
+    height: Math.round(sourceHeight * 0.28),
   };
   const sample = document.createElement('canvas');
-  sample.width = 248;
-  sample.height = Math.max(80, Math.round(248 * search.height / search.width));
+  sample.width = 320;
+  sample.height = Math.max(96, Math.round(sample.width * search.height / search.width));
   const context = sample.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('Canvas 2D недоступен для overlay detection');
+  if (!context) throw new Error('Canvas 2D недоступен для black overlay detection');
   context.drawImage(image, search.x, search.y, search.width, search.height, 0, 0, sample.width, sample.height);
   const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
-  const isDark = (x, y) => {
-    const offset = ((y * sample.width) + x) * 4;
-    return ((pixels[offset] * 0.299) + (pixels[offset + 1] * 0.587) + (pixels[offset + 2] * 0.114)) < 72;
-  };
+  const isBlack = (x, y) => luminanceAt(pixels, sample.width, x, y) < 58;
+  const bottomBandStart = Math.floor(sample.height * 0.82);
+  const columnRatios = Array.from({ length: sample.width }, (_, x) => {
+    let count = 0;
+    for (let y = bottomBandStart; y < sample.height; y += 1) if (isBlack(x, y)) count += 1;
+    return count / Math.max(1, sample.height - bottomBandStart);
+  });
+  const columnRuns = runsAboveThreshold(columnRatios, 0.5, 6)
+    .filter((run) => run.end - run.start >= sample.width * 0.16)
+    .sort((left, right) => (
+      Number(right.end >= sample.width - 3) - Number(left.end >= sample.width - 3)
+      || (right.end - right.start) - (left.end - left.start)
+    ));
+  const columnRun = columnRuns[0];
+  if (!columnRun) return { found: false, detectorName: 'black_bottom_right_overlay', reason: 'black_panel_columns_not_found' };
+
   const rowRatios = Array.from({ length: sample.height }, (_, y) => {
     let count = 0;
-    for (let x = 0; x < sample.width; x += 1) if (isDark(x, y)) count += 1;
-    return count / sample.width;
+    for (let x = columnRun.start; x < columnRun.end; x += 1) if (isBlack(x, y)) count += 1;
+    return count / Math.max(1, columnRun.end - columnRun.start);
   });
-  let bestStart = -1;
-  let bestEnd = -1;
-  let runStart = -1;
-  for (let y = 0; y <= rowRatios.length; y += 1) {
-    if (y < rowRatios.length && rowRatios[y] >= 0.28) {
-      if (runStart < 0) runStart = y;
-    } else if (runStart >= 0) {
-      if (y - runStart > bestEnd - bestStart) [bestStart, bestEnd] = [runStart, y];
-      runStart = -1;
-    }
+  const rowRuns = runsAboveThreshold(rowRatios, 0.5, 4)
+    .filter((run) => run.end - run.start >= sample.height * 0.08)
+    .sort((left, right) => (
+      Number(right.end >= sample.height - 3) - Number(left.end >= sample.height - 3)
+      || right.end - left.end
+    ));
+  const rowRun = rowRuns[0];
+  if (!rowRun || rowRun.end < sample.height - 3) {
+    return { found: false, detectorName: 'black_bottom_right_overlay', reason: 'black_panel_rows_not_found' };
   }
-  if (bestStart < 0 || bestEnd - bestStart < 5) return { found: false, reason: 'dark_rectangle_not_found' };
-
-  let firstDarkColumn = sample.width;
-  for (let x = 0; x < sample.width; x += 1) {
-    let count = 0;
-    for (let y = bestStart; y < bestEnd; y += 1) if (isDark(x, y)) count += 1;
-    if (count / (bestEnd - bestStart) >= 0.45) { firstDarkColumn = x; break; }
-  }
-  if (firstDarkColumn === sample.width) return { found: false, reason: 'dark_rectangle_left_edge_not_found' };
 
   const scaleX = search.width / sample.width;
   const scaleY = search.height / sample.height;
-  const x = Math.max(0, Math.round(search.x + (firstDarkColumn * scaleX) - (sourceWidth * 0.01)));
-  const y = Math.max(0, Math.round(search.y + (bestStart * scaleY)));
-  const width = sourceWidth - x;
-  const detectedHeight = Math.round((bestEnd - bestStart) * scaleY);
-  const height = Math.min(sourceHeight - y, Math.max(24, detectedHeight));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const outputContext = canvas.getContext('2d');
-  if (!outputContext) throw new Error('Canvas 2D недоступен для overlay crop');
-  outputContext.drawImage(image, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-  canvas.sourceBounds = { x, y, width: canvas.width, height: canvas.height };
+  const x = Math.max(0, Math.round(search.x + (columnRun.start * scaleX)));
+  const y = Math.max(0, Math.round(search.y + (rowRun.start * scaleY)));
+  const right = Math.min(sourceWidth, Math.round(search.x + search.width));
+  const bottom = Math.min(sourceHeight, Math.round(search.y + (rowRun.end * scaleY)));
+  const bounds = { x, y, width: right - x, height: bottom - y };
+  const canvas = canvasFromBounds(image, bounds, 'Canvas 2D недоступен для black overlay crop');
   return {
     found: true,
+    detectorName: 'black_bottom_right_overlay',
     canvas,
-    bounds: { x, y, width: canvas.width, height: canvas.height },
+    bounds,
+    sampleDimensions: { width: sample.width, height: sample.height },
+  };
+}
+
+export const detectBottomRightBlackOverlay = detectBlackBottomRightOverlay;
+
+export function detectGrayBottomCaptionOverlay(image) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const search = {
+    x: Math.round(sourceWidth * 0.25),
+    y: Math.round(sourceHeight * 0.72),
+    width: Math.round(sourceWidth * 0.73),
+    height: Math.round(sourceHeight * 0.27),
+  };
+  const sample = document.createElement('canvas');
+  sample.width = 360;
+  sample.height = Math.max(96, Math.round(sample.width * search.height / search.width));
+  const context = sample.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Canvas 2D недоступен для gray overlay detection');
+  context.drawImage(image, search.x, search.y, search.width, search.height, 0, 0, sample.width, sample.height);
+  const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+  const meanLuminance = (xStart, xEnd, yStart, yEnd) => {
+    let sum = 0;
+    let count = 0;
+    for (let y = Math.max(0, yStart); y < Math.min(sample.height, yEnd); y += 1) {
+      for (let x = Math.max(0, xStart); x < Math.min(sample.width, xEnd); x += 1) {
+        sum += luminanceAt(pixels, sample.width, x, y);
+        count += 1;
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  };
+  const rowMeans = Array.from({ length: sample.height }, (_, y) => meanLuminance(0, sample.width, y, y + 1));
+  const bandMean = (start, end) => {
+    const values = rowMeans.slice(Math.max(0, start), Math.min(sample.height, end));
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  };
+  const topCandidates = [];
+  for (let y = Math.round(sample.height * 0.15); y < Math.round(sample.height * 0.82); y += 1) {
+    topCandidates.push({ y, contrast: bandMean(y - 4, y) - bandMean(y, y + 4) });
+  }
+  topCandidates.sort((left, right) => right.contrast - left.contrast);
+  const top = topCandidates[0];
+  if (!top || top.contrast < 8) {
+    return { found: false, detectorName: 'gray_bottom_caption_overlay', reason: 'gray_caption_top_edge_not_found' };
+  }
+  const bottomCandidates = [];
+  const minPanelHeight = Math.round(sample.height * 0.18);
+  const maxPanelHeight = Math.round(sample.height * 0.58);
+  for (let y = top.y + minPanelHeight; y < Math.min(sample.height - 3, top.y + maxPanelHeight); y += 1) {
+    bottomCandidates.push({ y, contrast: bandMean(y, y + 4) - bandMean(y - 4, y) });
+  }
+  bottomCandidates.sort((left, right) => right.contrast - left.contrast);
+  const bottom = bottomCandidates[0];
+  if (!bottom || bottom.contrast < 6) {
+    return { found: false, detectorName: 'gray_bottom_caption_overlay', reason: 'gray_caption_bottom_edge_not_found' };
+  }
+  const columnContrasts = Array.from({ length: sample.width }, (_, x) => (
+    meanLuminance(x, x + 1, top.y - 5, top.y)
+    - meanLuminance(x, x + 1, top.y + 2, bottom.y - 2)
+  ));
+  const columnRuns = runsAboveThreshold(columnContrasts, 8, 5)
+    .filter((run) => run.end - run.start >= sample.width * 0.25)
+    .sort((left, right) => (right.end - right.start) - (left.end - left.start));
+  const columnRun = columnRuns[0];
+  if (!columnRun) return { found: false, detectorName: 'gray_bottom_caption_overlay', reason: 'gray_caption_columns_not_found' };
+
+  const scaleX = search.width / sample.width;
+  const scaleY = search.height / sample.height;
+  const x = Math.max(0, Math.round(search.x + (columnRun.start * scaleX)));
+  const y = Math.max(0, Math.round(search.y + (top.y * scaleY)));
+  const right = Math.min(sourceWidth, Math.round(search.x + search.width));
+  const bottomY = Math.min(sourceHeight, Math.round(search.y + (bottom.y * scaleY)));
+  const bounds = { x, y, width: right - x, height: bottomY - y };
+  const canvas = canvasFromBounds(image, bounds, 'Canvas 2D недоступен для gray overlay crop');
+  return {
+    found: true,
+    detectorName: 'gray_bottom_caption_overlay',
+    canvas,
+    bounds,
     sampleDimensions: { width: sample.width, height: sample.height },
   };
 }
@@ -270,12 +364,14 @@ export function cropDetectedOverlayLine(image, overlayDetection, options = {}) {
   const overlay = overlayDetection.bounds;
   const paddingPx = Math.max(0, Math.min(8, Math.round(Number(options.paddingPx) || 0)));
   const offsetYPx = Math.max(-12, Math.min(12, Math.round(Number(options.offsetYPx) || 0)));
-  const widthRatio = Math.max(0.5, Math.min(1, Number(options.widthRatio) || 1));
-  const heightRatio = Math.max(0.25, Math.min(0.6, Number(options.heightRatio) || 0.4));
-  const x = Math.max(0, overlay.x - paddingPx);
-  const y = Math.max(0, overlay.y + offsetYPx - paddingPx);
-  const right = Math.min(sourceWidth, overlay.x + Math.round(overlay.width * widthRatio) + paddingPx);
-  const bottom = Math.min(sourceHeight, overlay.y + offsetYPx + Math.round(overlay.height * heightRatio) + paddingPx);
+  const xRatio = Math.max(0, Math.min(0.8, Number(options.xRatio) || 0));
+  const yRatio = Math.max(0, Math.min(0.8, Number(options.yRatio) || 0));
+  const widthRatio = Math.max(0.2, Math.min(1 - xRatio, Number(options.widthRatio) || (1 - xRatio)));
+  const heightRatio = Math.max(0.2, Math.min(1 - yRatio, Number(options.heightRatio) || (1 - yRatio)));
+  const x = Math.max(0, overlay.x + Math.round(overlay.width * xRatio) - paddingPx);
+  const y = Math.max(0, overlay.y + Math.round(overlay.height * yRatio) + offsetYPx - paddingPx);
+  const right = Math.min(sourceWidth, overlay.x + Math.round(overlay.width * (xRatio + widthRatio)) + paddingPx);
+  const bottom = Math.min(sourceHeight, overlay.y + Math.round(overlay.height * (yRatio + heightRatio)) + offsetYPx + paddingPx);
   const width = Math.max(1, right - x);
   const height = Math.max(1, bottom - y);
   const canvas = document.createElement('canvas');
@@ -440,7 +536,14 @@ const normalizeOcrText = (text) => {
   const corrected = normalizeDigitOcrMistakes(value);
   value = corrected.text;
   value = value
+    .replace(
+      /((?:6[0-9]|70)),(\d{4,10})\s*,\s*((?:2[5-9]|3[0-9]|40)),(\d{4,10})(?:\s*,\s*(\d{1,4}),(\d+))?/g,
+      (match, latitude, latitudeFraction, longitude, longitudeFraction, extra, extraFraction) => (
+        `${latitude}.${latitudeFraction}, ${longitude}.${longitudeFraction}${extra ? `, ${extra}.${extraFraction}` : ''}`
+      ),
+    )
     .replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/(\d\.\d{1,8})\s+(\d{1,8})(?=\s*[NSEW])/gi, '$1$2')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -657,6 +760,21 @@ export function parseGpsFromOcrText(text, options = {}) {
       correctionCount,
       contextStrength: 0.18,
     });
+  }
+
+  const kareliaPairWithExtra = normalizedText.match(
+    /((?:6[0-9]|70)\.\d{4,10})\s*[,; ]+\s*((?:2[5-9]|3[0-9]|40)\.\d{4,10})\s*[,; ]+\s*[-+]?\d{1,4}(?:\.\d+)?\s*[mм]?/i,
+  );
+  if (kareliaPairWithExtra) {
+    addCandidate(
+      candidates,
+      toNumber(kareliaPairWithExtra[1]),
+      toNumber(kareliaPairWithExtra[2]),
+      'karelia_pair_with_ignored_extra',
+      0.72,
+      [],
+      { correctionCount, contextStrength: 0.16 },
+    );
   }
 
   const overlayDirectionPair = normalizedText.match(
@@ -880,9 +998,8 @@ export async function readGpsFromImageOcr(file, options = {}) {
   const attempts = [];
   let image = null;
   let session = null;
-  let overlayDetection = null;
-  let overlayDetectionAttempted = false;
-  let overlayFailureRecorded = false;
+  const overlayDetections = new Map();
+  const overlayFailuresRecorded = new Set();
 
   try {
     options.onProgress?.({ status: 'loading_image', progress: 0 });
@@ -912,24 +1029,31 @@ export async function readGpsFromImageOcr(file, options = {}) {
       const preprocessOptions = { ...variant.preprocess, ...(index === 0 ? options.preprocess : {}) };
       let crop = null;
       let prepared = null;
+      let currentOverlayDetection = null;
 
       try {
         options.onProgress?.({ status: `cropping:${variant.name}`, progress: attemptProgressBase });
-        if (variant.overlayDetection) {
-          if (!overlayDetectionAttempted) {
-            overlayDetection = (options.dependencies?.detectOverlay || detectBottomRightBlackOverlay)(image);
-            overlayDetectionAttempted = true;
+        if (variant.detectorName) {
+          if (!overlayDetections.has(variant.detectorName)) {
+            const detector = variant.detectorName === 'gray_bottom_caption_overlay'
+              ? (options.dependencies?.detectGrayOverlay || detectGrayBottomCaptionOverlay)
+              : (options.dependencies?.detectBlackOverlay || options.dependencies?.detectOverlay || detectBlackBottomRightOverlay);
+            currentOverlayDetection = detector(image);
+            overlayDetections.set(variant.detectorName, currentOverlayDetection);
             options.onProgress?.({
-              status: overlayDetection.found ? 'overlay:found' : 'overlay:not_found',
+              status: `overlay:${variant.detectorName}:${currentOverlayDetection.found ? 'found' : 'not_found'}`,
               progress: attemptProgressBase,
             });
+          } else {
+            currentOverlayDetection = overlayDetections.get(variant.detectorName);
           }
-          if (!overlayDetection.found) {
-            if (!overlayFailureRecorded) attempts.push({
+          if (!currentOverlayDetection.found) {
+            if (!overlayFailuresRecorded.has(variant.detectorName)) attempts.push({
               name: variant.name,
               cropName: variant.cropName,
+              detectorName: variant.detectorName,
               overlayDetected: false,
-              overlayDetection,
+              overlayDetection: currentOverlayDetection,
               cropDimensions: null,
               preparedDimensions: null,
               preprocessingMethod: variant.preprocessName,
@@ -941,15 +1065,15 @@ export async function readGpsFromImageOcr(file, options = {}) {
               parsed: null,
               parseResult: null,
               warnings: ['overlay_not_found'],
-              rejectionReason: overlayDetection.reason || 'overlay_not_found',
+              rejectionReason: currentOverlayDetection.reason || 'overlay_not_found',
               score: 0,
             });
-            overlayFailureRecorded = true;
+            overlayFailuresRecorded.add(variant.detectorName);
             continue;
           }
           crop = (options.dependencies?.cropOverlay || cropDetectedOverlayLine)(
             image,
-            overlayDetection,
+            currentOverlayDetection,
             variant.overlayCrop,
           );
         } else {
@@ -968,16 +1092,18 @@ export async function readGpsFromImageOcr(file, options = {}) {
         const attempt = {
           name: variant.name,
           cropName: variant.cropName || variant.name,
+          detectorName: variant.detectorName || null,
           cropBounds: crop.sourceBounds || null,
           cropDimensions: { width: crop.width, height: crop.height },
           preparedDimensions: { width: prepared.width, height: prepared.height },
           preprocessingMethod: variant.preprocessName || preprocessOptions.method,
           pageSegMode: variant.pageSegMode || '6',
-          overlayDetected: variant.overlayDetection ? true : null,
-          overlayDetection: variant.overlayDetection ? {
+          overlayDetected: variant.detectorName ? true : null,
+          overlayDetection: variant.detectorName ? {
             found: true,
-            bounds: overlayDetection.bounds,
-            sampleDimensions: overlayDetection.sampleDimensions,
+            detectorName: variant.detectorName,
+            bounds: currentOverlayDetection.bounds,
+            sampleDimensions: currentOverlayDetection.sampleDimensions,
           } : null,
           rawText: parsed.rawText,
           normalizedText: parsed.normalizedText,
@@ -999,12 +1125,13 @@ export async function readGpsFromImageOcr(file, options = {}) {
         attempts.push({
           name: variant.name,
           cropName: variant.cropName || variant.name,
+          detectorName: variant.detectorName || null,
           cropBounds: crop?.sourceBounds || null,
           cropDimensions: crop ? { width: crop.width, height: crop.height } : null,
           preparedDimensions: prepared ? { width: prepared.width, height: prepared.height } : null,
           preprocessingMethod: variant.preprocessName || preprocessOptions.method,
           pageSegMode: variant.pageSegMode || '6',
-          overlayDetected: variant.overlayDetection ? Boolean(overlayDetection?.found) : null,
+          overlayDetected: variant.detectorName ? Boolean(currentOverlayDetection?.found) : null,
           rawText: '',
           normalizedText: '',
           parserConfidence: 0,
