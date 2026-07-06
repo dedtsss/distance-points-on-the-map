@@ -234,6 +234,22 @@ h3 { margin-top: 3px; font-size: 1rem; overflow-wrap: anywhere; }
 .debug-details { margin-top: 12px; }
 .debug-details summary { cursor: pointer; color: var(--blue); font-weight: 750; }
 .debug-details pre { max-height: 360px; overflow: auto; border-radius: 10px; background: #111827; color: #d7e0ed; padding: 12px; font-size: .72rem; white-space: pre-wrap; }
+.debug-empty { color: var(--muted); font-size: .82rem; }
+.overlay-debug-attempts { display: grid; gap: 12px; margin-top: 12px; }
+.overlay-debug-attempt { min-width: 0; border: 1px solid var(--line); border-radius: 11px; padding: 12px; background: #f8fafc; }
+.overlay-debug-attempt h4 { margin: 0 0 10px; overflow-wrap: anywhere; font-size: .84rem; }
+.overlay-debug-fields { display: grid; gap: 6px; margin: 0; font-size: .76rem; }
+.overlay-debug-fields > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; }
+.overlay-debug-fields dt { color: var(--muted); }
+.overlay-debug-fields dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.overlay-debug-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.overlay-debug-previews figure { min-width: 0; margin: 0; }
+.overlay-debug-previews figcaption { margin-bottom: 6px; color: var(--muted); font-size: .72rem; font-weight: 700; }
+.overlay-debug-previews img { display: block; width: 100%; max-height: 220px; border: 1px solid var(--line); border-radius: 8px; background: #111; object-fit: contain; }
+.overlay-debug-previews span { display: grid; min-height: 72px; place-items: center; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: .72rem; }
+.overlay-debug-text { display: grid; gap: 6px; margin-top: 12px; }
+.overlay-debug-text strong { font-size: .74rem; }
+.overlay-debug-text pre { margin: 0 0 6px; max-height: 180px; }
 
 .results-summary-heading { align-items: center; }
 .results-summary-heading button { flex: 0 0 auto; }
@@ -284,6 +300,8 @@ tbody th { max-width: 220px; white-space: normal; }
   .status-label { justify-self: start; max-width: none; }
   .result-fields > div { grid-template-columns: 1fr; gap: 4px; }
   .coordinate-inputs { grid-template-columns: 1fr; }
+  .overlay-debug-previews { grid-template-columns: 1fr; }
+  .overlay-debug-fields > div { grid-template-columns: 1fr; gap: 2px; }
   .results-summary-heading { display: grid; }
   .results-summary-heading button { width: 100%; }
   .all-links-actions { grid-template-columns: 1fr; }

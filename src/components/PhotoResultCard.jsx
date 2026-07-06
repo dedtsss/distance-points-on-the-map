@@ -33,6 +33,76 @@ function LinkBlock({ label, url }) {
   );
 }
 
+const isOverlayAttempt = (attempt) => (
+  attempt?.overlayDetected !== null
+  && attempt?.overlayDetected !== undefined
+) || String(attempt?.cropName || '').includes('overlay');
+
+const boundsText = (attempt) => {
+  const bounds = attempt?.cropBounds || attempt?.overlayDetection?.bounds;
+  if (!bounds) return 'нет';
+  return `x: ${bounds.x}, y: ${bounds.y}, width: ${bounds.width}, height: ${bounds.height}`;
+};
+
+const overlayStatusText = (attempt) => {
+  if (attempt?.overlayDetected === true) return 'найден';
+  if (attempt?.overlayDetected === false) return 'не найден';
+  return 'не проверялся (статический crop)';
+};
+
+const debugWithoutPreviews = (debug) => JSON.stringify(debug, (key, value) => (
+  key === 'cropPreview' || key === 'processedPreview'
+    ? (value ? '[превью показано выше]' : '')
+    : value
+), 2);
+
+function OverlayOcrDebug({ attempts }) {
+  const overlayAttempts = (attempts || []).filter(isOverlayAttempt);
+  return (
+    <details className="debug-details overlay-debug-details">
+      <summary>Overlay OCR debug ({overlayAttempts.length})</summary>
+      {overlayAttempts.length === 0 && <p className="debug-empty">Overlay-попытки отсутствуют.</p>}
+      <div className="overlay-debug-attempts">
+        {overlayAttempts.map((attempt, index) => (
+          <section className="overlay-debug-attempt" key={`${attempt.name || 'overlay'}-${index}`}>
+            <h4>{attempt.name || `Overlay попытка ${index + 1}`}</h4>
+            <dl className="overlay-debug-fields">
+              <div><dt>Overlay ROI</dt><dd>{overlayStatusText(attempt)}</dd></div>
+              <div><dt>Crop</dt><dd>{boundsText(attempt)}</dd></div>
+              <div><dt>Preprocessing</dt><dd>{attempt.preprocessingMethod || 'нет'}</dd></div>
+              <div><dt>PSM</dt><dd>{attempt.pageSegMode || 'нет'}</dd></div>
+            </dl>
+            <div className="overlay-debug-previews">
+              <figure>
+                <figcaption>Исходный crop</figcaption>
+                {attempt.cropPreview
+                  ? <img src={attempt.cropPreview} alt={`Исходный overlay crop: ${attempt.name}`} />
+                  : <span>Превью нет</span>}
+              </figure>
+              <figure>
+                <figcaption>Processed crop</figcaption>
+                {attempt.processedPreview
+                  ? <img src={attempt.processedPreview} alt={`Processed overlay crop: ${attempt.name}`} />
+                  : <span>Превью нет</span>}
+              </figure>
+            </div>
+            <div className="overlay-debug-text">
+              <strong>Raw OCR text</strong>
+              <pre>{attempt.rawText || '[пусто]'}</pre>
+              <strong>Normalized OCR text</strong>
+              <pre>{attempt.normalizedText || '[пусто]'}</pre>
+              <strong>Parser candidates</strong>
+              <pre>{JSON.stringify(attempt.parsed?.candidates || [], null, 2)}</pre>
+              <strong>Rejection reason</strong>
+              <pre>{attempt.rejectionReason || 'нет — попытка принята'}</pre>
+            </div>
+          </section>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export default function PhotoResultCard({
   photo,
   debugMode,
@@ -157,10 +227,13 @@ export default function PhotoResultCard({
           Скопировать ссылки фото
         </button>
         {debugMode && (
-          <details className="debug-details">
-            <summary>Подробнее</summary>
-            <pre>{JSON.stringify(photo.debug, null, 2)}</pre>
-          </details>
+          <>
+            <OverlayOcrDebug attempts={photo.debug?.gps?.ocr?.attempts} />
+            <details className="debug-details">
+              <summary>Полный debug</summary>
+              <pre>{debugWithoutPreviews(photo.debug)}</pre>
+            </details>
+          </>
         )}
       </div>
     </article>

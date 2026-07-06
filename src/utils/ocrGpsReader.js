@@ -10,6 +10,7 @@ const DEFAULT_PREPROCESS_OPTIONS = {
 };
 
 const DEFAULT_MIN_PARSER_CONFIDENCE = 0.55;
+const OVERLAY_OCR_WHITELIST = '0123456789., NSEWnsew+-±m';
 
 const OCR_ROIS = [
   { name: 'bottom_35', crop: { xRatio: 0, yRatio: 0.65, widthRatio: 1, heightRatio: 0.35 } },
@@ -43,22 +44,83 @@ const attemptVariant = (roiName, preprocessName) => {
 // earlier candidates did not produce a strong result.
 export const OCR_ATTEMPT_VARIANTS = [
   {
-    name: 'bottom_right_black_overlay:detected_first_line',
+    name: 'bottom_right_black_overlay:padded_line_grayscale',
     cropName: 'bottom_right_black_overlay',
-    preprocessName: 'inverted_threshold_3x',
+    preprocessName: 'grayscale_contrast_4x',
     overlayDetection: true,
-    preprocess: { method: 'inverted_threshold', upscale: 3, threshold: 150, contrast: 1.9 },
+    overlayCrop: { heightRatio: 0.4, paddingPx: 6 },
+    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
     pageSegMode: '7',
-    whitelist: '0123456789., NSEWnsew+-±m',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'bottom_right_black_overlay:padded_line_inverted',
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: 'inverted_grayscale_4x',
+    overlayDetection: true,
+    overlayCrop: { heightRatio: 0.4, paddingPx: 6 },
+    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 2.1 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'bottom_right_black_overlay:line_shifted_up',
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: 'grayscale_contrast_4x',
+    overlayDetection: true,
+    overlayCrop: { heightRatio: 0.4, paddingPx: 6, offsetYPx: -6 },
+    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'bottom_right_black_overlay:line_shifted_down',
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: 'inverted_grayscale_4x',
+    overlayDetection: true,
+    overlayCrop: { heightRatio: 0.4, paddingPx: 6, offsetYPx: 6 },
+    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 2.1 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  ...[120, 150, 180].map((threshold) => ({
+    name: `bottom_right_black_overlay:padded_line_threshold_${threshold}`,
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: `threshold_${threshold}_4x`,
+    overlayDetection: true,
+    overlayCrop: { heightRatio: 0.4, paddingPx: 6 },
+    preprocess: { method: 'threshold', upscale: 4, threshold, contrast: 1.9 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  })),
+  {
+    name: 'bottom_right_black_overlay:top_40_percent',
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: 'grayscale_contrast_4x',
+    overlayDetection: true,
+    overlayCrop: { heightRatio: 0.4, paddingPx: 0 },
+    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
+  },
+  {
+    name: 'bottom_right_black_overlay:left_without_accuracy',
+    cropName: 'bottom_right_black_overlay',
+    preprocessName: 'grayscale_contrast_4x',
+    overlayDetection: true,
+    overlayCrop: { heightRatio: 0.4, widthRatio: 0.86, paddingPx: 6 },
+    preprocess: { method: 'grayscale', upscale: 4, contrast: 2.1 },
+    pageSegMode: '7',
+    whitelist: OVERLAY_OCR_WHITELIST,
   },
   {
     name: 'bottom_right_overlay_line:static',
     cropName: 'bottom_right_overlay_line',
-    preprocessName: 'inverted_threshold_3x',
-    crop: { xRatio: 0.45, yRatio: 0.76, widthRatio: 0.55, heightRatio: 0.11 },
-    preprocess: { method: 'inverted_threshold', upscale: 3, threshold: 150, contrast: 1.9 },
+    preprocessName: 'inverted_grayscale_4x',
+    crop: { xRatio: 0.42, yRatio: 0.745, widthRatio: 0.58, heightRatio: 0.13 },
+    preprocess: { method: 'inverted_grayscale', upscale: 4, contrast: 2.1 },
     pageSegMode: '7',
-    whitelist: '0123456789., NSEWnsew+-±m',
+    whitelist: OVERLAY_OCR_WHITELIST,
   },
   attemptVariant('bottom_35', 'original_resized'),
   attemptVariant('bottom_right_45', 'original_resized'),
@@ -115,6 +177,7 @@ export function cropImageRegion(image, options = {}) {
   }
 
   context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  canvas.sourceBounds = { x: cropX, y: cropY, width: cropWidth, height: cropHeight };
   return canvas;
 }
 
@@ -182,19 +245,47 @@ export function detectBottomRightBlackOverlay(image) {
   const y = Math.max(0, Math.round(search.y + (bestStart * scaleY)));
   const width = sourceWidth - x;
   const detectedHeight = Math.round((bestEnd - bestStart) * scaleY);
-  const height = Math.max(24, Math.min(detectedHeight, Math.round(sourceHeight * 0.085)));
+  const height = Math.min(sourceHeight - y, Math.max(24, detectedHeight));
   const canvas = document.createElement('canvas');
   canvas.width = width;
-  canvas.height = Math.min(height, sourceHeight - y);
+  canvas.height = height;
   const outputContext = canvas.getContext('2d');
   if (!outputContext) throw new Error('Canvas 2D недоступен для overlay crop');
   outputContext.drawImage(image, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  canvas.sourceBounds = { x, y, width: canvas.width, height: canvas.height };
   return {
     found: true,
     canvas,
     bounds: { x, y, width: canvas.width, height: canvas.height },
     sampleDimensions: { width: sample.width, height: sample.height },
   };
+}
+
+export function cropDetectedOverlayLine(image, overlayDetection, options = {}) {
+  if (!overlayDetection?.found || !overlayDetection.bounds) {
+    throw new Error('Overlay ROI не найден');
+  }
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const overlay = overlayDetection.bounds;
+  const paddingPx = Math.max(0, Math.min(8, Math.round(Number(options.paddingPx) || 0)));
+  const offsetYPx = Math.max(-12, Math.min(12, Math.round(Number(options.offsetYPx) || 0)));
+  const widthRatio = Math.max(0.5, Math.min(1, Number(options.widthRatio) || 1));
+  const heightRatio = Math.max(0.25, Math.min(0.6, Number(options.heightRatio) || 0.4));
+  const x = Math.max(0, overlay.x - paddingPx);
+  const y = Math.max(0, overlay.y + offsetYPx - paddingPx);
+  const right = Math.min(sourceWidth, overlay.x + Math.round(overlay.width * widthRatio) + paddingPx);
+  const bottom = Math.min(sourceHeight, overlay.y + offsetYPx + Math.round(overlay.height * heightRatio) + paddingPx);
+  const width = Math.max(1, right - x);
+  const height = Math.max(1, bottom - y);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D недоступен для overlay line crop');
+  context.drawImage(image, x, y, width, height, 0, 0, width, height);
+  canvas.sourceBounds = { x, y, width, height };
+  return canvas;
 }
 
 export function preprocessForOcr(canvas, options = {}) {
@@ -233,7 +324,7 @@ export function preprocessForOcr(canvas, options = {}) {
     if (preprocessOptions.method === 'threshold' || preprocessOptions.method === 'inverted_threshold') {
       value = contrasted >= threshold ? 255 : 0;
     }
-    if (preprocessOptions.method === 'inverted_threshold') value = 255 - value;
+    if (preprocessOptions.method === 'inverted_threshold' || preprocessOptions.method === 'inverted_grayscale') value = 255 - value;
 
     data[i] = value;
     data[i + 1] = value;
@@ -318,6 +409,25 @@ const normalizeDigitOcrMistakes = (value) => {
   return { text, correctionCount };
 };
 
+const normalizeDirectionalOcrMistakes = (value) => {
+  let correctionCount = 0;
+  const text = value.replace(
+    /([-+]?\d{1,3}[.,]\d{3,10})\s*([NSM])\s*([-+]?\d{1,3}[.,]\d{3,10})\s*([EW£])/gi,
+    (match, latitude, latitudeDirection, longitude, longitudeDirection) => {
+      const normalizedLatitudeDirection = String(latitudeDirection).toUpperCase() === 'M'
+        ? 'N'
+        : String(latitudeDirection).toUpperCase();
+      const normalizedLongitudeDirection = longitudeDirection === '£'
+        ? 'E'
+        : String(longitudeDirection).toUpperCase();
+      if (normalizedLatitudeDirection !== String(latitudeDirection).toUpperCase()) correctionCount += 1;
+      if (normalizedLongitudeDirection !== String(longitudeDirection).toUpperCase()) correctionCount += 1;
+      return `${latitude}${normalizedLatitudeDirection} ${longitude}${normalizedLongitudeDirection}`;
+    },
+  );
+  return { text, correctionCount };
+};
+
 const normalizeOcrText = (text) => {
   let value = String(text || '').normalize('NFKC');
 
@@ -325,6 +435,8 @@ const normalizeOcrText = (text) => {
     .replace(/[−–—]/g, '-')
     .replace(/[º˚]/g, '°')
     .replace(/[;]+/g, ',');
+  const directional = normalizeDirectionalOcrMistakes(value);
+  value = directional.text;
   const corrected = normalizeDigitOcrMistakes(value);
   value = corrected.text;
   value = value
@@ -332,7 +444,7 @@ const normalizeOcrText = (text) => {
     .replace(/\s+/g, ' ')
     .trim();
 
-  return { text: value, correctionCount: corrected.correctionCount };
+  return { text: value, correctionCount: corrected.correctionCount + directional.correctionCount };
 };
 
 const toNumber = (value) => Number(String(value).replace(',', '.'));
@@ -547,6 +659,21 @@ export function parseGpsFromOcrText(text, options = {}) {
     });
   }
 
+  const overlayDirectionPair = normalizedText.match(
+    /([-+]?\d{1,3}\.\d{3,10})\s*([NS])\s*([-+]?\d{1,3}\.\d{3,10})\s*([EW])/i,
+  );
+  if (overlayDirectionPair) {
+    addCandidate(
+      candidates,
+      withDirection(overlayDirectionPair[1], overlayDirectionPair[2]),
+      withDirection(overlayDirectionPair[3], overlayDirectionPair[4]),
+      'overlay_direction_pair',
+      0.76,
+      [],
+      { correctionCount, contextStrength: 0.18 },
+    );
+  }
+
   const directionBefore = normalizedText.match(
     /([NS])\s*([-+]?\d{1,3}\.\d{3,10})\D{0,36}([EW])\s*([-+]?\d{1,3}\.\d{3,10})/i,
   );
@@ -565,7 +692,7 @@ export function parseGpsFromOcrText(text, options = {}) {
   const directionAfter = normalizedText.match(
     /([-+]?\d{1,3}\.\d{3,10})\s*([NS])\D{0,36}([-+]?\d{1,3}\.\d{3,10})\s*([EW])/i,
   );
-  if (directionAfter) {
+  if (directionAfter && !overlayDirectionPair) {
     addCandidate(
       candidates,
       withDirection(directionAfter[1], directionAfter[2]),
@@ -753,6 +880,9 @@ export async function readGpsFromImageOcr(file, options = {}) {
   const attempts = [];
   let image = null;
   let session = null;
+  let overlayDetection = null;
+  let overlayDetectionAttempted = false;
+  let overlayFailureRecorded = false;
 
   try {
     options.onProgress?.({ status: 'loading_image', progress: 0 });
@@ -782,18 +912,20 @@ export async function readGpsFromImageOcr(file, options = {}) {
       const preprocessOptions = { ...variant.preprocess, ...(index === 0 ? options.preprocess : {}) };
       let crop = null;
       let prepared = null;
-      let overlayDetection = null;
 
       try {
         options.onProgress?.({ status: `cropping:${variant.name}`, progress: attemptProgressBase });
         if (variant.overlayDetection) {
-          overlayDetection = (options.dependencies?.detectOverlay || detectBottomRightBlackOverlay)(image);
-          options.onProgress?.({
-            status: overlayDetection.found ? 'overlay:found' : 'overlay:not_found',
-            progress: attemptProgressBase,
-          });
+          if (!overlayDetectionAttempted) {
+            overlayDetection = (options.dependencies?.detectOverlay || detectBottomRightBlackOverlay)(image);
+            overlayDetectionAttempted = true;
+            options.onProgress?.({
+              status: overlayDetection.found ? 'overlay:found' : 'overlay:not_found',
+              progress: attemptProgressBase,
+            });
+          }
           if (!overlayDetection.found) {
-            attempts.push({
+            if (!overlayFailureRecorded) attempts.push({
               name: variant.name,
               cropName: variant.cropName,
               overlayDetected: false,
@@ -812,9 +944,14 @@ export async function readGpsFromImageOcr(file, options = {}) {
               rejectionReason: overlayDetection.reason || 'overlay_not_found',
               score: 0,
             });
+            overlayFailureRecorded = true;
             continue;
           }
-          crop = overlayDetection.canvas;
+          crop = (options.dependencies?.cropOverlay || cropDetectedOverlayLine)(
+            image,
+            overlayDetection,
+            variant.overlayCrop,
+          );
         } else {
           crop = (options.dependencies?.crop || cropImageRegion)(image, cropOptions);
         }
@@ -831,6 +968,7 @@ export async function readGpsFromImageOcr(file, options = {}) {
         const attempt = {
           name: variant.name,
           cropName: variant.cropName || variant.name,
+          cropBounds: crop.sourceBounds || null,
           cropDimensions: { width: crop.width, height: crop.height },
           preparedDimensions: { width: prepared.width, height: prepared.height },
           preprocessingMethod: variant.preprocessName || preprocessOptions.method,
@@ -861,6 +999,7 @@ export async function readGpsFromImageOcr(file, options = {}) {
         attempts.push({
           name: variant.name,
           cropName: variant.cropName || variant.name,
+          cropBounds: crop?.sourceBounds || null,
           cropDimensions: crop ? { width: crop.width, height: crop.height } : null,
           preparedDimensions: prepared ? { width: prepared.width, height: prepared.height } : null,
           preprocessingMethod: variant.preprocessName || preprocessOptions.method,

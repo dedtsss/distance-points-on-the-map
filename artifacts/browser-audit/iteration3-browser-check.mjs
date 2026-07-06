@@ -79,7 +79,8 @@ await page.route('https://spring-mouse-8d81.dvabobra2014.workers.dev/**', async 
   });
 });
 
-await page.goto(baseUrl, { waitUntil: 'networkidle' });
+const debugUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}debug=1`;
+await page.goto(debugUrl, { waitUntil: 'networkidle' });
 assert.match(await page.locator('.build-info').textContent(), /Версия приложения/);
 const files = [
   { name: 'first.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg('FIRST') },
@@ -108,6 +109,11 @@ await page.waitForFunction(() => {
   return qualities.length === 2 && qualities.every((node) => node.textContent.includes('Координаты найдены уверенно'));
 }, null, { timeout: 180_000 });
 assert.equal(await page.locator('.result-fields dd').filter({ hasText: '64.604344, 30.591954' }).count(), 2);
+await page.locator('.overlay-debug-details').first().getByText('Overlay OCR debug').click();
+assert.ok(await page.locator('.overlay-debug-attempt').count() >= 1);
+assert.match(await page.locator('.overlay-debug-fields').first().textContent(), /x: \d+, y: \d+, width: \d+, height: \d+/);
+assert.equal(await page.locator('.overlay-debug-attempt').first().locator('img').count(), 2);
+assert.match(await page.locator('.overlay-debug-text').first().textContent(), /64\.604344N\s*30\.591954E/);
 
 await page.getByRole('button', { name: 'Исправить координаты' }).first().click();
 await page.getByLabel('Latitude фото 1').fill('62,100000');

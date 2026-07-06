@@ -24,6 +24,20 @@ assertCoordinates('64,604344N 30,591954E ±3,48m', 64.604344, 30.591954);
 assertCoordinates('64.604344N 30.591954E', 64.604344, 30.591954);
 assertCoordinates('64,604344 N 30,591954 E', 64.604344, 30.591954);
 assertCoordinates('64.604344 N 30.591954 E', 64.604344, 30.591954);
+assertCoordinates('64,604344N30,591954E', 64.604344, 30.591954);
+assertCoordinates('64.604344N30.591954E', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,591954E +3.48m', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,591954E 3,48m', 64.604344, 30.591954);
+assertCoordinates('64,604344M 30,591954E', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,591954£', 64.604344, 30.591954);
+
+assert.equal(parseGpsFromOcrText('64,604344M 30,591954E').normalizedText, '64.604344N 30.591954E');
+assert.equal(parseGpsFromOcrText('64,604344N 30,591954£').normalizedText, '64.604344N 30.591954E');
+assert.equal(
+  parseGpsFromOcrText('M 64,604344 30,591954 £').normalizedText,
+  'M 64.604344 30.591954 £',
+  'direction fixes must stay contextual',
+);
 
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4469').indexFromOcr, '4469');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4468').indexFromOcr, '4468');
