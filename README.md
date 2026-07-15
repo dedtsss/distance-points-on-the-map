@@ -39,8 +39,8 @@ OCR проверяет несколько нижних областей изоб
 - React 18
 - Vite 5
 - exifr
-- Cloudflare Workers
-- GitHub Pages
+- Cloudflare Workers Static Assets
+- GitHub Pages legacy/manual preview
 
 ## Локальный запуск
 
@@ -60,16 +60,20 @@ npx wrangler deploy --dry-run --config wrangler.toml
 Live smoke-test уже развёрнутого Worker:
 
 ```bash
-WORKER_URL=https://your-worker.workers.dev node scripts/test-worker-upload.mjs
+WORKER_URL=https://gps.brus-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
 ```
 
 ## Деплой
 
-- `.github/workflows/deploy.yml` — GitHub Pages.
-- `.github/workflows/deploy-worker.yml` — Cloudflare Worker.
-- `.github/workflows/test-worker-upload.yml` — проверка bundle после Worker deploy.
+- Production готовится как приватный Cloudflare Worker на `https://gps.brus-group.net/`.
+- Worker отдаёт frontend из `dist` и обслуживает upload API на `/api/upload`.
+- `.github/workflows/deploy-worker.yml` — production Cloudflare Worker + Static Assets, только `main` или manual.
+- `.github/workflows/deploy.yml` — legacy GitHub Pages, только manual.
+- `.github/workflows/test-worker-upload.yml` — manual smoke-test bundle upload.
 
-Для CI нужен только GitHub secret `CLOUDFLARE_API_TOKEN`. Секреты фотохостингов не используются.
+Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`. Для приватного доступа используйте Cloudflare Access или Worker secret `BASIC_AUTH_PASSWORD` / `APP_ACCESS_TOKEN`. Секреты фотохостингов не используются.
+
+Подробно: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Ручная проверка перед production
 

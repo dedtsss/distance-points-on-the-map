@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 
 import { parseFreeimageApiPage } from '../workers/host-proxy/freeimage.js';
 import { parseNinjaboxForm, parseNinjaboxGallery } from '../workers/host-proxy/ninjabox.js';
-import { composeBundleItem, uploadBundle } from '../workers/host-proxy/worker.js';
+import {
+  composeBundleItem,
+  handleWorkerRequest,
+  isAuthorizedRequest,
+  uploadBundle,
+} from '../workers/host-proxy/worker.js';
 import { uploadCleanedPhotos } from '../src/features/upload/uploadService.js';
 import { validateProviderSettings } from '../src/features/upload/providerPolicy.js';
 
@@ -191,5 +196,86 @@ await assert.rejects(
   }], { proxyUrl: 'https://worker.test/' }),
   /только очищенные копии/,
 );
+
+const workerProviderOverrides = {
+  freeimage: async (file) => ({ provider: 'freeimage', ok: true, url: `https://free.worker/${file.name}`, directUrl: `https://free.worker/d/${file.name}` }),
+  ninjabox: async (batch) => ({
+    ok: true,
+    galleryUrl: 'https://ninja.worker/gallery',
+    items: batch.map((file) => ({ url: `https://ninja.worker/${file.name}`, directUrl: `https://ninja.worker/d/${file.name}` })),
+  }),
+};
+const makeUploadRequest = (url) => {
+  const formData = new FormData();
+  formData.append('target', 'bundle');
+  formData.append('photoId', 'worker-a');
+  formData.append('files', files[0], 'worker-a.jpg');
+  return new Request(url, { method: 'POST', body: formData });
+};
+const apiUploadResponse = await handleWorkerRequest(
+  makeUploadRequest('https://gps.brus-group.net/api/upload'),
+  {},
+  workerProviderOverrides,
+);
+const apiUploadBody = await apiUploadResponse.json();
+assert.equal(apiUploadResponse.status, 200);
+assert.equal(apiUploadBody.target, 'bundle');
+assert.equal(apiUploadBody.items[0].photoId, 'worker-a');
+
+const legacyRootUploadResponse = await handleWorkerRequest(
+  makeUploadRequest('https://gps.brus-group.net/'),
+  {},
+  workerProviderOverrides,
+);
+assert.equal(legacyRootUploadResponse.status, 200);
+
+const unknownApiResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/api/unknown'), {});
+assert.equal(unknownApiResponse.status, 404);
+assert.match(await unknownApiResponse.text(), /Unknown API route/);
+
+const assetEnv = {
+  ASSETS: {
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/' || path === '/index.html') return new Response('<!doctype html><title>GPS</title>', { headers: { 'Content-Type': 'text/html' } });
+      if (path === '/assets/app.js') return new Response('console.log("gps")', { headers: { 'Content-Type': 'application/javascript' } });
+      return new Response('missing', { status: 404 });
+    },
+  },
+};
+const assetResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/assets/app.js'), assetEnv);
+assert.equal(assetResponse.status, 200);
+assert.match(await assetResponse.text(), /gps/);
+const spaResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/history/deep-link', {
+  headers: { Accept: 'text/html' },
+}), assetEnv);
+assert.equal(spaResponse.status, 200);
+assert.match(await spaResponse.text(), /GPS/);
+
+assert.equal(isAuthorizedRequest(new Request('https://gps.brus-group.net/'), { BASIC_AUTH_PASSWORD: 'secret' }), false);
+const basicAuthorization = `Basic ${Buffer.from('owner:secret').toString('base64')}`;
+assert.equal(isAuthorizedRequest(new Request('https://gps.brus-group.net/', {
+  headers: { Authorization: basicAuthorization },
+}), { BASIC_AUTH_PASSWORD: 'secret', BASIC_AUTH_USERNAME: 'owner' }), true);
+const unauthorizedResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/'), {
+  ...assetEnv,
+  BASIC_AUTH_PASSWORD: 'secret',
+});
+assert.equal(unauthorizedResponse.status, 401);
+assert.match(unauthorizedResponse.headers.get('WWW-Authenticate'), /Basic/);
+const authorizedResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/', {
+  headers: { Authorization: basicAuthorization },
+}), {
+  ...assetEnv,
+  BASIC_AUTH_PASSWORD: 'secret',
+});
+assert.equal(authorizedResponse.status, 200);
+const bearerResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/', {
+  headers: { Authorization: 'Bearer app-token' },
+}), {
+  ...assetEnv,
+  APP_ACCESS_TOKEN: 'app-token',
+});
+assert.equal(bearerResponse.status, 200);
 
 console.log('Upload routing tests passed');

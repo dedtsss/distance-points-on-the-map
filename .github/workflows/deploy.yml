@@ -1,10 +1,12 @@
 name: Deploy to GitHub Pages
 
 on:
-  workflow_run:
-    workflows: ['Deploy Cloudflare Worker']
-    types: [completed]
   workflow_dispatch:
+    inputs:
+      upload_proxy_url:
+        description: 'Upload API URL for the legacy GitHub Pages build'
+        required: false
+        default: 'https://gps.brus-group.net/api/upload'
 
 permissions:
   contents: read
@@ -17,13 +19,12 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    env:
+      VITE_UPLOAD_PROXY_URL: ${{ github.event.inputs.upload_proxy_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -33,8 +34,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build
-        run: npm run build
+      - name: Build legacy GitHub Pages frontend
+        run: npm run build:github-pages
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

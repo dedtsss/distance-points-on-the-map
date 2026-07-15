@@ -1,6 +1,9 @@
 import { deflateSync } from 'node:zlib';
 
-const WORKER_URL = process.env.WORKER_URL || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
+const WORKER_URL = process.env.WORKER_URL || 'https://gps.brus-group.net/api/upload';
+const WORKER_ACCESS_TOKEN = process.env.WORKER_ACCESS_TOKEN || process.env.APP_ACCESS_TOKEN || '';
+const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID || '';
+const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET || '';
 const TARGETS = (process.env.TARGETS || 'bundle').split(',').map((item) => item.trim()).filter(Boolean);
 const REQUIRE_MODE = process.env.REQUIRE_MODE || 'all';
 
@@ -64,7 +67,13 @@ async function testTarget(target) {
 
   const startedAt = Date.now();
   try {
-    const response = await fetch(WORKER_URL, { method: 'POST', body: formData });
+    const headers = {};
+    if (WORKER_ACCESS_TOKEN) headers['X-App-Access-Token'] = WORKER_ACCESS_TOKEN;
+    if (CF_ACCESS_CLIENT_ID && CF_ACCESS_CLIENT_SECRET) {
+      headers['CF-Access-Client-Id'] = CF_ACCESS_CLIENT_ID;
+      headers['CF-Access-Client-Secret'] = CF_ACCESS_CLIENT_SECRET;
+    }
+    const response = await fetch(WORKER_URL, { method: 'POST', body: formData, headers });
     const text = await response.text();
     let data = null;
     try { data = JSON.parse(text); } catch { /* included below */ }

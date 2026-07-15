@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:cloudflare": "VITE_BASE_PATH=/ VITE_UPLOAD_PROXY_URL=/api/upload vite build",
+    "build:github-pages": "VITE_BASE_PATH=/distance-points-on-the-map/ vite build",
     "preview": "vite preview",
     "test": "npm run test:ocr && npm run test:overlay-fixtures && npm run test:files && npm run test:geo && npm run test:image-cleaner && npm run test:upload-routing && npm run test:pipeline && npm run test:links && npm run test:session",
     "test:ocr": "node scripts/test-ocr-parser.mjs",

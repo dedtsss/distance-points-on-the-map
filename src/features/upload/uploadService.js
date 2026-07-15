@@ -1,7 +1,8 @@
 import { normalizeBundleResult } from './providerPolicy.js';
 import { providerRequestPolicy } from './providerPolicy.js';
 
-export const DEFAULT_PROXY_URL = 'https://spring-mouse-8d81.dvabobra2014.workers.dev/';
+const viteEnv = import.meta.env || {};
+export const DEFAULT_PROXY_URL = viteEnv.VITE_UPLOAD_PROXY_URL || '/api/upload';
 
 export async function requestUploadBundle(entries, proxyUrl, signal, policy) {
   const formData = new FormData();
