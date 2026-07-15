@@ -204,7 +204,8 @@ h3 { margin-top: 3px; font-size: 1rem; overflow-wrap: anywhere; }
 .provider-statuses { display: grid; gap: 4px; }
 .coordinate-quality { display: block; margin-top: 4px; color: var(--muted); font-size: .78rem; font-weight: 650; }
 .quality-confident, .quality-manual, .quality-exif { color: var(--green); }
-.quality-uncertain, .quality-suspect, .quality-suspicious, .quality-error { color: var(--amber); }
+.quality-uncertain, .quality-suspect, .quality-suspicious, .quality-low_precision, .quality-error { color: var(--amber); }
+.coordinate-hint { display: block; margin-top: 4px; color: var(--muted); font-size: .76rem; font-weight: 500; }
 .coordinate-editor { display: grid; gap: 10px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
 .coordinate-edit-toggle { margin-top: 14px; }
 .coordinate-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

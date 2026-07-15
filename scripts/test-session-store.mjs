@@ -58,6 +58,34 @@ const snapshot = saveLastSession({
     cleanedBlob: heavyFile,
     previewObjectUrl: 'blob:secret',
     debug: { raw: 'must not persist' },
+  }, {
+    id: 'photo-low',
+    number: 2,
+    fileName: 'low.jpg',
+    safeName: 'low.jpg',
+    size: heavyFile.size,
+    coordinates: { latitude: 64.60272, longitude: 30.62 },
+    gpsSource: 'ocr',
+    gpsStatus: 'low_precision',
+    gpsConfidence: 0.62,
+    ocrStatus: 'low_precision',
+    manualCoordinates: false,
+    coordinateQuality: 'low_precision',
+    coordinatePrecision: { latitude: 5, longitude: 2 },
+    coordinateText: { latitude: '64.60272', longitude: '30.62' },
+    gpsWarnings: ['low_precision_coordinate'],
+    status: 'distance_ready',
+    distanceStatus: 'low_precision',
+    distanceConflicts: ['low_precision_coordinate'],
+    cleanupStatus: 'done',
+    uploadStatus: 'idle',
+    statusText: 'Координаты найдены, но точность низкая — проверь вручную',
+    userError: '',
+    userWarnings: [],
+    uploadResult: null,
+    thumbnailDataUrl: 'data:image/jpeg;base64,bG93',
+    stableFile: heavyFile,
+    debug: { raw: 'must not persist' },
   }],
 }, storage);
 
@@ -82,5 +110,14 @@ assert.equal(restored[0].manualCoordinates, true);
 assert.equal(restored[0].coordinateQuality, 'manual');
 assert.deepEqual(restored[0].userWarnings, ['review coordinates']);
 assert.equal(restored[0].canResumeUpload, false);
+assert.equal(restored[1].gpsStatus, 'low_precision');
+assert.equal(restored[1].ocrStatus, 'low_precision');
+assert.equal(restored[1].coordinateQuality, 'low_precision');
+assert.deepEqual(restored[1].coordinates, { latitude: 64.60272, longitude: 30.62 });
+assert.deepEqual(restored[1].coordinatePrecision, { latitude: 5, longitude: 2 });
+assert.deepEqual(restored[1].coordinateText, { latitude: '64.60272', longitude: '30.62' });
+assert.deepEqual(restored[1].gpsWarnings, ['low_precision_coordinate']);
+assert.equal(restored[1].distanceStatus, 'low_precision');
+assert.equal(restored[1].statusText, 'Координаты найдены, но точность низкая — проверь вручную');
 
 console.log('Session store tests passed');

@@ -3,6 +3,7 @@ import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
 import { formatCoordinates } from '../utils/format';
 
 const distanceText = (photo) => {
+  if (photo.coordinateQuality === 'low_precision' || photo.distanceStatus === 'low_precision') return 'нужна ручная проверка';
   if (photo.coordinateQuality === 'suspicious') return 'Координаты подозрительные — нужна проверка';
   if (!photo.coordinates) return 'не участвует';
   if (photo.distanceStatus === 'too_close') return photo.distanceConflicts.join('; ');
@@ -13,6 +14,7 @@ const distanceText = (photo) => {
 const copyText = (value) => navigator.clipboard.writeText(value);
 
 const coordinateQualityText = (photo) => {
+  if (photo.coordinateQuality === 'low_precision') return 'Координаты найдены, но точность низкая — проверь вручную';
   if (photo.coordinateQuality === 'suspicious') return 'Координаты подозрительные — нужна проверка';
   if (photo.manualCoordinates || photo.gpsSource === 'manual') return 'Координаты заданы вручную';
   if (photo.gpsSource === 'exif') return 'Координаты найдены в EXIF';
@@ -20,6 +22,21 @@ const coordinateQualityText = (photo) => {
   if (photo.ocrStatus === 'uncertain' && photo.coordinates) return 'Координаты найдены, но OCR не уверен';
   if (photo.ocrStatus === 'suspect' || photo.ocrStatus === 'error') return 'OCR дал подозрительный результат';
   return 'Координаты не найдены';
+};
+
+const lowPrecisionHint = (photo) => {
+  if (photo.coordinateQuality !== 'low_precision' || !photo.coordinates) return '';
+  const latitudeDecimals = photo.coordinatePrecision?.latitude;
+  const longitudeDecimals = photo.coordinatePrecision?.longitude;
+  if (Number.isInteger(longitudeDecimals) && longitudeDecimals <= 2) {
+    const value = photo.coordinateText?.longitude || String(photo.coordinates.longitude);
+    return `Возможно, хвостовые нули скрыты: ${value} = ${Number(photo.coordinates.longitude).toFixed(5)}`;
+  }
+  if (Number.isInteger(latitudeDecimals) && latitudeDecimals <= 2) {
+    const value = photo.coordinateText?.latitude || String(photo.coordinates.latitude);
+    return `Возможно, хвостовые нули скрыты: ${value} = ${Number(photo.coordinates.latitude).toFixed(5)}`;
+  }
+  return '';
 };
 
 function LinkBlock({ label, url }) {
@@ -115,8 +132,10 @@ export default function PhotoResultCard({
   const [latitude, setLatitude] = useState(photo.coordinates?.latitude ?? '');
   const [longitude, setLongitude] = useState(photo.coordinates?.longitude ?? '');
   const [coordinateError, setCoordinateError] = useState('');
-  const [editorOpen, setEditorOpen] = useState(photo.coordinateQuality === 'suspicious');
+  const [editorOpen, setEditorOpen] = useState(['suspicious', 'low_precision'].includes(photo.coordinateQuality));
   const result = photo.uploadResult;
+  const needsLowPrecisionConfirmation = photo.coordinateQuality === 'low_precision';
+  const coordinateHint = lowPrecisionHint(photo);
   const fallbackReplaces = result?.links?.find((link) => link.provider === 'x0')?.replaces || [];
   const requestedProviders = result?.requestedProviders || [
     ...(providerSettings?.freeimage !== false ? ['freeimage'] : []),
@@ -132,6 +151,10 @@ export default function PhotoResultCard({
     setLatitude(photo.coordinates?.latitude ?? '');
     setLongitude(photo.coordinates?.longitude ?? '');
   }, [photo.coordinates?.latitude, photo.coordinates?.longitude]);
+
+  useEffect(() => {
+    if (['suspicious', 'low_precision'].includes(photo.coordinateQuality)) setEditorOpen(true);
+  }, [photo.coordinateQuality]);
 
   const applyCoordinates = (event) => {
     event.preventDefault();
@@ -158,8 +181,12 @@ export default function PhotoResultCard({
         <div>
           <dt>Координаты</dt>
           <dd>
-            {formatCoordinates(photo.coordinates)}
+            {formatCoordinates(photo.coordinates, {
+              coordinateText: needsLowPrecisionConfirmation ? photo.coordinateText : null,
+              coordinatePrecision: needsLowPrecisionConfirmation ? photo.coordinatePrecision : null,
+            })}
             <span className={`coordinate-quality quality-${photo.coordinateQuality || photo.ocrStatus || 'missing'}`}>{coordinateQualityText(photo)}</span>
+            {coordinateHint && <span className="coordinate-hint">{coordinateHint}</span>}
           </dd>
         </div>
         <div><dt>Расстояние</dt><dd>{distanceText(photo)}</dd></div>
@@ -174,7 +201,7 @@ export default function PhotoResultCard({
       </dl>
 
       <button type="button" className="button-secondary coordinate-edit-toggle" onClick={() => setEditorOpen((value) => !value)}>
-        Исправить координаты
+        {editorOpen ? 'Скрыть редактор координат' : needsLowPrecisionConfirmation ? 'Подтвердить координаты' : 'Исправить координаты'}
       </button>
       {editorOpen && <form className="coordinate-editor" onSubmit={applyCoordinates}>
         <div className="coordinate-inputs">
@@ -201,7 +228,7 @@ export default function PhotoResultCard({
             />
           </label>
         </div>
-        <button type="submit" className="button-secondary" disabled={editingDisabled}>Применить координаты</button>
+        <button type="submit" className="button-secondary" disabled={editingDisabled}>{needsLowPrecisionConfirmation ? 'Подтвердить координаты' : 'Применить координаты'}</button>
         {(photo.swapSuggested || photo.coordinates) && (
           <button type="button" className="button-secondary" disabled={editingDisabled} onClick={() => onSwapCoordinates?.(photo.id)}>
             Поменять местами lat/lon

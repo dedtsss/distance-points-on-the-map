@@ -8,6 +8,7 @@ export default function JobProgress({ photos }) {
     ['Файлов выбрано', progress.selected],
     ['OCR попыток', progress.ocrAttempts],
     ['Уверенные', progress.confident],
+    ['Низкая точность', progress.lowPrecision],
     ['Подозрительные', progress.suspicious],
     ['Не найдены', progress.missing],
     ['Исправлены вручную', progress.manual],

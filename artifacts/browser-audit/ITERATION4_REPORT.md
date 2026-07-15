@@ -36,4 +36,31 @@ The staged OCR-only → cleanup-only → upload-cleaned flow passed with all fiv
 - Journal records selection, OCR, sanity rejection, cleanup, provider upload and session events.
 - All-links groups contain exactly one blank line.
 
-Deployment: not performed. Push: not performed. Merge: not performed.
+## Low precision coordinates
+
+Added a separate `low_precision` coordinate quality for valid region-like pairs where latitude or longitude has only 0-2 decimal places. These coordinates are stored on the photo state, shown as found coordinates, and counted separately from confident, suspicious and missing coordinates.
+
+Checked parser strings:
+
+- `64,60272, 30,62, 237,9м` → `64.60272, 30.62`, extra `237.9` ignored, `low_precision_coordinate`.
+- `64,60272, 30,62, 238,0м` → `64.60272, 30.62`, extra `238.0` ignored, `low_precision_coordinate`.
+- `Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 238,0м` → `64.60272, 30.62`, extra ignored, `low_precision_coordinate`.
+- `64,60272, 30,62000, 238,0м` → `64.60272, 30.62`, source precision `30.62000` preserved and not marked low precision.
+
+Implementation notes:
+
+- OCR exits early when a parsed valid pair has only the `low_precision_coordinate` warning, so the later heavy bottom/full-image passes are not run only to chase confidence.
+- The processing journal reports `Координаты найдены с низкой точностью: 64.60272, 30.62`.
+- Low precision coordinates get `distanceStatus: low_precision` and do not receive strict 25 m `OK` until the user confirms coordinates manually.
+- Manual confirmation converts the photo to `coordinateQuality: manual` and recalculates distances.
+- Session restore preserves coordinates, `gpsStatus`, `ocrStatus`, `coordinateQuality: low_precision`, precision metadata, warnings, thumbnail and upload links without storing files/blob/object URLs/debug.
+- UI copy is separate: `Координаты найдены, но точность низкая — проверь вручную`; it does not reuse missing or generic suspicious text.
+
+Tests passed:
+
+- `npm test`
+- `npm run build`
+- `npx wrangler deploy --dry-run --config wrangler.toml`
+- Browser QA on local preview with synthetic `1000081817/1000081816`-style JPEG overlays for OCR-only, cleanup/upload, restore and manual confirmation. The real `1000081817.jpg` and `1000081816.jpg` files were not present in the local workspace.
+
+Deployment: not performed. Merge: not performed. Production Worker and GitHub Pages: unchanged.

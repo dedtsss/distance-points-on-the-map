@@ -552,6 +552,19 @@ const normalizeOcrText = (text) => {
 
 const toNumber = (value) => Number(String(value).replace(',', '.'));
 
+export const decimalPlaces = (value) => {
+  const match = String(value ?? '').replace(',', '.').match(/[-+]?\d+(?:\.(\d+))?/);
+  return match ? (match[1] || '').length : 0;
+};
+
+const normalizedCoordinateText = (value, numeric) => {
+  if (typeof value === 'string') {
+    const match = value.replace(',', '.').match(/[-+]?\d+(?:\.\d+)?/);
+    if (match) return match[0];
+  }
+  return Number.isFinite(numeric) ? String(numeric) : String(value ?? '');
+};
+
 const isValidLatLon = (latitude, longitude) => (
   Number.isFinite(latitude)
   && Number.isFinite(longitude)
@@ -650,15 +663,27 @@ const scoreCandidate = ({ latitude, longitude, baseConfidence, warnings, correct
 const addCandidate = (candidates, latitude, longitude, source, baseConfidence, warnings = [], metadata = {}) => {
   const lat = Number(latitude);
   const lon = Number(longitude);
+  const latitudeText = metadata.latitudeText || normalizedCoordinateText(latitude, lat);
+  const longitudeText = metadata.longitudeText || normalizedCoordinateText(longitude, lon);
+  const coordinatePrecision = metadata.coordinatePrecision || {
+    latitude: decimalPlaces(latitudeText),
+    longitude: decimalPlaces(longitudeText),
+  };
 
   if (isValidLatLon(lat, lon)) {
     const candidateWarnings = isZeroZeroLatLon(lat, lon)
       ? [...new Set([...warnings, 'zero_zero_placeholder'])]
       : warnings;
+    const coordinateQuality = candidateWarnings.includes('low_precision_coordinate')
+      ? 'low_precision'
+      : null;
 
     candidates.push({
       latitude: lat,
       longitude: lon,
+      coordinateText: { latitude: latitudeText, longitude: longitudeText },
+      coordinatePrecision,
+      coordinateQuality,
       source,
       warnings: candidateWarnings,
       correctionCount: metadata.correctionCount || 0,
@@ -679,9 +704,18 @@ const addCandidate = (candidates, latitude, longitude, source, baseConfidence, w
 
   if (swappedLooksBetter) {
     const swapWarnings = [...new Set([...warnings, 'coordinates_swapped'])];
+    const coordinateQuality = swapWarnings.includes('low_precision_coordinate')
+      ? 'low_precision'
+      : null;
     candidates.push({
       latitude: lon,
       longitude: lat,
+      coordinateText: { latitude: longitudeText, longitude: latitudeText },
+      coordinatePrecision: {
+        latitude: coordinatePrecision.longitude,
+        longitude: coordinatePrecision.latitude,
+      },
+      coordinateQuality,
       source,
       warnings: swapWarnings,
       correctionCount: metadata.correctionCount || 0,
@@ -715,10 +749,7 @@ const collectDecimalPairs = (normalizedText) => {
   return pairs;
 };
 
-const hasLowPrecisionCoordinate = (value) => {
-  const decimals = String(value || '').split('.')[1] || '';
-  return decimals.length > 0 && decimals.length < 3;
-};
+const hasLowPrecisionCoordinate = (value) => decimalPlaces(value) <= 2;
 
 const collectKareliaShortDecimalPairs = (normalizedText) => (
   [...normalizedText.matchAll(KARELIA_SHORT_DECIMAL_PAIR_RE)]
@@ -756,7 +787,7 @@ export function parseGpsFromOcrText(text, options = {}) {
     /(?:lat(?:itude)?|широта)\D{0,24}([-+]?\d{1,3}\.\d{3,10})\D{0,48}(?:lon(?:gitude)?|lng|long|долгота)\D{0,24}([-+]?\d{1,3}\.\d{3,10})/i,
   );
   if (labelPair) {
-    addCandidate(candidates, toNumber(labelPair[1]), toNumber(labelPair[2]), 'labels', 0.68, [], {
+    addCandidate(candidates, labelPair[1], labelPair[2], 'labels', 0.68, [], {
       correctionCount,
       contextStrength: 0.18,
     });
@@ -768,8 +799,8 @@ export function parseGpsFromOcrText(text, options = {}) {
   if (kareliaPairWithExtra) {
     addCandidate(
       candidates,
-      toNumber(kareliaPairWithExtra[1]),
-      toNumber(kareliaPairWithExtra[2]),
+      kareliaPairWithExtra[1],
+      kareliaPairWithExtra[2],
       'karelia_pair_with_ignored_extra',
       0.72,
       [],
@@ -788,7 +819,12 @@ export function parseGpsFromOcrText(text, options = {}) {
       'overlay_direction_pair',
       0.76,
       [],
-      { correctionCount, contextStrength: 0.18 },
+      {
+        correctionCount,
+        contextStrength: 0.18,
+        latitudeText: overlayDirectionPair[1],
+        longitudeText: overlayDirectionPair[3],
+      },
     );
   }
 
@@ -803,7 +839,12 @@ export function parseGpsFromOcrText(text, options = {}) {
       'direction_before',
       0.72,
       [],
-      { correctionCount, contextStrength: 0.18 },
+      {
+        correctionCount,
+        contextStrength: 0.18,
+        latitudeText: directionBefore[2],
+        longitudeText: directionBefore[4],
+      },
     );
   }
 
@@ -818,7 +859,12 @@ export function parseGpsFromOcrText(text, options = {}) {
       'direction_after',
       0.72,
       [],
-      { correctionCount, contextStrength: 0.18 },
+      {
+        correctionCount,
+        contextStrength: 0.18,
+        latitudeText: directionAfter[1],
+        longitudeText: directionAfter[3],
+      },
     );
   }
 
@@ -868,7 +914,7 @@ export function parseGpsFromOcrText(text, options = {}) {
   }
 
   collectDecimalPairs(normalizedText).forEach(([latitude, longitude]) => {
-    addCandidate(candidates, toNumber(latitude), toNumber(longitude), 'decimal_pair', 0.52, [], {
+    addCandidate(candidates, latitude, longitude, 'decimal_pair', 0.52, [], {
       correctionCount,
       contextStrength: 0,
     });
@@ -880,8 +926,8 @@ export function parseGpsFromOcrText(text, options = {}) {
       : [];
     addCandidate(
       candidates,
-      toNumber(latitude),
-      toNumber(longitude),
+      latitude,
+      longitude,
       'karelia_short_decimal_pair',
       0.56,
       warningsForCandidate,
@@ -925,6 +971,9 @@ export function parseGpsFromOcrText(text, options = {}) {
       confidence: best.confidence,
       candidates,
       chosenCandidate: best,
+      coordinateQuality: best.coordinateQuality || null,
+      coordinatePrecision: best.coordinatePrecision || null,
+      coordinateText: best.coordinateText || null,
       warnings: [...resultWarnings],
     };
   }
@@ -942,6 +991,9 @@ export function parseGpsFromOcrText(text, options = {}) {
       confidence: best.confidence,
       candidates,
       chosenCandidate: best,
+      coordinateQuality: best.coordinateQuality || null,
+      coordinatePrecision: best.coordinatePrecision || null,
+      coordinateText: best.coordinateText || null,
       warnings: [...resultWarnings],
     };
   }
@@ -957,6 +1009,9 @@ export function parseGpsFromOcrText(text, options = {}) {
     confidence: best.confidence,
     candidates,
     chosenCandidate: best,
+    coordinateQuality: best.coordinateQuality || (resultWarnings.has('low_precision_coordinate') ? 'low_precision' : null),
+    coordinatePrecision: best.coordinatePrecision || null,
+    coordinateText: best.coordinateText || null,
     warnings: [...resultWarnings],
   };
 }
@@ -984,7 +1039,16 @@ export function selectBestOcrAttempt(attempts) {
 
 const qualityForAttempt = (attempt) => {
   if (!attempt?.parsed?.ok) return attempt?.parsed?.chosenCandidate ? 'suspect' : 'missing';
+  if ((attempt.warnings || []).includes('low_precision_coordinate')) return 'low_precision';
   return attempt.score >= 0.76 && (attempt.correctionCount || 0) <= 1 ? 'confident' : 'uncertain';
+};
+
+const hasOnlyLowPrecisionWarning = (attempt) => {
+  const warnings = attempt?.warnings || [];
+  return attempt?.parsed?.ok
+    && warnings.includes('low_precision_coordinate')
+    && warnings.every((warning) => warning === 'low_precision_coordinate')
+    && (attempt.correctionCount || 0) <= 1;
 };
 
 export async function readGpsFromImageOcr(file, options = {}) {
@@ -1120,7 +1184,8 @@ export async function readGpsFromImageOcr(file, options = {}) {
         attempt.score = scoreOcrAttempt(attempt);
         attempts.push(attempt);
 
-        if (parsed.ok && attempt.score >= 0.78 && attempt.correctionCount <= 1) break;
+        if ((parsed.ok && attempt.score >= 0.78 && attempt.correctionCount <= 1)
+          || hasOnlyLowPrecisionWarning(attempt)) break;
       } catch (error) {
         attempts.push({
           name: variant.name,
@@ -1157,6 +1222,8 @@ export async function readGpsFromImageOcr(file, options = {}) {
         confidence: best.score,
         ocrConfidence: best.ocrConfidence,
         ocrStatus: qualityForAttempt(best),
+        coordinateQuality: best.parsed.coordinateQuality
+          || ((best.warnings || []).includes('low_precision_coordinate') ? 'low_precision' : null),
         attempts,
         cropPreview: best.cropPreview || '',
         processedPreview: best.processedPreview || '',

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { parseGpsFromOcrText, selectBestOcrAttempt } from '../src/utils/ocrGpsReader.js';
+import {
+  decimalPlaces,
+  parseGpsFromOcrText,
+  readGpsFromImageOcr,
+  selectBestOcrAttempt,
+} from '../src/utils/ocrGpsReader.js';
 
 const assertCoordinates = (text, latitude, longitude) => {
   const result = parseGpsFromOcrText(text);
@@ -7,6 +12,7 @@ const assertCoordinates = (text, latitude, longitude) => {
   assert.equal(result.ok, true, text);
   assert.equal(result.latitude, latitude, text);
   assert.equal(result.longitude, longitude, text);
+  return result;
 };
 
 assertCoordinates('64.588123, 30.601234', 64.588123, 30.601234);
@@ -57,10 +63,32 @@ assert.equal(parseGpsFromOcrText('64,602502N 30,611988E +2,61 #ed #11 #ennsa nax
 assert.equal(parseGpsFromOcrText('64,604670N 30,591181E +2,39 oe nnaexea: 5917').indexFromOcr, '5917');
 assert.equal(parseGpsFromOcrText('64,602214N 30,611359E +2,08 onen wxaexa: 5291').indexFromOcr, '5291');
 assert.equal(parseGpsFromOcrText('64,601882N 30,615078E +3,44 #ed #11 #ennana nax #on3a6oe oe nnaexea: 5241').indexFromOcr, '5241');
-assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м', 64.60272, 30.62);
-assert.ok(parseGpsFromOcrText('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').warnings.includes('low_precision_coordinate'));
-assert.equal(parseGpsFromOcrText('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').indexFromOcr, null);
+
+assert.equal(decimalPlaces('30,62000'), 5);
+assert.equal(decimalPlaces('30.62'), 2);
+const lowPrecision237 = assertCoordinates('64,60272, 30,62, 237,9м', 64.60272, 30.62);
+assert.equal(lowPrecision237.coordinateQuality, 'low_precision');
+assert.deepEqual(lowPrecision237.coordinatePrecision, { latitude: 5, longitude: 2 });
+assert.deepEqual(lowPrecision237.coordinateText, { latitude: '64.60272', longitude: '30.62' });
+assert.ok(lowPrecision237.warnings.includes('low_precision_coordinate'));
+assert.equal(lowPrecision237.chosenCandidate.source, 'karelia_short_decimal_pair');
+const lowPrecision238 = assertCoordinates('64,60272, 30,62, 238,0м', 64.60272, 30.62);
+assert.equal(lowPrecision238.coordinateQuality, 'low_precision');
+assert.ok(lowPrecision238.warnings.includes('low_precision_coordinate'));
+const lowPrecisionDotted = assertCoordinates('64.60272, 30.62, 237.9m', 64.60272, 30.62);
+assert.equal(lowPrecisionDotted.coordinateQuality, 'low_precision');
+const lowPrecisionSpaced = assertCoordinates('64,60272 30,62 237,9м', 64.60272, 30.62);
+assert.equal(lowPrecisionSpaced.coordinateQuality, 'low_precision');
+const lowPrecisionPrefixed = assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 238,0м', 64.60272, 30.62);
+assert.equal(lowPrecisionPrefixed.coordinateQuality, 'low_precision');
+assert.ok(lowPrecisionPrefixed.warnings.includes('low_precision_coordinate'));
+assert.equal(lowPrecisionPrefixed.indexFromOcr, null);
 assert.equal(parseGpsFromOcrText('41 Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').indexFromOcr, null);
+const fullPrecisionWithTrailingZeros = assertCoordinates('64,60272, 30,62000, 238,0м', 64.60272, 30.62);
+assert.equal(fullPrecisionWithTrailingZeros.coordinateQuality, null);
+assert.deepEqual(fullPrecisionWithTrailingZeros.coordinatePrecision, { latitude: 5, longitude: 5 });
+assert.deepEqual(fullPrecisionWithTrailingZeros.coordinateText, { latitude: '64.60272', longitude: '30.62000' });
+assert.equal(fullPrecisionWithTrailingZeros.warnings.includes('low_precision_coordinate'), false);
 
 const missing = parseGpsFromOcrText('строка без координат');
 assert.equal(missing.ok, false);
@@ -112,5 +140,30 @@ const bestAttempt = selectBestOcrAttempt([
   },
 ]);
 assert.equal(bestAttempt.name, 'directional-high-confidence');
+
+let recognizeCalls = 0;
+const lowPrecisionOcr = await readGpsFromImageOcr(new File(['image'], 'low-precision.jpg', { type: 'image/jpeg' }), {
+  variants: [
+    { name: 'first_low_precision', cropName: 'first', crop: {}, preprocess: { method: 'original' } },
+    { name: 'second_should_not_run', cropName: 'second', crop: {}, preprocess: { method: 'original' } },
+  ],
+  dependencies: {
+    loadImage: async () => ({ naturalWidth: 100, naturalHeight: 100 }),
+    createSession: async () => ({ terminate: async () => {} }),
+    crop: () => ({ width: 40, height: 12, sourceBounds: { x: 0, y: 0, width: 40, height: 12 } }),
+    preprocess: (crop) => crop,
+    recognize: async () => {
+      recognizeCalls += 1;
+      return { text: '64,60272, 30,62, 237,9м', confidence: 91 };
+    },
+  },
+});
+assert.equal(lowPrecisionOcr.ok, true);
+assert.equal(lowPrecisionOcr.latitude, 64.60272);
+assert.equal(lowPrecisionOcr.longitude, 30.62);
+assert.equal(lowPrecisionOcr.ocrStatus, 'low_precision');
+assert.equal(lowPrecisionOcr.coordinateQuality, 'low_precision');
+assert.equal(lowPrecisionOcr.attempts.length, 1);
+assert.equal(recognizeCalls, 1);
 
 console.log('OCR parser tests passed');

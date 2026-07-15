@@ -13,6 +13,12 @@ const progressText = ({ status, progress }) => {
   return 'Подготовка OCR';
 };
 
+const isLowPrecisionGps = (gps) => (
+  gps?.coordinateQuality === 'low_precision'
+  || gps?.ocrStatus === 'low_precision'
+  || (gps?.gpsWarnings || gps?.warnings || []).includes('low_precision_coordinate')
+);
+
 export async function runPhotoPipeline(options) {
   const readGps = options.dependencies?.readGps || readGpsPipeline;
   const calculate = options.dependencies?.calculateDistances || calculateDistances;
@@ -50,10 +56,13 @@ export async function runPhotoPipeline(options) {
           }
         },
       });
+      const lowPrecisionGps = isLowPrecisionGps(gps);
       const foundPatch = gps.found ? {
         status: PHOTO_STATUS.GPS_DONE,
-        statusText: 'Координаты найдены',
-        gpsStatus: 'done',
+        statusText: lowPrecisionGps
+          ? 'Координаты найдены, но точность низкая — проверь вручную'
+          : 'Координаты найдены',
+        gpsStatus: lowPrecisionGps ? 'low_precision' : 'done',
         coordinates: gps.coordinates,
         latitude: gps.coordinates.latitude,
         longitude: gps.coordinates.longitude,
@@ -61,7 +70,12 @@ export async function runPhotoPipeline(options) {
         gpsConfidence: gps.confidence ?? (gps.source === 'exif' ? 1 : 0),
         ocrStatus: gps.ocrStatus || (gps.source === 'exif' ? 'exif' : 'uncertain'),
         manualCoordinates: false,
-        coordinateQuality: gps.source === 'exif' || gps.ocrStatus === 'confident' ? 'confident' : 'suspicious',
+        coordinateQuality: lowPrecisionGps
+          ? 'low_precision'
+          : gps.coordinateQuality || (gps.source === 'exif' || gps.ocrStatus === 'confident' ? 'confident' : 'suspicious'),
+        coordinatePrecision: gps.coordinatePrecision || null,
+        coordinateText: gps.coordinateText || null,
+        gpsWarnings: gps.gpsWarnings || gps.warnings || [],
         ocrAttemptCount: gps.ocrAttemptCount || 0,
       } : {
         status: PHOTO_STATUS.GPS_MISSING,
@@ -75,6 +89,9 @@ export async function runPhotoPipeline(options) {
         ocrStatus: gps.ocrStatus || 'missing',
         manualCoordinates: false,
         coordinateQuality: gps.ocrStatus === 'suspect' ? 'suspicious' : 'missing',
+        coordinatePrecision: gps.coordinatePrecision || null,
+        coordinateText: gps.coordinateText || null,
+        gpsWarnings: gps.gpsWarnings || gps.warnings || [],
         ocrAttemptCount: gps.ocrAttemptCount || 0,
       };
       patchPhoto(initialPhoto.id, {
@@ -82,7 +99,11 @@ export async function runPhotoPipeline(options) {
         orientation: gps.orientation || 1,
         debug: { ...jobs.get(initialPhoto.id).debug, gps: gps.debug },
       });
-      log(gps.found ? `OCR/EXIF result: ${gps.coordinates.latitude}, ${gps.coordinates.longitude}` : 'Координаты не найдены', initialPhoto.id, gps.found ? 'success' : 'warning');
+      if (gps.found && lowPrecisionGps) {
+        log(`Координаты найдены с низкой точностью: ${gps.coordinates.latitude}, ${gps.coordinates.longitude}`, initialPhoto.id, 'warning');
+      } else {
+        log(gps.found ? `OCR/EXIF result: ${gps.coordinates.latitude}, ${gps.coordinates.longitude}` : 'Координаты не найдены', initialPhoto.id, gps.found ? 'success' : 'warning');
+      }
     } catch (error) {
       patchPhoto(initialPhoto.id, {
         status: PHOTO_STATUS.GPS_MISSING,
@@ -96,6 +117,9 @@ export async function runPhotoPipeline(options) {
         ocrStatus: 'error',
         manualCoordinates: false,
         coordinateQuality: 'missing',
+        coordinatePrecision: null,
+        coordinateText: null,
+        gpsWarnings: [],
         debug: {
           ...jobs.get(initialPhoto.id).debug,
           gpsError: technicalErrorMessage(error),
@@ -111,6 +135,7 @@ export async function runPhotoPipeline(options) {
       const sanityPatch = sanity.byPhotoId.get(photo.id) || {};
       patchPhoto(photo.id, sanityPatch);
       if (sanityPatch.coordinateQuality === 'suspicious') log('OCR result rejected: suspicious coordinates', photo.id, 'warning');
+      if (sanityPatch.coordinateQuality === 'low_precision') log('OCR result needs manual confirmation: low precision coordinates', photo.id, 'warning');
     }
     const gpsReadyPhotos = [...jobs.values()];
     distanceResult = calculate(gpsReadyPhotos, options.thresholdMeters);
@@ -121,9 +146,11 @@ export async function runPhotoPipeline(options) {
     };
     patchPhoto(photo.id, {
       status: PHOTO_STATUS.DISTANCE_READY,
-      statusText: photo.coordinateQuality === 'suspicious'
-        ? 'Координаты подозрительные — нужна проверка'
-        : photo.coordinates ? 'Расстояния рассчитаны' : 'Без расчёта расстояний',
+      statusText: photo.coordinateQuality === 'low_precision'
+        ? 'Координаты найдены, но точность низкая — проверь вручную'
+        : photo.coordinateQuality === 'suspicious'
+          ? 'Координаты подозрительные — нужна проверка'
+          : photo.coordinates ? 'Расстояния рассчитаны' : 'Без расчёта расстояний',
       ...result,
     });
     });

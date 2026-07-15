@@ -43,13 +43,18 @@ export function validateCoordinateBatch(photos, options = {}) {
     const swappedDistance = cluster && swappedValid ? haversineDistanceMeters(swapped, cluster) : null;
     const swapSuggested = !clusterOk && swappedDistance !== null && swappedDistance < distance && swappedDistance <= thresholdMeters;
     const confident = confidenceOk && regionOk && clusterOk;
+    const lowPrecision = photo.coordinateQuality === 'low_precision'
+      || photo.ocrStatus === 'low_precision'
+      || (photo.gpsWarnings || []).includes('low_precision_coordinate');
 
     byPhotoId.set(photo.id, {
-      coordinateQuality: confident ? 'confident' : 'suspicious',
-      gpsStatus: confident ? 'done' : 'suspicious',
+      coordinateQuality: lowPrecision && regionOk && clusterOk ? 'low_precision' : confident ? 'confident' : 'suspicious',
+      gpsStatus: lowPrecision && regionOk && clusterOk ? 'low_precision' : confident ? 'done' : 'suspicious',
       swapSuggested,
       sanityDistanceMeters: distance,
-      sanityReason: !confidenceOk ? 'low_confidence' : !regionOk ? 'outside_expected_region' : !clusterOk ? 'batch_outlier' : null,
+      sanityReason: lowPrecision && regionOk && clusterOk
+        ? 'low_precision_coordinate'
+        : !confidenceOk ? 'low_confidence' : !regionOk ? 'outside_expected_region' : !clusterOk ? 'batch_outlier' : null,
     });
   }
   return { cluster, byPhotoId };

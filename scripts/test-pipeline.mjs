@@ -36,6 +36,10 @@ const makePhoto = async (id, number) => {
     gpsConfidence: 0,
     ocrStatus: 'idle',
     manualCoordinates: false,
+    coordinateQuality: 'missing',
+    coordinatePrecision: null,
+    coordinateText: null,
+    gpsWarnings: [],
     orientation: 1,
     distanceStatus: 'pending',
     distanceConflicts: [],
@@ -146,6 +150,62 @@ assert.ok(closeResult.photos.every((photo) => photo.uploadStatus === 'done'));
 assert.ok(journalEvents.some((message) => message.startsWith('OCR started')));
 assert.ok(journalEvents.some((message) => message.startsWith('Cleanup started')));
 assert.ok(journalEvents.some((message) => message.startsWith('Upload freeimage')));
+
+const lowPrecisionPhotos = [await makePhoto('trusted-near', 1), await makePhoto('low-precision-near', 2)];
+const lowPrecisionJournal = [];
+const lowPrecisionResult = await runPhotoPipeline({
+  photos: lowPrecisionPhotos,
+  stages: { gps: true, cleanup: false, upload: false },
+  dependencies: {
+    readGps: async (file) => file.name === 'trusted-near.jpg'
+      ? {
+        found: true,
+        coordinates: { latitude: 64.60271, longitude: 30.61999 },
+        source: 'ocr',
+        confidence: 0.88,
+        ocrStatus: 'confident',
+        coordinateQuality: 'confident',
+        orientation: 1,
+        debug: {},
+      }
+      : {
+        found: true,
+        coordinates: { latitude: 64.60272, longitude: 30.62 },
+        source: 'ocr',
+        confidence: 0.62,
+        ocrStatus: 'low_precision',
+        coordinateQuality: 'low_precision',
+        coordinatePrecision: { latitude: 5, longitude: 2 },
+        coordinateText: { latitude: '64.60272', longitude: '30.62' },
+        gpsWarnings: ['low_precision_coordinate'],
+        orientation: 1,
+        debug: { ocr: { warnings: ['low_precision_coordinate'] } },
+      },
+  },
+  onLog: (entry) => lowPrecisionJournal.push(entry.message),
+});
+const lowPrecisionPhoto = lowPrecisionResult.photos.find((photo) => photo.id === 'low-precision-near');
+assert.equal(lowPrecisionPhoto.gpsStatus, 'low_precision');
+assert.equal(lowPrecisionPhoto.coordinateQuality, 'low_precision');
+assert.equal(lowPrecisionPhoto.distanceStatus, 'low_precision');
+assert.notEqual(lowPrecisionPhoto.distanceStatus, 'ok');
+assert.notEqual(lowPrecisionPhoto.distanceStatus, 'missing_coordinates');
+assert.deepEqual(lowPrecisionPhoto.coordinates, { latitude: 64.60272, longitude: 30.62 });
+assert.ok(lowPrecisionJournal.some((message) => message === 'Координаты найдены с низкой точностью: 64.60272, 30.62'));
+const lowPrecisionSummary = getProgressSummary(lowPrecisionResult.photos);
+assert.equal(lowPrecisionSummary.confident, 1);
+assert.equal(lowPrecisionSummary.lowPrecision, 1);
+assert.equal(lowPrecisionSummary.missing, 0);
+
+const confirmedLowPrecision = applyManualCoordinateCorrection(
+  lowPrecisionResult.photos,
+  'low-precision-near',
+  { latitude: 64.60272, longitude: 30.62 },
+  (items) => calculateDistances(items, 25),
+);
+const confirmedPhoto = confirmedLowPrecision.find((photo) => photo.id === 'low-precision-near');
+assert.equal(confirmedPhoto.coordinateQuality, 'manual');
+assert.equal(confirmedPhoto.distanceStatus, 'too_close');
 
 const sanityPhotos = [
   { id: 'a', coordinates: { latitude: 64.6, longitude: 30.6 }, gpsConfidence: 0.9, ocrStatus: 'confident' },
