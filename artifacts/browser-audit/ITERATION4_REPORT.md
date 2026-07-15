@@ -62,5 +62,10 @@ Tests passed:
 - `npm run build`
 - `npx wrangler deploy --dry-run --config wrangler.toml`
 - Browser QA on local preview with synthetic `1000081817/1000081816`-style JPEG overlays for OCR-only, cleanup/upload, restore and manual confirmation. The real `1000081817.jpg` and `1000081816.jpg` files were not present in the local workspace.
+- Browser QA on the two attached real JPEGs:
+  - `Photo 1.jpg` recognized as `64.604670, 30.591181`, `coordinateQuality: confident`, `gpsStatus: done`, `ocrStatus: confident`, 2 OCR attempts.
+  - `Photo 2.jpg` recognized as `64.60272, 30.62`, `coordinateQuality: low_precision`, `gpsStatus: low_precision`, `ocrStatus: low_precision`, `distanceStatus: low_precision`, precision `{ latitude: 5, longitude: 2 }`.
+  - The second photo stopped after `gray_bottom_caption_overlay:bottom_numeric_line`; no `bottom_35`, `bottom_right_45` or `bottom_center_60` OCR passes ran.
+  - Cleanup/upload continued with cleaned filenames `gps-001.jpg` and `gps-002.jpg`; restore preserved `low_precision`; manual confirmation recalculated distance and allowed `OK`.
 
 Deployment: not performed. Merge: not performed. Production Worker and GitHub Pages: unchanged.
