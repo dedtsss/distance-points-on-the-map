@@ -52,6 +52,8 @@ export function hasUsableCoordinates(point) {
     return false;
   }
 
+  if (point.coordinateQuality && !['confident', 'manual'].includes(point.coordinateQuality)) return false;
+
   if (point.gpsSource === 'missing' || point.gpsStatus === 'missing') {
     return false;
   }
@@ -173,6 +175,13 @@ export function markProblemPoints(points, violations) {
     ));
 
     if (!hasCoordinates) {
+      if (point.coordinateQuality === 'low_precision' && isValidCoordinate(getLatitude(point), getLongitude(point))) {
+        return {
+          ...point,
+          distanceStatus: 'low_precision',
+          distanceWarnings: ['low_precision_coordinate'],
+        };
+      }
       return {
         ...point,
         distanceStatus: 'missing_coordinates',

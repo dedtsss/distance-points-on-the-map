@@ -1,15 +1,12 @@
 name: Test Worker Upload
 
 on:
-  workflow_run:
-    workflows: ['Deploy Cloudflare Worker']
-    types: [completed]
   workflow_dispatch:
     inputs:
       worker_url:
         description: 'Cloudflare Worker URL'
         required: false
-        default: 'https://spring-mouse-8d81.dvabobra2014.workers.dev/'
+        default: 'https://gps.bruce-group.net/api/upload'
       targets:
         description: 'Comma-separated targets: bundle,freeimage,ninjabox,x0'
         required: false
@@ -25,7 +22,6 @@ permissions:
 
 jobs:
   test-worker-upload:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -41,7 +37,10 @@ jobs:
         id: smoke
         continue-on-error: true
         env:
-          WORKER_URL: ${{ github.event.inputs.worker_url || 'https://spring-mouse-8d81.dvabobra2014.workers.dev/' }}
+          WORKER_URL: ${{ github.event.inputs.worker_url || 'https://gps.bruce-group.net/api/upload' }}
+          WORKER_ACCESS_TOKEN: ${{ secrets.APP_ACCESS_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           TARGETS: ${{ github.event.inputs.targets || 'bundle' }}
           REQUIRE_MODE: ${{ github.event.inputs.require_mode || 'all' }}
         run: |

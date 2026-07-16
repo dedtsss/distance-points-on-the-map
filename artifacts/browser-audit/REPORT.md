@@ -6,7 +6,7 @@ Date: 2026-07-04
 
 Production build served locally through Vite Preview. Primary browser profile: Playwright Chromium using the Pixel 7 Android Chrome device profile. A 1280×900 desktop viewport was checked separately.
 
-To reproduce locally, build and start Vite Preview on port 4173, install the Chromium runtime with `npx playwright install chromium`, then run `npm run test:browser-audit`. The browser audit performs real Freeimage/Ninjabox uploads in its normal-flow scenario.
+To reproduce this historical PR #17 audit, build and start Vite Preview on port 4173, install the Chromium runtime with `npx playwright install chromium`, then run `node artifacts/browser-audit/run-browser-audit.mjs`. This original audit performs real Freeimage/Ninjabox uploads in its normal-flow scenario. The current `npm run test:browser-audit` command runs the newer local iteration check.
 
 Test batch:
 

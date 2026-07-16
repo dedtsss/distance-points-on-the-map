@@ -1,4 +1,5 @@
 import { validateSelectedFiles } from './fileValidation.js';
+import { createLightweightThumbnail } from './thumbnail.js';
 
 const extensionForType = (type) => ({
   'image/jpeg': '.jpg',
@@ -53,11 +54,14 @@ export async function createStableFileCopy(file, index = 0) {
     stableBlob,
     stableFile,
     previewObjectUrl: null,
+    thumbnailDataUrl: null,
+    thumbnailError: null,
   };
 }
 
-export async function bufferSelectedFiles(fileList) {
+export async function bufferSelectedFiles(fileList, options = {}) {
   const { validFiles, errors } = validateSelectedFiles(fileList);
+  const thumbnailFactory = options.thumbnailFactory || createLightweightThumbnail;
   const settled = await Promise.allSettled(
     validFiles.map((file, index) => createStableFileCopy(file, index)),
   );
@@ -71,6 +75,16 @@ export async function bufferSelectedFiles(fileList) {
 
     errors.push(`${validFiles[index].name}: не удалось скопировать файл во внутренний буфер.`);
   });
+
+  // Decode thumbnails sequentially. Concurrent full camera-image decodes can
+  // exhaust Android Chrome memory even though the resulting canvases are tiny.
+  for (let index = 0; index < bufferedFiles.length; index += 1) {
+    try {
+      bufferedFiles[index].thumbnailDataUrl = await thumbnailFactory(bufferedFiles[index].stableFile);
+    } catch (error) {
+      bufferedFiles[index].thumbnailError = error instanceof Error ? error.message : String(error);
+    }
+  }
 
   return { bufferedFiles, errors };
 }

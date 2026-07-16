@@ -1,4 +1,4 @@
-import { cleanImageWithCanvas } from './canvasFallbackCleaner.js';
+import { cleanImageWithCanvas, DEFAULT_CANVAS_MAX_SIDE } from './canvasFallbackCleaner.js';
 import { isJpegFile, stripJpegMetadataFromArrayBuffer } from './jpegMetadataStripper.js';
 import { isMetadataVerificationSafe, verifyCleanedMetadata } from './metadataVerifier.js';
 
@@ -11,18 +11,22 @@ const normalizedFilename = (preferredFilename) => {
   return `${safe || 'photo'}.jpg`;
 };
 
-const makeFailure = (error, debug = {}) => ({
+const technicalMessage = (error) => (error instanceof Error ? error.message : String(error || 'cleanup failed'));
+
+const makeFailure = (error, debug) => ({
   ok: false,
   file: null,
   cleanedBlob: null,
   method: 'failed',
-  verification: null,
+  verification: debug?.verification || null,
   warnings: [],
-  error: error instanceof Error ? error.message : String(error || 'cleanup failed'),
+  error: technicalMessage(error),
   debug,
 });
 
-const isAcceptablyClean = (verification) => isMetadataVerificationSafe(verification);
+const normalizeCanvasResult = (result) => (
+  result instanceof File ? { file: result, debug: {} } : result
+);
 
 export async function cleanImageForUpload(stableFile, options = {}) {
   const orientation = [1, 3, 6, 8].includes(options.orientation) ? options.orientation : 1;
@@ -30,11 +34,25 @@ export async function cleanImageForUpload(stableFile, options = {}) {
   const strip = options.dependencies?.strip || stripJpegMetadataFromArrayBuffer;
   const verify = options.dependencies?.verify || verifyCleanedMetadata;
   const cleanCanvas = options.dependencies?.cleanCanvas || cleanImageWithCanvas;
-  const attempts = [];
+  const jpeg = isJpegFile(stableFile);
+  const debug = {
+    originalName: options.originalName || stableFile?.name || '',
+    safeName: options.safeName || stableFile?.name || '',
+    type: options.type || stableFile?.type || '',
+    size: Number(options.size ?? stableFile?.size) || 0,
+    orientation,
+    selectedCleanupPath: null,
+    binarySkipReason: jpeg ? null : 'not_jpeg',
+    binaryStrip: null,
+    canvasFallback: null,
+    verification: null,
+  };
 
-  if (!stableFile) return makeFailure(new Error('Стабильная копия файла недоступна'));
+  if (!stableFile) return makeFailure(new Error('Стабильная копия файла недоступна'), debug);
 
-  if (isJpegFile(stableFile) && orientation === 1) {
+  // JPEG cleanup is binary-first for every EXIF orientation. This avoids
+  // decoding full-size Android camera files unless verification requires it.
+  if (jpeg) {
     try {
       const stripped = strip(await stableFile.arrayBuffer());
       const cleanedFile = new File([stripped.arrayBuffer], filename, {
@@ -42,46 +60,65 @@ export async function cleanImageForUpload(stableFile, options = {}) {
         lastModified: Date.now(),
       });
       const verification = await verify(cleanedFile);
-      attempts.push({ method: 'binary-jpeg-strip', stripped, verification });
-      if (isAcceptablyClean(verification)) {
+      debug.binaryStrip = {
+        ok: true,
+        metadataRemoved: stripped.metadataRemoved,
+        removedBytes: stripped.removedBytes,
+        removedSegments: stripped.removedSegments,
+        verification,
+      };
+      debug.verification = verification;
+
+      if (isMetadataVerificationSafe(verification)) {
+        debug.selectedCleanupPath = 'binary-jpeg-strip';
         return {
           ok: true,
           file: cleanedFile,
           cleanedBlob: cleanedFile,
           filename,
           method: 'binary-jpeg-strip',
-          metadataRemoved: true,
+          metadataRemoved: stripped.metadataRemoved,
           verification,
           warnings: [],
-          debug: { attempts },
+          debug,
         };
       }
+
+      debug.binaryStrip.unsafeReason = verification.checked
+        ? 'metadata_remaining'
+        : 'verification_failed';
     } catch (error) {
-      attempts.push({ method: 'binary-jpeg-strip', error: error instanceof Error ? error.message : String(error) });
+      debug.binaryStrip = { ok: false, error: technicalMessage(error) };
     }
   }
 
+  debug.selectedCleanupPath = 'canvas-fallback';
   try {
-    const cleanedFile = await cleanCanvas(stableFile, orientation, filename);
-    const verification = await verify(cleanedFile);
-    attempts.push({ method: 'canvas-fallback', verification });
-    if (!isAcceptablyClean(verification)) {
-      return makeFailure(new Error('Проверка metadata после очистки не пройдена'), { attempts });
+    const canvasResult = normalizeCanvasResult(await cleanCanvas(stableFile, orientation, filename, {
+      maxSide: options.canvasMaxSide || DEFAULT_CANVAS_MAX_SIDE,
+    }));
+    if (!canvasResult?.file) throw new Error('Canvas не вернул очищенный файл');
+    const verification = await verify(canvasResult.file);
+    debug.canvasFallback = { ok: true, ...canvasResult.debug, verification };
+    debug.verification = verification;
+
+    if (!isMetadataVerificationSafe(verification)) {
+      return makeFailure(new Error('Проверка metadata после очистки не пройдена'), debug);
     }
 
     return {
       ok: true,
-      file: cleanedFile,
-      cleanedBlob: cleanedFile,
+      file: canvasResult.file,
+      cleanedBlob: canvasResult.file,
       filename,
       method: 'canvas-fallback',
       metadataRemoved: true,
       verification,
       warnings: [],
-      debug: { attempts },
+      debug,
     };
   } catch (error) {
-    attempts.push({ method: 'canvas-fallback', error: error instanceof Error ? error.message : String(error) });
-    return makeFailure(error, { attempts });
+    debug.canvasFallback = { ok: false, error: technicalMessage(error) };
+    return makeFailure(error, debug);
   }
 }

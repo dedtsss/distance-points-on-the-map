@@ -14,12 +14,14 @@ export function calculateDistances(photos, thresholdMeters = DEFAULT_DISTANCE_TH
     distanceConflicts: photo.distanceWarnings || [],
   }]));
   const usableCount = getValidPointsForDistance(photos).length;
+  const lowPrecisionCount = photos.filter((photo) => photo.coordinateQuality === 'low_precision').length;
 
   return {
     thresholdMeters,
     violations,
     byPhotoId,
     usableCount,
-    missingCount: photos.length - usableCount,
+    lowPrecisionCount,
+    missingCount: photos.length - usableCount - lowPrecisionCount,
   };
 }

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { parseGpsFromOcrText } from '../src/utils/ocrGpsReader.js';
+import {
+  decimalPlaces,
+  parseGpsFromOcrText,
+  readGpsFromImageOcr,
+  selectBestOcrAttempt,
+} from '../src/utils/ocrGpsReader.js';
 
 const assertCoordinates = (text, latitude, longitude) => {
   const result = parseGpsFromOcrText(text);
@@ -7,16 +12,45 @@ const assertCoordinates = (text, latitude, longitude) => {
   assert.equal(result.ok, true, text);
   assert.equal(result.latitude, latitude, text);
   assert.equal(result.longitude, longitude, text);
+  return result;
 };
 
 assertCoordinates('64.588123, 30.601234', 64.588123, 30.601234);
 assertCoordinates('Lat: 64.588123 Lon: 30.601234', 64.588123, 30.601234);
 assertCoordinates('N 64.588123 E 30.601234', 64.588123, 30.601234);
+assertCoordinates('LAT 62.123456 / LON 34.123456', 62.123456, 34.123456);
+assertCoordinates('64.6O2319N 3O.6O9952E', 64.602319, 30.609952);
+assertCoordinates('64.6S2319N 30.60B952E', 64.652319, 30.608952);
 assertCoordinates('64,588123 30,601234', 64.588123, 30.601234);
 assertCoordinates('мусор до 64.588123, 30.601234 мусор после', 64.588123, 30.601234);
 assertCoordinates('64.6028, 30.6258 (±4м)', 64.6028, 30.6258);
 assertCoordinates('61,792040N 34,323477E ±1,00m Номер индекса: 4469', 61.79204, 34.323477);
 assertCoordinates('61,792040N 34,323477E ±1,00m Номер индекса: 4468', 61.79204, 34.323477);
+assertCoordinates('64,604344N 30,591954E ±3,48m', 64.604344, 30.591954);
+assertCoordinates('64.604344N 30.591954E', 64.604344, 30.591954);
+assertCoordinates('64,604344 N 30,591954 E', 64.604344, 30.591954);
+assertCoordinates('64.604344 N 30.591954 E', 64.604344, 30.591954);
+assertCoordinates('64,604344N30,591954E', 64.604344, 30.591954);
+assertCoordinates('64.604344N30.591954E', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,591954E +3.48m', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,591954E 3,48m', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,59 1954E +3 48m', 64.604344, 30.591954);
+assertCoordinates('64,604344M 30,591954E', 64.604344, 30.591954);
+assertCoordinates('64,604344N 30,591954£', 64.604344, 30.591954);
+assertCoordinates('64,60271, 30,61999, 238,5м', 64.60271, 30.61999);
+assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60271, 30,61999, 238,5м', 64.60271, 30.61999);
+assert.equal(
+  parseGpsFromOcrText('64,60271, 30,61999, 238,5м').chosenCandidate.source,
+  'karelia_pair_with_ignored_extra',
+);
+
+assert.equal(parseGpsFromOcrText('64,604344M 30,591954E').normalizedText, '64.604344N 30.591954E');
+assert.equal(parseGpsFromOcrText('64,604344N 30,591954£').normalizedText, '64.604344N 30.591954E');
+assert.equal(
+  parseGpsFromOcrText('M 64,604344 30,591954 £').normalizedText,
+  'M 64.604344 30.591954 £',
+  'direction fixes must stay contextual',
+);
 
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4469').indexFromOcr, '4469');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4468').indexFromOcr, '4468');
@@ -29,10 +63,32 @@ assert.equal(parseGpsFromOcrText('64,602502N 30,611988E +2,61 #ed #11 #ennsa nax
 assert.equal(parseGpsFromOcrText('64,604670N 30,591181E +2,39 oe nnaexea: 5917').indexFromOcr, '5917');
 assert.equal(parseGpsFromOcrText('64,602214N 30,611359E +2,08 onen wxaexa: 5291').indexFromOcr, '5291');
 assert.equal(parseGpsFromOcrText('64,601882N 30,615078E +3,44 #ed #11 #ennana nax #on3a6oe oe nnaexea: 5241').indexFromOcr, '5241');
-assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м', 64.60272, 30.62);
-assert.ok(parseGpsFromOcrText('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').warnings.includes('low_precision_coordinate'));
-assert.equal(parseGpsFromOcrText('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').indexFromOcr, null);
+
+assert.equal(decimalPlaces('30,62000'), 5);
+assert.equal(decimalPlaces('30.62'), 2);
+const lowPrecision237 = assertCoordinates('64,60272, 30,62, 237,9м', 64.60272, 30.62);
+assert.equal(lowPrecision237.coordinateQuality, 'low_precision');
+assert.deepEqual(lowPrecision237.coordinatePrecision, { latitude: 5, longitude: 2 });
+assert.deepEqual(lowPrecision237.coordinateText, { latitude: '64.60272', longitude: '30.62' });
+assert.ok(lowPrecision237.warnings.includes('low_precision_coordinate'));
+assert.equal(lowPrecision237.chosenCandidate.source, 'karelia_short_decimal_pair');
+const lowPrecision238 = assertCoordinates('64,60272, 30,62, 238,0м', 64.60272, 30.62);
+assert.equal(lowPrecision238.coordinateQuality, 'low_precision');
+assert.ok(lowPrecision238.warnings.includes('low_precision_coordinate'));
+const lowPrecisionDotted = assertCoordinates('64.60272, 30.62, 237.9m', 64.60272, 30.62);
+assert.equal(lowPrecisionDotted.coordinateQuality, 'low_precision');
+const lowPrecisionSpaced = assertCoordinates('64,60272 30,62 237,9м', 64.60272, 30.62);
+assert.equal(lowPrecisionSpaced.coordinateQuality, 'low_precision');
+const lowPrecisionPrefixed = assertCoordinates('Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 238,0м', 64.60272, 30.62);
+assert.equal(lowPrecisionPrefixed.coordinateQuality, 'low_precision');
+assert.ok(lowPrecisionPrefixed.warnings.includes('low_precision_coordinate'));
+assert.equal(lowPrecisionPrefixed.indexFromOcr, null);
 assert.equal(parseGpsFromOcrText('41 Меф/1гр/синяя упак/прикоп-заброс 64,60272, 30,62, 237,9м').indexFromOcr, null);
+const fullPrecisionWithTrailingZeros = assertCoordinates('64,60272, 30,62000, 238,0м', 64.60272, 30.62);
+assert.equal(fullPrecisionWithTrailingZeros.coordinateQuality, null);
+assert.deepEqual(fullPrecisionWithTrailingZeros.coordinatePrecision, { latitude: 5, longitude: 5 });
+assert.deepEqual(fullPrecisionWithTrailingZeros.coordinateText, { latitude: '64.60272', longitude: '30.62000' });
+assert.equal(fullPrecisionWithTrailingZeros.warnings.includes('low_precision_coordinate'), false);
 
 const missing = parseGpsFromOcrText('строка без координат');
 assert.equal(missing.ok, false);
@@ -62,5 +118,52 @@ assert.equal(swapped.longitude, 30.601234);
 assert.ok(swapped.warnings.includes('coordinates_swapped'));
 assert.ok(Array.isArray(swapped.candidates));
 assert.ok(swapped.chosenCandidate);
+
+const degreesMinutes = parseGpsFromOcrText('62°12.3456 N, 34°12.3456 E');
+assert.equal(degreesMinutes.ok, true);
+assert.ok(Math.abs(degreesMinutes.latitude - 62.20576) < 0.000001);
+assert.ok(Math.abs(degreesMinutes.longitude - 34.20576) < 0.000001);
+
+const degreesMinutesSeconds = parseGpsFromOcrText('62 12 34 N / 34 12 34 E');
+assert.equal(degreesMinutesSeconds.ok, true);
+assert.ok(Math.abs(degreesMinutesSeconds.latitude - 62.2094444444) < 0.000001);
+assert.ok(Math.abs(degreesMinutesSeconds.longitude - 34.2094444444) < 0.000001);
+
+const bestAttempt = selectBestOcrAttempt([
+  {
+    name: 'corrected-low-confidence', parserConfidence: 0.7, ocrConfidence: 0.7, correctionCount: 3,
+    warnings: [], parsed: { ok: true, chosenCandidate: { latitude: 62.1, longitude: 34.1 } },
+  },
+  {
+    name: 'directional-high-confidence', parserConfidence: 0.9, ocrConfidence: 0.8, correctionCount: 0,
+    warnings: [], parsed: { ok: true, chosenCandidate: { latitude: 62.2, longitude: 34.2 } },
+  },
+]);
+assert.equal(bestAttempt.name, 'directional-high-confidence');
+
+let recognizeCalls = 0;
+const lowPrecisionOcr = await readGpsFromImageOcr(new File(['image'], 'low-precision.jpg', { type: 'image/jpeg' }), {
+  variants: [
+    { name: 'first_low_precision', cropName: 'first', crop: {}, preprocess: { method: 'original' } },
+    { name: 'second_should_not_run', cropName: 'second', crop: {}, preprocess: { method: 'original' } },
+  ],
+  dependencies: {
+    loadImage: async () => ({ naturalWidth: 100, naturalHeight: 100 }),
+    createSession: async () => ({ terminate: async () => {} }),
+    crop: () => ({ width: 40, height: 12, sourceBounds: { x: 0, y: 0, width: 40, height: 12 } }),
+    preprocess: (crop) => crop,
+    recognize: async () => {
+      recognizeCalls += 1;
+      return { text: '64,60272, 30,62, 237,9м', confidence: 91 };
+    },
+  },
+});
+assert.equal(lowPrecisionOcr.ok, true);
+assert.equal(lowPrecisionOcr.latitude, 64.60272);
+assert.equal(lowPrecisionOcr.longitude, 30.62);
+assert.equal(lowPrecisionOcr.ocrStatus, 'low_precision');
+assert.equal(lowPrecisionOcr.coordinateQuality, 'low_precision');
+assert.equal(lowPrecisionOcr.attempts.length, 1);
+assert.equal(recognizeCalls, 1);
 
 console.log('OCR parser tests passed');

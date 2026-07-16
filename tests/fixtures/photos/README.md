@@ -1,8 +1,17 @@
 # Real Photo Fixtures
 
-Put 5 real GPS overlay photos here for local OCR/debug checks.
+The committed regression fixtures retain only the lower 35% of the two approved source photos; the rest is replaced with a neutral background so detector geometry stays identical without storing the full scene:
 
-Do not commit private production photos unless you intentionally want them in the repository.
+- `black-bottom-right-overlay-crop.jpg` — black panel with directional coordinates in the top line;
+- `gray-bottom-caption-overlay-crop.jpg` — translucent gray caption with coordinates in the second line.
+
+Run their detector and real Tesseract regression with:
+
+```bash
+npm run test:overlay-fixtures
+```
+
+Do not commit additional private production photos unless that is intentional.
 
 Suggested local flow:
 
