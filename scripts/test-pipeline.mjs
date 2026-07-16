@@ -102,6 +102,53 @@ assert.equal(uploadedEntries.length, 2);
 assert.ok(uploadedEntries.every((entry, index) => entry.cleaned && entry.file !== missingPhotos[index].stableFile));
 assert.ok(missingResult.photos.every((photo) => photo.stableFile === null && photo.thumbnailDataUrl));
 
+const indexedPhotos = [await makePhoto('indexed', 1), await makePhoto('no-index', 2)];
+const preferredFilenames = [];
+let indexedUploadEntries = [];
+const indexedResult = await runPhotoPipeline({
+  photos: indexedPhotos,
+  dependencies: {
+    readGps: async (file) => file.name === 'indexed.jpg'
+      ? {
+        found: true,
+        coordinates: { latitude: 62.2, longitude: 34.2 },
+        source: 'ocr',
+        confidence: 0.91,
+        ocrStatus: 'confident',
+        indexFromOcr: '5939',
+        indexStatus: 'found',
+        orientation: 1,
+        debug: {},
+      }
+      : { found: false, coordinates: null, indexFromOcr: null, indexStatus: 'missing', orientation: 1, debug: {} },
+    clean: async (_file, options) => {
+      preferredFilenames.push(options.preferredFilename);
+      return {
+        ok: true,
+        file: new File(['clean'], options.preferredFilename, { type: 'image/jpeg' }),
+        method: 'test',
+        verification: { checked: true, hasGps: false, hasExif: false },
+        debug: {},
+      };
+    },
+    upload: async (entries) => {
+      indexedUploadEntries = entries;
+      return uploadSuccess(entries);
+    },
+  },
+});
+assert.equal(indexedResult.photos[0].indexFromOcr, '5939');
+assert.equal(indexedResult.photos[0].indexStatus, 'found');
+assert.equal(indexedResult.photos[0].pointLabel, '5939');
+assert.equal(indexedResult.photos[0].internalName, 'index-5939');
+assert.equal(indexedResult.photos[0].displayFileName, 'index-5939.jpg');
+assert.equal(indexedResult.photos[1].indexStatus, 'missing');
+assert.equal(indexedResult.photos[1].pointLabel, 'Фото 2');
+assert.equal(indexedResult.photos[1].internalName, 'photo-002-no-index');
+assert.ok(preferredFilenames.every((name) => /^gps-\d{3}\.jpg$/.test(name)));
+assert.ok(indexedUploadEntries.every((entry) => !entry.file.name.includes('5939')));
+assert.equal(indexedResult.photos[0].uploadStatus, 'done');
+
 // A suspicious OCR candidate is informational and does not block cleanup/upload.
 const suspiciousResult = await runPhotoPipeline({
   photos: [await makePhoto('suspicious-ocr', 1)],

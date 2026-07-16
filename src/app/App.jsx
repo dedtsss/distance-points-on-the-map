@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import DistanceSummary from '../components/DistanceSummary';
+import AppShell from '../components/AppShell.jsx';
 import BuildInfo from '../components/BuildInfo';
+import DistanceSummary from '../components/DistanceSummary';
+import EmptyState from '../components/EmptyState.jsx';
 import ErrorBanner from '../components/ErrorBanner';
 import JobProgress from '../components/JobProgress';
 import LastSessionPrompt from '../components/LastSessionPrompt';
+import MapPanel from '../components/MapPanel.jsx';
 import PhotoPicker from '../components/PhotoPicker';
 import PhotoResultCard from '../components/PhotoResultCard';
-import ProviderSettings from '../components/ProviderSettings';
 import ProcessingJournal from '../components/ProcessingJournal';
+import ProviderSettings from '../components/ProviderSettings';
 import ResultsSummary from '../components/ResultsSummary';
+import ResultsTable from '../components/ResultsTable.jsx';
+import SectionHeader from '../components/SectionHeader.jsx';
+import StatusChip from '../components/StatusChip.jsx';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService';
 import { bufferSelectedFiles } from '../features/files/stableFileStore';
 import { normalizeCoordinates } from '../features/gps/coordinateParser';
+import { normalizeIndexValue } from '../features/points/pointIdentity.js';
 import {
   deleteLastSession,
   getSessionDiagnostics,
@@ -19,13 +26,19 @@ import {
   restoreSessionPhotos,
   saveLastSession,
 } from '../features/session/sessionStore';
+import { DEFAULT_SCREEN, normalizeScreen } from '../features/ui/screens.js';
 import {
   DEFAULT_PROVIDER_SETTINGS,
   normalizeProviderSettings,
   validateProviderSettings,
 } from '../features/upload/providerPolicy';
 import { DEFAULT_PROXY_URL } from '../features/upload/uploadService';
-import { applyManualCoordinateCorrection, replacePhotoBatch, releasePhotoBuffers } from './appState';
+import {
+  applyManualCoordinateCorrection,
+  applyManualIndexCorrection,
+  replacePhotoBatch,
+  releasePhotoBuffers,
+} from './appState';
 import { runPhotoPipeline } from './pipeline';
 import { UPLOAD_RULES_EXPLANATION } from './pipelineRules';
 
@@ -33,6 +46,188 @@ const newSessionMeta = () => ({
   sessionId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   createdAt: new Date().toISOString(),
 });
+
+const debugModeFromLocation = () => (
+  typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('debug') === '1'
+);
+
+function UploadScreen({
+  photos,
+  mode,
+  isBusy,
+  providerValidation,
+  hasUploadedPhotos,
+  providerSettings,
+  debugMode,
+  thresholdMeters,
+  activeSince,
+  journal,
+  onFileSelect,
+  onRun,
+  onClearResult,
+  onApplyCoordinates,
+  onApplyIndex,
+  onSwapCoordinates,
+}) {
+  return (
+    <>
+      <section className="screen-panel">
+        <SectionHeader
+          kicker="Workflow"
+          title="Загрузка и проверка"
+        >
+          OCR ищет координаты и индекс точки, затем cleanup удаляет metadata, а upload отправляет только очищенные generic-файлы.
+        </SectionHeader>
+        <PhotoPicker photos={photos} onSelect={onFileSelect} disabled={isBusy} isBuffering={mode === 'buffering'} />
+      </section>
+
+      {photos.length > 0 && (
+        <section className="run-card">
+          <SectionHeader kicker="Шаг 2" title="Действия">{UPLOAD_RULES_EXPLANATION}</SectionHeader>
+          <div className="run-actions action-grid">
+            <button type="button" className="button-secondary" onClick={() => onRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат')} disabled={isBusy || !photos.some((photo) => photo.stableFile)}>Только распознать координаты</button>
+            <button type="button" className="button-secondary" onClick={() => onRun({ gps: false, cleanup: true, upload: false }, 'Очистка metadata')} disabled={isBusy || !photos.some((photo) => photo.stableFile)}>Очистить metadata</button>
+            <button type="button" className="button-secondary" onClick={() => onRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных')} disabled={isBusy || !providerValidation.valid || !photos.some((photo) => photo.cleanedBlob)}>Загрузить очищенные</button>
+            <button className="primary-action" type="button" onClick={() => onRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')} disabled={isBusy || !providerValidation.valid || !photos.some((photo) => photo.stableFile)}>{isBusy ? 'Обработка...' : 'Проверить и загрузить всё'}</button>
+            {!hasUploadedPhotos && mode === 'done' && <button type="button" className="button-secondary" onClick={onClearResult}>Очистить результат</button>}
+          </div>
+          {!providerValidation.valid && <p className="settings-error">{providerValidation.error}</p>}
+        </section>
+      )}
+
+      <JobProgress photos={photos} />
+      <DistanceSummary photos={photos} thresholdMeters={thresholdMeters} />
+
+      {photos.length > 0 && (
+        <section className="photo-results" aria-label="Результаты по фотографиям" aria-live="polite">
+          {photos.map((photo) => (
+            <PhotoResultCard
+              key={photo.id}
+              photo={photo}
+              debugMode={debugMode}
+              providerSettings={providerSettings}
+              onApplyCoordinates={onApplyCoordinates}
+              onApplyIndex={onApplyIndex}
+              onSwapCoordinates={onSwapCoordinates}
+              editingDisabled={isBusy}
+            />
+          ))}
+        </section>
+      )}
+      <ProcessingJournal entries={journal} activeSince={activeSince} />
+    </>
+  );
+}
+
+function MapScreen({ photos, thresholdMeters, providerSettings, focusPhotoId }) {
+  return (
+    <section className="screen-panel">
+      <SectionHeader kicker="Карта" title="Точки и расстояния">
+        Подписи берутся из OCR-индекса. Low precision и suspicious отображаются, но не считаются строгими OK-точками.
+      </SectionHeader>
+      <MapPanel
+        photos={photos}
+        thresholdMeters={thresholdMeters}
+        providerSettings={providerSettings}
+        focusPhotoId={focusPhotoId}
+      />
+    </section>
+  );
+}
+
+function ResultsScreen({
+  photos,
+  providerSettings,
+  onClear,
+  onApplyIndex,
+  onOpenOnMap,
+  onOpenPhoto,
+}) {
+  if (photos.length === 0) {
+    return <EmptyState title="Результатов пока нет.">Сначала выберите фотографии и запустите обработку.</EmptyState>;
+  }
+
+  return (
+    <>
+      <section className="screen-panel">
+        <SectionHeader kicker="Результаты" title="Сводка ссылок и точек">
+          Таблица хранит внутренние имена точек, статусы координат, upload-ссылки и действия для дальнейшей работы.
+        </SectionHeader>
+        <ResultsSummary photos={photos} providerSettings={providerSettings} onClear={onClear} />
+        <ResultsTable
+          photos={photos}
+          providerSettings={providerSettings}
+          onApplyIndex={onApplyIndex}
+          onOpenOnMap={onOpenOnMap}
+          onOpenPhoto={onOpenPhoto}
+        />
+      </section>
+    </>
+  );
+}
+
+function SettingsScreen({
+  providerSettings,
+  onProviderSettingsChange,
+  regionMode,
+  onRegionModeChange,
+  thresholdMeters,
+  onThresholdMetersChange,
+  debugMode,
+  isBusy,
+}) {
+  return (
+    <>
+      <section className="screen-panel">
+        <SectionHeader kicker="Настройки" title="Загрузка и приватность">
+          Внутренний индекс используется только в UI/session/export/map. Provider upload filename остаётся anonymized/generic.
+        </SectionHeader>
+        <ProviderSettings
+          value={providerSettings}
+          onChange={onProviderSettingsChange}
+          disabled={isBusy}
+        />
+        <section className="provider-settings">
+          <h2>Порог расстояния</h2>
+          <label className="setting-field">
+            Метры
+            <input
+              type="number"
+              min="1"
+              max="1000"
+              value={thresholdMeters}
+              onChange={(event) => onThresholdMetersChange(event.target.value)}
+              disabled={isBusy}
+            />
+          </label>
+        </section>
+        <section className="provider-settings">
+          <h2>Проверка региона</h2>
+          <label className="region-setting">
+            <input
+              type="checkbox"
+              checked={regionMode === 'karelia'}
+              onChange={(event) => onRegionModeChange(event.target.checked ? 'karelia' : 'auto')}
+              disabled={isBusy}
+            />
+            Ожидаемый регион: Карелия/рядом
+          </label>
+          <p className="section-copy">По умолчанию используется авто-кластер текущей пачки.</p>
+        </section>
+        <section className="provider-settings">
+          <h2>Debug mode</h2>
+          <StatusChip tone={debugMode ? 'warning' : 'neutral'}>{debugMode ? 'включён' : 'выключен'}</StatusChip>
+          <p className="section-copy">Debug включается параметром URL `?debug=1` и не сохраняет heavy raw photo данные в session.</p>
+        </section>
+        <section className="provider-settings">
+          <h2>Privacy upload settings</h2>
+          <p className="section-copy">Placeholder для будущих политик. Сейчас outbound filename формируется как `gps-001.jpg`, `gps-002.jpg` и не содержит индекс.</p>
+        </section>
+      </section>
+    </>
+  );
+}
 
 export default function App() {
   const [photos, setPhotos] = useState([]);
@@ -42,12 +237,15 @@ export default function App() {
   const [sessionMeta, setSessionMeta] = useState(null);
   const [providerSettings, setProviderSettings] = useState({ ...DEFAULT_PROVIDER_SETTINGS });
   const [regionMode, setRegionMode] = useState('auto');
+  const [thresholdMeters, setThresholdMeters] = useState(() => Number(loadLastSession()?.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
+  const [activeScreen, setActiveScreen] = useState(() => normalizeScreen(loadLastSession()?.activeScreen || DEFAULT_SCREEN));
+  const [mapFocusPhotoId, setMapFocusPhotoId] = useState(null);
   const [journal, setJournal] = useState([]);
   const [activeSince, setActiveSince] = useState(null);
   const [sessionDiagnostics, setSessionDiagnostics] = useState(() => getSessionDiagnostics());
   const photosRef = useRef(photos);
   photosRef.current = photos;
-  const debugMode = useMemo(() => new URLSearchParams(window.location.search).get('debug') === '1', []);
+  const debugMode = useMemo(debugModeFromLocation, []);
   const providerValidation = useMemo(() => validateProviderSettings(providerSettings), [providerSettings]);
   const isBusy = mode === 'buffering' || mode === 'running';
   const hasUploadedPhotos = photos.some((photo) => photo.uploadResult?.links?.length > 0);
@@ -61,6 +259,12 @@ export default function App() {
     gpsStatus: photo.gpsStatus,
     gpsConfidence: photo.gpsConfidence,
     ocrStatus: photo.ocrStatus,
+    indexFromOcr: photo.indexFromOcr,
+    indexStatus: photo.indexStatus,
+    pointLabel: photo.pointLabel,
+    internalName: photo.internalName,
+    displayName: photo.displayName,
+    displayFileName: photo.displayFileName,
     manualCoordinates: photo.manualCoordinates,
     coordinateQuality: photo.coordinateQuality,
     coordinatePrecision: photo.coordinatePrecision,
@@ -87,7 +291,8 @@ export default function App() {
       try {
         saveLastSession({
           ...sessionMeta,
-          thresholdMeters: DEFAULT_DISTANCE_THRESHOLD_METERS,
+          thresholdMeters,
+          activeScreen,
           photos: photosRef.current,
           providerSettings,
         });
@@ -100,7 +305,7 @@ export default function App() {
       }
     }, 100);
     return () => globalThis.clearTimeout(timeoutId);
-  }, [sessionRevision, providerSettings, sessionMeta, debugMode]);
+  }, [sessionRevision, providerSettings, sessionMeta, debugMode, thresholdMeters, activeScreen]);
 
   const clearCurrentPhotos = () => photosRef.current.forEach((photo) => releasePhotoBuffers(photo));
 
@@ -113,6 +318,7 @@ export default function App() {
     deleteLastSession();
     setPhotos([]);
     setSavedSession(null);
+    setActiveScreen('upload');
 
     try {
       const buffered = await bufferSelectedFiles(selectedFiles);
@@ -141,7 +347,7 @@ export default function App() {
         photos,
         debug: debugMode,
         proxyUrl: DEFAULT_PROXY_URL,
-        thresholdMeters: DEFAULT_DISTANCE_THRESHOLD_METERS,
+        thresholdMeters,
         providerSettings,
         regionMode,
         stages,
@@ -154,7 +360,8 @@ export default function App() {
       try {
         const snapshot = saveLastSession({
           ...sessionMeta,
-          thresholdMeters: DEFAULT_DISTANCE_THRESHOLD_METERS,
+          thresholdMeters,
+          activeScreen,
           photos: result.photos,
           providerSettings,
         });
@@ -179,6 +386,8 @@ export default function App() {
     clearCurrentPhotos();
     setPhotos(restoreSessionPhotos(savedSession));
     setProviderSettings(normalizeProviderSettings(savedSession.providerSettings || DEFAULT_PROVIDER_SETTINGS));
+    setThresholdMeters(Number(savedSession.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
+    setActiveScreen(normalizeScreen(savedSession.activeScreen || DEFAULT_SCREEN));
     setSessionMeta({ sessionId: savedSession.sessionId, createdAt: savedSession.createdAt });
     setErrors([]);
     setMode('done');
@@ -201,16 +410,28 @@ export default function App() {
     setMode('idle');
     setSessionMeta(null);
     setSavedSession(null);
+    setMapFocusPhotoId(null);
   };
 
   const handleManualCoordinates = (photoId, latitude, longitude) => {
     const coordinates = normalizeCoordinates(latitude, longitude);
     if (!coordinates) return false;
 
+    setPhotos((current) => applyManualCoordinateCorrection(current, photoId, coordinates, (items) => (
+      calculateDistances(items, thresholdMeters)
+    )));
+    return true;
+  };
+
+  const handleManualIndex = (photoId, value) => {
+    if (String(value || '').trim() && !normalizeIndexValue(value)) return false;
     setPhotos((current) => {
-      return applyManualCoordinateCorrection(current, photoId, coordinates, (items) => (
-        calculateDistances(items, DEFAULT_DISTANCE_THRESHOLD_METERS)
-      ));
+      const withIndex = applyManualIndexCorrection(current, photoId, value);
+      const distanceResult = calculateDistances(withIndex, thresholdMeters);
+      return withIndex.map((photo) => ({
+        ...photo,
+        ...(distanceResult.byPhotoId.get(photo.id) || { distanceStatus: 'missing_coordinates', distanceConflicts: [] }),
+      }));
     });
     return true;
   };
@@ -222,14 +443,43 @@ export default function App() {
     return handleManualCoordinates(photoId, photo.coordinates.longitude, photo.coordinates.latitude);
   };
 
-  return (
-    <main className="app-shell">
-      <header className="app-header">
-        <p className="brand-mark">GPS Checker</p>
-        <h1>Проверка фотографий по координатам</h1>
-        <p>Находим координаты, проверяем расстояния, удаляем metadata и возвращаем ссылки на каждое фото.</p>
-      </header>
+  const handleThresholdMetersChange = (value) => {
+    const next = Math.max(1, Math.min(1000, Number(value) || DEFAULT_DISTANCE_THRESHOLD_METERS));
+    setThresholdMeters(next);
+    setPhotos((current) => {
+      if (current.length === 0) return current;
+      const distanceResult = calculateDistances(current, next);
+      return current.map((photo) => ({
+        ...photo,
+        ...(distanceResult.byPhotoId.get(photo.id) || { distanceStatus: 'missing_coordinates', distanceConflicts: [] }),
+      }));
+    });
+  };
 
+  const handleOpenOnMap = (photoId) => {
+    setMapFocusPhotoId(photoId);
+    setActiveScreen('map');
+  };
+
+  const handleOpenPhoto = (photoId) => {
+    setActiveScreen('upload');
+    if (typeof document !== 'undefined') {
+      globalThis.setTimeout(() => document.getElementById(`photo-${photoId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    }
+  };
+
+  return (
+    <AppShell
+      activeScreen={activeScreen}
+      onScreenChange={(screen) => setActiveScreen(normalizeScreen(screen))}
+      photoCount={photos.length}
+      footer={(
+        <footer className="app-footer">
+          <p className="privacy-note">После успешной загрузки приложение очищает внутренний буфер. Исходные файлы на устройстве не удаляются.</p>
+          <BuildInfo />
+        </footer>
+      )}
+    >
       {debugMode && <div className="debug-mode-banner">Включён режим диагностики</div>}
       {debugMode && <pre className="session-debug">{JSON.stringify(sessionDiagnostics, null, 2)}</pre>}
       <ErrorBanner messages={errors} />
@@ -240,63 +490,56 @@ export default function App() {
         </aside>
       )}
 
-      <PhotoPicker photos={photos} onSelect={handleFileSelect} disabled={isBusy} isBuffering={mode === 'buffering'} />
-
-      {photos.length > 0 && (
-        <>
-          <ProviderSettings
-            value={providerSettings}
-            onChange={setProviderSettings}
-            disabled={isBusy}
-          />
-          <section className="provider-settings">
-            <h2>Проверка региона</h2>
-            <label className="region-setting"><input type="checkbox" checked={regionMode === 'karelia'} onChange={(event) => setRegionMode(event.target.checked ? 'karelia' : 'auto')} /> Ожидаемый регион: Карелия/рядом</label>
-            <p className="section-copy">По умолчанию используется авто-кластер текущей пачки.</p>
-          </section>
-          <section className="run-card">
-            <div>
-              <p className="section-kicker">Шаг 2</p>
-              <h2>Действия</h2>
-              <p className="section-copy">{UPLOAD_RULES_EXPLANATION}</p>
-            </div>
-            <div className="run-actions action-grid">
-              <button type="button" className="button-secondary" onClick={() => handleRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат')} disabled={isBusy || !photos.some((photo) => photo.stableFile)}>Только распознать координаты</button>
-              <button type="button" className="button-secondary" onClick={() => handleRun({ gps: false, cleanup: true, upload: false }, 'Очистка metadata')} disabled={isBusy || !photos.some((photo) => photo.stableFile)}>Очистить metadata</button>
-              <button type="button" className="button-secondary" onClick={() => handleRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных')} disabled={isBusy || !providerValidation.valid || !photos.some((photo) => photo.cleanedBlob)}>Загрузить очищенные</button>
-              <button className="primary-action" type="button" onClick={() => handleRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')} disabled={isBusy || !providerValidation.valid || !photos.some((photo) => photo.stableFile)}>{isBusy ? 'Обработка…' : 'Проверить и загрузить всё'}</button>
-              {!hasUploadedPhotos && mode === 'done' && <button type="button" className="button-secondary" onClick={handleClearResult}>Очистить результат</button>}
-            </div>
-          </section>
-        </>
+      {activeScreen === 'upload' && (
+        <UploadScreen
+          photos={photos}
+          mode={mode}
+          isBusy={isBusy}
+          providerValidation={providerValidation}
+          hasUploadedPhotos={hasUploadedPhotos}
+          providerSettings={providerSettings}
+          debugMode={debugMode}
+          thresholdMeters={thresholdMeters}
+          activeSince={activeSince}
+          journal={journal}
+          onFileSelect={handleFileSelect}
+          onRun={handleRun}
+          onClearResult={handleClearResult}
+          onApplyCoordinates={handleManualCoordinates}
+          onApplyIndex={handleManualIndex}
+          onSwapCoordinates={handleSwapCoordinates}
+        />
       )}
-
-      <JobProgress photos={photos} />
-      <DistanceSummary photos={photos} thresholdMeters={DEFAULT_DISTANCE_THRESHOLD_METERS} />
-
-      {photos.length > 0 && (
-        <section className="photo-results" aria-label="Результаты по фотографиям" aria-live="polite">
-          {photos.map((photo) => (
-            <PhotoResultCard
-              key={photo.id}
-              photo={photo}
-              debugMode={debugMode}
-              providerSettings={providerSettings}
-              onApplyCoordinates={handleManualCoordinates}
-              onSwapCoordinates={handleSwapCoordinates}
-              editingDisabled={isBusy}
-            />
-          ))}
-        </section>
+      {activeScreen === 'map' && (
+        <MapScreen
+          photos={photos}
+          thresholdMeters={thresholdMeters}
+          providerSettings={providerSettings}
+          focusPhotoId={mapFocusPhotoId}
+        />
       )}
-
-      <ResultsSummary photos={photos} providerSettings={providerSettings} onClear={handleClearResult} />
-      <ProcessingJournal entries={journal} activeSince={activeSince} />
-
-      <footer className="privacy-note">
-        После успешной загрузки приложение очищает внутренний буфер. Исходные файлы на устройстве не удаляются.
-      </footer>
-      <BuildInfo />
-    </main>
+      {activeScreen === 'results' && (
+        <ResultsScreen
+          photos={photos}
+          providerSettings={providerSettings}
+          onClear={handleClearResult}
+          onApplyIndex={handleManualIndex}
+          onOpenOnMap={handleOpenOnMap}
+          onOpenPhoto={handleOpenPhoto}
+        />
+      )}
+      {activeScreen === 'settings' && (
+        <SettingsScreen
+          providerSettings={providerSettings}
+          onProviderSettingsChange={setProviderSettings}
+          regionMode={regionMode}
+          onRegionModeChange={setRegionMode}
+          thresholdMeters={thresholdMeters}
+          onThresholdMetersChange={handleThresholdMetersChange}
+          debugMode={debugMode}
+          isBusy={isBusy}
+        />
+      )}
+    </AppShell>
   );
 }

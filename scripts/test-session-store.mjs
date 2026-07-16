@@ -17,6 +17,7 @@ const snapshot = saveLastSession({
   sessionId: 'session-1',
   createdAt: '2026-07-04T10:00:00.000Z',
   thresholdMeters: 25,
+  activeScreen: 'map',
   providerSettings: { freeimage: true, ninjabox: true, includeX0: false, fallbackX0: true },
   photos: [{
     id: 'photo-1',
@@ -24,6 +25,12 @@ const snapshot = saveLastSession({
     fileName: 'source.jpg',
     safeName: 'source.jpg',
     size: heavyFile.size,
+    indexFromOcr: '5939',
+    indexStatus: 'manual',
+    pointLabel: '5939',
+    internalName: 'index-5939',
+    displayName: 'index-5939',
+    displayFileName: 'index-5939.jpg',
     coordinates: { latitude: 62.1, longitude: 34.1 },
     gpsSource: 'exif',
     gpsStatus: 'done',
@@ -64,6 +71,8 @@ const snapshot = saveLastSession({
     fileName: 'low.jpg',
     safeName: 'low.jpg',
     size: heavyFile.size,
+    indexFromOcr: null,
+    indexStatus: 'missing',
     coordinates: { latitude: 64.60272, longitude: 30.62 },
     gpsSource: 'ocr',
     gpsStatus: 'low_precision',
@@ -94,9 +103,13 @@ for (const forbidden of ['sourceBuffer', 'stableBlob', 'stableFile', 'cleanedBlo
   assert.equal(storedText.includes(forbidden), false);
 }
 assert.equal(snapshot.photos[0].freeimageUrl, 'https://free.test/1');
+assert.equal(snapshot.activeScreen, 'map');
+assert.equal(snapshot.photos[0].indexFromOcr, '5939');
+assert.equal(snapshot.photos[0].displayFileName, 'index-5939.jpg');
 const loaded = loadLastSession(storage);
 assert.equal(loaded.sessionId, 'session-1');
 assert.equal(loaded.version, 1);
+assert.equal(loaded.activeScreen, 'map');
 const restored = restoreSessionPhotos(loaded);
 assert.equal(restored[0].stableFile, null);
 assert.equal(restored[0].id, 'photo-1');
@@ -106,11 +119,19 @@ assert.equal(restored[0].status, 'uploaded');
 assert.equal(restored[0].thumbnailDataUrl, 'data:image/jpeg;base64,dGVzdA==');
 assert.equal(restored[0].gpsConfidence, 0.88);
 assert.equal(restored[0].ocrStatus, 'uncertain');
+assert.equal(restored[0].indexFromOcr, '5939');
+assert.equal(restored[0].indexStatus, 'manual');
+assert.equal(restored[0].pointLabel, '5939');
+assert.equal(restored[0].internalName, 'index-5939');
+assert.equal(restored[0].displayFileName, 'index-5939.jpg');
 assert.equal(restored[0].manualCoordinates, true);
 assert.equal(restored[0].coordinateQuality, 'manual');
 assert.deepEqual(restored[0].userWarnings, ['review coordinates']);
 assert.equal(restored[0].canResumeUpload, false);
 assert.equal(restored[1].gpsStatus, 'low_precision');
+assert.equal(restored[1].indexStatus, 'missing');
+assert.equal(restored[1].pointLabel, 'Фото 2');
+assert.equal(restored[1].displayFileName, 'photo-002-no-index.jpg');
 assert.equal(restored[1].ocrStatus, 'low_precision');
 assert.equal(restored[1].coordinateQuality, 'low_precision');
 assert.deepEqual(restored[1].coordinates, { latitude: 64.60272, longitude: 30.62 });

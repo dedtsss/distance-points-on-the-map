@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
 import { formatCoordinates } from '../utils/format';
+import StatusChip from './StatusChip.jsx';
 
 const distanceText = (photo) => {
   if (photo.coordinateQuality === 'low_precision' || photo.distanceStatus === 'low_precision') return 'нужна ручная проверка';
@@ -22,6 +23,13 @@ const coordinateQualityText = (photo) => {
   if (photo.ocrStatus === 'uncertain' && photo.coordinates) return 'Координаты найдены, но OCR не уверен';
   if (photo.ocrStatus === 'suspect' || photo.ocrStatus === 'error') return 'OCR дал подозрительный результат';
   return 'Координаты не найдены';
+};
+
+const indexStatusText = (photo) => {
+  if (photo.indexStatus === 'manual') return `Индекс: ${photo.indexFromOcr}`;
+  if (photo.indexStatus === 'found') return `Индекс: ${photo.indexFromOcr}`;
+  if (photo.indexStatus === 'uncertain') return 'Индекс требует проверки';
+  return 'Индекс не найден';
 };
 
 const lowPrecisionHint = (photo) => {
@@ -126,13 +134,17 @@ export default function PhotoResultCard({
   debugMode,
   providerSettings,
   onApplyCoordinates,
+  onApplyIndex,
   onSwapCoordinates,
   editingDisabled,
 }) {
   const [latitude, setLatitude] = useState(photo.coordinates?.latitude ?? '');
   const [longitude, setLongitude] = useState(photo.coordinates?.longitude ?? '');
+  const [indexValue, setIndexValue] = useState(photo.indexFromOcr || '');
   const [coordinateError, setCoordinateError] = useState('');
+  const [indexError, setIndexError] = useState('');
   const [editorOpen, setEditorOpen] = useState(['suspicious', 'low_precision'].includes(photo.coordinateQuality));
+  const [indexEditorOpen, setIndexEditorOpen] = useState(photo.indexStatus === 'uncertain');
   const result = photo.uploadResult;
   const needsLowPrecisionConfirmation = photo.coordinateQuality === 'low_precision';
   const coordinateHint = lowPrecisionHint(photo);
@@ -153,8 +165,16 @@ export default function PhotoResultCard({
   }, [photo.coordinates?.latitude, photo.coordinates?.longitude]);
 
   useEffect(() => {
+    setIndexValue(photo.indexFromOcr || '');
+  }, [photo.indexFromOcr]);
+
+  useEffect(() => {
     if (['suspicious', 'low_precision'].includes(photo.coordinateQuality)) setEditorOpen(true);
   }, [photo.coordinateQuality]);
+
+  useEffect(() => {
+    if (photo.indexStatus === 'uncertain') setIndexEditorOpen(true);
+  }, [photo.indexStatus]);
 
   const applyCoordinates = (event) => {
     event.preventDefault();
@@ -162,8 +182,14 @@ export default function PhotoResultCard({
     setCoordinateError(applied ? '' : 'Введите корректные latitude и longitude.');
   };
 
+  const applyIndex = (event) => {
+    event.preventDefault();
+    const applied = onApplyIndex?.(photo.id, indexValue) !== false;
+    setIndexError(applied ? '' : 'Введите корректный номер индекса.');
+  };
+
   return (
-    <article className={`photo-result ${photo.status === 'failed' ? 'photo-result-error' : ''}`}>
+    <article id={`photo-${photo.id}`} className={`photo-result ${photo.status === 'failed' ? 'photo-result-error' : ''}`}>
       <header className="photo-result-header">
         <div className="photo-heading">
           {photo.thumbnailDataUrl
@@ -171,13 +197,21 @@ export default function PhotoResultCard({
             : <div className="photo-thumbnail-placeholder">Превью недоступно</div>}
           <div>
             <p className="photo-number">Фото {photo.number}</p>
-            <h3>{photo.fileName}</h3>
+            <h3>{photo.displayFileName || photo.fileName}</h3>
+            <p className="photo-original-name">{photo.fileName}</p>
           </div>
         </div>
-        <span className={`status-label status-${photo.status}`}>{photo.statusText}</span>
+        <StatusChip tone={photo.status === 'uploaded' ? 'success' : photo.status === 'failed' ? 'error' : 'neutral'}>{photo.statusText}</StatusChip>
       </header>
 
       <dl className="result-fields">
+        <div>
+          <dt>Индекс</dt>
+          <dd>
+            {indexStatusText(photo)}
+            <span className={`coordinate-quality quality-${photo.indexStatus || 'missing'}`}>Внутреннее имя: {photo.displayFileName}</span>
+          </dd>
+        </div>
         <div>
           <dt>Координаты</dt>
           <dd>
@@ -199,6 +233,27 @@ export default function PhotoResultCard({
           </dd>
         </div>
       </dl>
+
+      <button type="button" className="button-secondary coordinate-edit-toggle" onClick={() => setIndexEditorOpen((value) => !value)}>
+        {indexEditorOpen ? 'Скрыть редактор индекса' : photo.indexFromOcr ? 'Исправить индекс' : 'Ввести индекс'}
+      </button>
+      {indexEditorOpen && <form className="coordinate-editor" onSubmit={applyIndex}>
+        <div className="coordinate-inputs index-inputs">
+          <label>
+            Номер индекса
+            <input
+              type="text"
+              inputMode="numeric"
+              value={indexValue}
+              onChange={(event) => setIndexValue(event.target.value)}
+              disabled={editingDisabled}
+              aria-label={`Индекс фото ${photo.number}`}
+            />
+          </label>
+        </div>
+        <button type="submit" className="button-secondary" disabled={editingDisabled}>Сохранить индекс</button>
+        {indexError && <p className="coordinate-error">{indexError}</p>}
+      </form>}
 
       <button type="button" className="button-secondary coordinate-edit-toggle" onClick={() => setEditorOpen((value) => !value)}>
         {editorOpen ? 'Скрыть редактор координат' : needsLowPrecisionConfirmation ? 'Подтвердить координаты' : 'Исправить координаты'}

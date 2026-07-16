@@ -1,4 +1,5 @@
 import { getProgressSummary } from '../app/appState';
+import MetricCard from './MetricCard.jsx';
 
 export default function JobProgress({ photos }) {
   const progress = getProgressSummary(photos);
@@ -25,10 +26,7 @@ export default function JobProgress({ photos }) {
       </div>
       <div className="progress-grid">
         {stages.map(([label, value]) => (
-          <div key={label} className="progress-item">
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
+          <MetricCard key={label} label={label} value={value} />
         ))}
       </div>
     </section>

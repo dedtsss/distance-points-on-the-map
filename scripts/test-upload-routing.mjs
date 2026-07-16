@@ -14,7 +14,7 @@ import {
   uploadBundle,
 } from '../workers/host-proxy/worker.js';
 import { uploadX0 } from '../workers/host-proxy/x0.js';
-import { uploadCleanedPhotos } from '../src/features/upload/uploadService.js';
+import { requestUploadBundle, uploadCleanedPhotos } from '../src/features/upload/uploadService.js';
 import { validateProviderSettings } from '../src/features/upload/providerPolicy.js';
 
 const freeimage = parseFreeimageApiPage(`
@@ -203,6 +203,43 @@ assert.equal(requestPolicy.fallback, 'none');
 assert.equal(normalized.get('0').freeimageUrl, 'https://free.test/0');
 assert.equal(normalized.get('0').ninjaboxUrl, 'https://ninja.test/0');
 assert.equal(normalized.get('0').fallbackUrl, '');
+
+const originalFetch = globalThis.fetch;
+let inspectedUploadFields = null;
+globalThis.fetch = async (_url, init) => {
+  const body = init.body;
+  inspectedUploadFields = [...body.entries()].map(([key, value]) => ({
+    key,
+    value: value instanceof File ? value.name : String(value),
+  }));
+  return new Response(JSON.stringify({
+    target: 'bundle',
+    selectedProviders: ['freeimage'],
+    includeX0: false,
+    fallback: 'none',
+    items: [{
+      index: 0,
+      photoId: 'photo-1',
+      fileName: 'gps-001.jpg',
+      links: [{ provider: 'freeimage', url: 'https://free.test/gps-001' }],
+      providers: { freeimage: { ok: true }, ninjabox: null, x0: null },
+    }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+try {
+  await requestUploadBundle([{
+    photoId: 'photo-1',
+    file: new File(['clean'], 'gps-001.jpg', { type: 'image/jpeg' }),
+    cleaned: true,
+    internalName: 'index-5939',
+    displayFileName: 'index-5939.jpg',
+  }], 'https://worker.test/', undefined, { providers: 'freeimage', includeX0: false, fallback: 'none' });
+} finally {
+  globalThis.fetch = originalFetch;
+}
+assert.deepEqual(inspectedUploadFields.filter((field) => field.key === 'files').map((field) => field.value), ['gps-001.jpg']);
+assert.equal(inspectedUploadFields.some((field) => /5939|index-5939/.test(field.value)), false);
+assert.equal(inspectedUploadFields.some((field) => field.key === 'internalName' || field.key === 'displayFileName'), false);
 
 const mismatched = await uploadCleanedPhotos([cleanedEntries[0]], {
   proxyUrl: 'https://worker.test/',

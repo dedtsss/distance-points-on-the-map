@@ -53,16 +53,26 @@ assert.equal(
 );
 
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4469').indexFromOcr, '4469');
+assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4469').indexStatus, 'found');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E ±1,00m Номер индекса: 4468').indexFromOcr, '4468');
 assert.equal(parseGpsFromOcrText('ООО Карелия Дом 30.10.2025 11:11 64.6028, 30.6258 (±4м)').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('ООО Карелия Дом 30.10.2025 11:11 64.6028, 30.6258 (±4м)').indexStatus, 'missing');
 assert.equal(parseGpsFromOcrText('000 Карелия Дом 30.10.2025 11:11 64.6028, 30.6258 (±4м)').indexFromOcr, null);
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E +1,00 owe nnaeea: 4469 +o 4').indexFromOcr, '4469');
+assert.equal(parseGpsFromOcrText('61,792040N 34,323477E +1,00 owe nnaeea: 4469 +o 4').indexStatus, 'uncertain');
 assert.equal(parseGpsFromOcrText('61,792040N 34,323477E +1,00 oe nnaexea: 4468 #o 4A 6').indexFromOcr, '4468');
 assert.equal(parseGpsFromOcrText('64,602311N 30,616222E +3,41 #ed #11 #ennana nax #on3a6oe oe nnaexea: 5130').indexFromOcr, '5130');
 assert.equal(parseGpsFromOcrText('64,602502N 30,611988E +2,61 #ed #11 #ennsa nax #on3a6oe oe nnaeea: 5285').indexFromOcr, '5285');
 assert.equal(parseGpsFromOcrText('64,604670N 30,591181E +2,39 oe nnaexea: 5917').indexFromOcr, '5917');
 assert.equal(parseGpsFromOcrText('64,602214N 30,611359E +2,08 onen wxaexa: 5291').indexFromOcr, '5291');
 assert.equal(parseGpsFromOcrText('64,601882N 30,615078E +3,44 #ed #11 #ennana nax #on3a6oe oe nnaexea: 5241').indexFromOcr, '5241');
+assert.equal(parseGpsFromOcrText('Номер индекса: 5939').indexFromOcr, '5939');
+assert.equal(parseGpsFromOcrText('Индекс: 5939').indexFromOcr, '5939');
+assert.equal(parseGpsFromOcrText('Index: 5939').indexFromOcr, '5939');
+assert.equal(parseGpsFromOcrText('IDX 5939').indexFromOcr, '5939');
+assert.equal(parseGpsFromOcrText('№5939').indexFromOcr, '5939');
+assert.equal(parseGpsFromOcrText('#5939').indexFromOcr, '5939');
+assert.equal(parseGpsFromOcrText('Index: 5939').indexStatus, 'found');
 
 assert.equal(decimalPlaces('30,62000'), 5);
 assert.equal(decimalPlaces('30.62'), 2);
@@ -142,7 +152,7 @@ const bestAttempt = selectBestOcrAttempt([
 assert.equal(bestAttempt.name, 'directional-high-confidence');
 
 let recognizeCalls = 0;
-const lowPrecisionOcr = await readGpsFromImageOcr(new File(['image'], 'low-precision.jpg', { type: 'image/jpeg' }), {
+const lowPrecisionOcr = await readGpsFromImageOcr({ name: 'low-precision.jpg' }, {
   variants: [
     { name: 'first_low_precision', cropName: 'first', crop: {}, preprocess: { method: 'original' } },
     { name: 'second_should_not_run', cropName: 'second', crop: {}, preprocess: { method: 'original' } },
@@ -154,7 +164,7 @@ const lowPrecisionOcr = await readGpsFromImageOcr(new File(['image'], 'low-preci
     preprocess: (crop) => crop,
     recognize: async () => {
       recognizeCalls += 1;
-      return { text: '64,60272, 30,62, 237,9м', confidence: 91 };
+      return { text: '64,6O272, 3O,62, 237,9м', confidence: 91 };
     },
   },
 });

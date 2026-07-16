@@ -1,5 +1,6 @@
 import { PHOTO_STATUS } from '../../app/appState.js';
 import { MAX_SESSION_THUMBNAIL_LENGTH } from '../files/thumbnail.js';
+import { applyPointIdentity } from '../points/pointIdentity.js';
 
 export const LAST_SESSION_KEY = 'gps-checker-last-session-v1';
 
@@ -40,6 +41,12 @@ export function serializePhotoForSession(photo) {
     fileName: photo.fileName || '',
     safeName: photo.safeName || '',
     size: Number(photo.size) || 0,
+    indexFromOcr: photo.indexFromOcr || null,
+    indexStatus: photo.indexStatus || (photo.indexFromOcr ? 'found' : 'missing'),
+    pointLabel: photo.pointLabel || '',
+    internalName: photo.internalName || '',
+    displayName: photo.displayName || '',
+    displayFileName: photo.displayFileName || '',
     coordinates: photo.coordinates ? { ...photo.coordinates } : null,
     gpsSource: photo.gpsSource || null,
     gpsStatus: photo.gpsStatus || 'idle',
@@ -84,7 +91,7 @@ export function getSessionDiagnostics(storage = globalThis.localStorage) {
   }
 }
 
-export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, photos, providerSettings }) {
+export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, photos, providerSettings, activeScreen }) {
   const timestamp = nowIso();
   return {
     version: 1,
@@ -92,6 +99,7 @@ export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, p
     createdAt: createdAt || timestamp,
     updatedAt: timestamp,
     thresholdMeters,
+    activeScreen: activeScreen || 'upload',
     providerSettings: providerSettings ? { ...providerSettings } : undefined,
     photos: (photos || []).map(serializePhotoForSession),
   };
@@ -131,12 +139,18 @@ export function restoreSessionPhotos(session) {
       fallbackUrl: photo.uploadResult.fallbackUrl || photo.fallbackUrl || '',
       ninjaboxGalleryUrl: photo.uploadResult.ninjaboxGalleryUrl || photo.ninjaboxGalleryUrl || '',
     } : null;
-    return {
+    return applyPointIdentity({
       id: photo.photoId || `restored-${session.sessionId}-${photo.number || index + 1}`,
       number: photo.number || index + 1,
       fileName: photo.fileName,
       safeName: photo.safeName,
       size: photo.size,
+      indexFromOcr: photo.indexFromOcr || null,
+      indexStatus: photo.indexStatus || (photo.indexFromOcr ? 'found' : 'missing'),
+      pointLabel: photo.pointLabel || '',
+      internalName: photo.internalName || '',
+      displayName: photo.displayName || '',
+      displayFileName: photo.displayFileName || '',
       type: '',
       status: photo.status || (uploadResult?.links?.length ? PHOTO_STATUS.UPLOADED : PHOTO_STATUS.FAILED),
       statusText: photo.statusText,
@@ -171,6 +185,6 @@ export function restoreSessionPhotos(session) {
       debug: {},
       restored: true,
       canResumeUpload: false,
-    };
+    });
   });
 }

@@ -1,3 +1,5 @@
+import { applyPointIdentity, normalizeIndexValue } from '../features/points/pointIdentity.js';
+
 export const PHOTO_STATUS = Object.freeze({
   IDLE: 'idle',
   BUFFERED: 'buffered',
@@ -19,7 +21,7 @@ const makePhotoId = () => (
 );
 
 export function createPhotoJob(bufferedFile, index) {
-  return {
+  return applyPointIdentity({
     id: makePhotoId(),
     number: index + 1,
     fileName: bufferedFile.originalName,
@@ -37,6 +39,8 @@ export function createPhotoJob(bufferedFile, index) {
     gpsSource: null,
     gpsConfidence: 0,
     ocrStatus: 'idle',
+    indexFromOcr: null,
+    indexStatus: 'missing',
     manualCoordinates: false,
     coordinateQuality: 'missing',
     coordinatePrecision: null,
@@ -51,7 +55,7 @@ export function createPhotoJob(bufferedFile, index) {
     userError: '',
     debug: {},
     ...bufferedFile,
-  };
+  });
 }
 
 export function releasePhotoBuffers(photo) {
@@ -115,4 +119,13 @@ export function applyManualCoordinateCorrection(photos, photoId, coordinates, ca
     ...photo,
     ...(distanceResult.byPhotoId.get(photo.id) || { distanceStatus: 'missing_coordinates', distanceConflicts: [] }),
   }));
+}
+
+export function applyManualIndexCorrection(photos, photoId, value) {
+  const normalizedIndex = normalizeIndexValue(value);
+  return photos.map((photo) => applyPointIdentity(photo.id === photoId ? {
+    ...photo,
+    indexFromOcr: normalizedIndex,
+    indexStatus: normalizedIndex ? 'manual' : 'missing',
+  } : photo));
 }
