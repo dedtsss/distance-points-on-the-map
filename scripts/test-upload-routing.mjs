@@ -204,7 +204,7 @@ assert.equal(normalized.get('0').freeimageUrl, 'https://free.test/0');
 assert.equal(normalized.get('0').ninjaboxUrl, 'https://ninja.test/0');
 assert.equal(normalized.get('0').fallbackUrl, '');
 
-const originalFetch = globalThis.fetch;
+const providerOriginalFetch = globalThis.fetch;
 let inspectedUploadFields = null;
 globalThis.fetch = async (_url, init) => {
   const body = init.body;
@@ -235,7 +235,7 @@ try {
     displayFileName: 'index-5939.jpg',
   }], 'https://worker.test/', undefined, { providers: 'freeimage', includeX0: false, fallback: 'none' });
 } finally {
-  globalThis.fetch = originalFetch;
+  globalThis.fetch = providerOriginalFetch;
 }
 assert.deepEqual(inspectedUploadFields.filter((field) => field.key === 'files').map((field) => field.value), ['gps-001.jpg']);
 assert.equal(inspectedUploadFields.some((field) => /5939|index-5939/.test(field.value)), false);
