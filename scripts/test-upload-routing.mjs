@@ -213,7 +213,7 @@ const makeUploadRequest = (url) => {
   return new Request(url, { method: 'POST', body: formData });
 };
 const apiUploadResponse = await handleWorkerRequest(
-  makeUploadRequest('https://gps.brus-group.net/api/upload'),
+  makeUploadRequest('https://gps.bruce-group.net/api/upload'),
   {},
   workerProviderOverrides,
 );
@@ -223,13 +223,13 @@ assert.equal(apiUploadBody.target, 'bundle');
 assert.equal(apiUploadBody.items[0].photoId, 'worker-a');
 
 const legacyRootUploadResponse = await handleWorkerRequest(
-  makeUploadRequest('https://gps.brus-group.net/'),
+  makeUploadRequest('https://gps.bruce-group.net/'),
   {},
   workerProviderOverrides,
 );
 assert.equal(legacyRootUploadResponse.status, 200);
 
-const unknownApiResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/api/unknown'), {});
+const unknownApiResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/api/unknown'), {});
 assert.equal(unknownApiResponse.status, 404);
 assert.match(await unknownApiResponse.text(), /Unknown API route/);
 
@@ -243,34 +243,34 @@ const assetEnv = {
     },
   },
 };
-const assetResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/assets/app.js'), assetEnv);
+const assetResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/assets/app.js'), assetEnv);
 assert.equal(assetResponse.status, 200);
 assert.match(await assetResponse.text(), /gps/);
-const spaResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/history/deep-link', {
+const spaResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/history/deep-link', {
   headers: { Accept: 'text/html' },
 }), assetEnv);
 assert.equal(spaResponse.status, 200);
 assert.match(await spaResponse.text(), /GPS/);
 
-assert.equal(isAuthorizedRequest(new Request('https://gps.brus-group.net/'), { BASIC_AUTH_PASSWORD: 'secret' }), false);
+assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/'), { BASIC_AUTH_PASSWORD: 'secret' }), false);
 const basicAuthorization = `Basic ${Buffer.from('owner:secret').toString('base64')}`;
-assert.equal(isAuthorizedRequest(new Request('https://gps.brus-group.net/', {
+assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/', {
   headers: { Authorization: basicAuthorization },
 }), { BASIC_AUTH_PASSWORD: 'secret', BASIC_AUTH_USERNAME: 'owner' }), true);
-const unauthorizedResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/'), {
+const unauthorizedResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/'), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'secret',
 });
 assert.equal(unauthorizedResponse.status, 401);
 assert.match(unauthorizedResponse.headers.get('WWW-Authenticate'), /Basic/);
-const authorizedResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/', {
+const authorizedResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
   headers: { Authorization: basicAuthorization },
 }), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'secret',
 });
 assert.equal(authorizedResponse.status, 200);
-const bearerResponse = await handleWorkerRequest(new Request('https://gps.brus-group.net/', {
+const bearerResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
   headers: { Authorization: 'Bearer app-token' },
 }), {
   ...assetEnv,

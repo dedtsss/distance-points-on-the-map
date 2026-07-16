@@ -6,7 +6,7 @@ on:
       worker_url:
         description: 'Cloudflare Worker URL'
         required: false
-        default: 'https://gps.brus-group.net/api/upload'
+        default: 'https://gps.bruce-group.net/api/upload'
       targets:
         description: 'Comma-separated targets: bundle,freeimage,ninjabox,x0'
         required: false
@@ -37,7 +37,7 @@ jobs:
         id: smoke
         continue-on-error: true
         env:
-          WORKER_URL: ${{ github.event.inputs.worker_url || 'https://gps.brus-group.net/api/upload' }}
+          WORKER_URL: ${{ github.event.inputs.worker_url || 'https://gps.bruce-group.net/api/upload' }}
           WORKER_ACCESS_TOKEN: ${{ secrets.APP_ACCESS_TOKEN }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}

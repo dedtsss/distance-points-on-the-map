@@ -11,8 +11,8 @@ https://dedtsss.github.io/distance-points-on-the-map/
 Target private production frontend and API:
 
 ```text
-https://gps.brus-group.net/
-https://gps.brus-group.net/api/upload
+https://gps.bruce-group.net/
+https://gps.bruce-group.net/api/upload
 ```
 
 Production is prepared as one Cloudflare Worker that serves the Vite `dist` frontend through Workers Static Assets and handles the upload proxy API from the same origin.
@@ -54,7 +54,7 @@ npx wrangler deploy --dry-run --config wrangler.toml
 - static assets directory: `./dist`
 - assets binding: `ASSETS`
 - Worker-first routing: all requests enter the Worker before assets are served
-- custom domain: `gps.brus-group.net`
+- custom domain: `gps.bruce-group.net`
 - `workers_dev = false` so the production app is not exposed on a public `workers.dev` URL
 
 Routes:
@@ -103,7 +103,7 @@ VITE_BASE_PATH=/ VITE_UPLOAD_PROXY_URL=/api/upload npm run build
 Preferred production protection: Cloudflare Access.
 
 1. In Cloudflare Zero Trust, create a Self-hosted/private Access application.
-2. Add public hostname `gps.brus-group.net`.
+2. Add public hostname `gps.bruce-group.net`.
 3. Add an Allow policy for the owner identity only.
 4. Keep Worker fallback auth disabled or set it as a backup.
 
@@ -141,15 +141,15 @@ If neither Cloudflare Access nor a Worker auth secret is configured, the deploye
 
 Prerequisites:
 
-- `brus-group.net` is an active Cloudflare zone in the target account.
-- No conflicting DNS record already exists for `gps.brus-group.net`.
+- `bruce-group.net` is an active Cloudflare zone in the target account.
+- No conflicting DNS record already exists for `gps.bruce-group.net`.
 - The Worker is deployed with the `[[routes]]` custom domain entry from `wrangler.toml`.
 
 Wrangler-managed custom domain:
 
 ```toml
 [[routes]]
-pattern = "gps.brus-group.net"
+pattern = "gps.bruce-group.net"
 custom_domain = true
 ```
 
@@ -158,7 +158,7 @@ Dashboard alternative:
 1. Cloudflare Dashboard → Workers & Pages.
 2. Select `gps-checker-map-photo`.
 3. Settings → Domains & Routes → Add → Custom Domain.
-4. Enter `gps.brus-group.net`.
+4. Enter `gps.bruce-group.net`.
 
 Cloudflare creates or manages the required DNS/certificate state for the custom domain. Remove any conflicting manual DNS record first.
 
@@ -208,13 +208,13 @@ This is manual-only and builds with the legacy `/distance-points-on-the-map/` ba
 Manual Worker smoke test:
 
 ```bash
-WORKER_URL=https://gps.brus-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
+WORKER_URL=https://gps.bruce-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
 ```
 
 If Cloudflare Access protects the domain, use service token headers:
 
 ```bash
-WORKER_URL=https://gps.brus-group.net/api/upload \
+WORKER_URL=https://gps.bruce-group.net/api/upload \
 CF_ACCESS_CLIENT_ID=<client-id> \
 CF_ACCESS_CLIENT_SECRET=<client-secret> \
 node scripts/test-worker-upload.mjs

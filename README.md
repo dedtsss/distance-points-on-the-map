@@ -60,12 +60,12 @@ npx wrangler deploy --dry-run --config wrangler.toml
 Live smoke-test уже развёрнутого Worker:
 
 ```bash
-WORKER_URL=https://gps.brus-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
+WORKER_URL=https://gps.bruce-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
 ```
 
 ## Деплой
 
-- Production готовится как приватный Cloudflare Worker на `https://gps.brus-group.net/`.
+- Production готовится как приватный Cloudflare Worker на `https://gps.bruce-group.net/`.
 - Worker отдаёт frontend из `dist` и обслуживает upload API на `/api/upload`.
 - `.github/workflows/deploy-worker.yml` — production Cloudflare Worker + Static Assets, только `main` или manual.
 - `.github/workflows/deploy.yml` — legacy GitHub Pages, только manual.

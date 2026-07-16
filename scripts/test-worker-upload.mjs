@@ -1,6 +1,6 @@
 import { deflateSync } from 'node:zlib';
 
-const WORKER_URL = process.env.WORKER_URL || 'https://gps.brus-group.net/api/upload';
+const WORKER_URL = process.env.WORKER_URL || 'https://gps.bruce-group.net/api/upload';
 const WORKER_ACCESS_TOKEN = process.env.WORKER_ACCESS_TOKEN || process.env.APP_ACCESS_TOKEN || '';
 const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID || '';
 const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET || '';

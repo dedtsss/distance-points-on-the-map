@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: production
-      url: https://gps.brus-group.net/
+      url: https://gps.bruce-group.net/
     env:
       VITE_BASE_PATH: /
       VITE_UPLOAD_PROXY_URL: /api/upload

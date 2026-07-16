@@ -6,7 +6,7 @@ on:
       upload_proxy_url:
         description: 'Upload API URL for the legacy GitHub Pages build'
         required: false
-        default: 'https://gps.brus-group.net/api/upload'
+        default: 'https://gps.bruce-group.net/api/upload'
 
 permissions:
   contents: read
