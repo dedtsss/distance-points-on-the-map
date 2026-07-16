@@ -1021,16 +1021,29 @@ tbody th,
 .session-list {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 .session-row {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto auto auto auto auto;
   gap: 12px;
   align-items: center;
+  min-width: 0;
   border: 1px solid var(--color-outline);
   border-radius: var(--radius-medium);
   padding: 12px;
   background: var(--color-surface-container);
+}
+.session-row > * { min-width: 0; }
+.session-row h3 { overflow-wrap: anywhere; }
+.dashboard-main .session-row {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.dashboard-main .session-row > span,
+.dashboard-main .session-row .status-chip,
+.dashboard-main .session-row .compact-button {
+  justify-self: start;
 }
 .session-row p,
 .saved-session-actions p {
