@@ -142,7 +142,7 @@ const bestAttempt = selectBestOcrAttempt([
 assert.equal(bestAttempt.name, 'directional-high-confidence');
 
 let recognizeCalls = 0;
-const lowPrecisionOcr = await readGpsFromImageOcr(new File(['image'], 'low-precision.jpg', { type: 'image/jpeg' }), {
+const lowPrecisionOcr = await readGpsFromImageOcr({ name: 'low-precision.jpg' }, {
   variants: [
     { name: 'first_low_precision', cropName: 'first', crop: {}, preprocess: { method: 'original' } },
     { name: 'second_should_not_run', cropName: 'second', crop: {}, preprocess: { method: 'original' } },
@@ -154,7 +154,7 @@ const lowPrecisionOcr = await readGpsFromImageOcr(new File(['image'], 'low-preci
     preprocess: (crop) => crop,
     recognize: async () => {
       recognizeCalls += 1;
-      return { text: '64,60272, 30,62, 237,9м', confidence: 91 };
+      return { text: '64,6O272, 3O,62, 237,9м', confidence: 91 };
     },
   },
 });
