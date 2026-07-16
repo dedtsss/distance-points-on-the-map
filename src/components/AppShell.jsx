@@ -1,23 +1,81 @@
+import { useEffect, useState } from 'react';
 import TopBar from './TopBar.jsx';
 import Navigation from './Navigation.jsx';
+import Icon from './Icon.jsx';
 
 export default function AppShell({
   activeScreen,
   onScreenChange,
   photoCount,
+  isBusy = false,
   children,
   footer,
 }) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen]);
+
   return (
-    <main className="app-frame">
-      <TopBar photoCount={photoCount} />
+    <main className={`app-frame${sidebarCollapsed ? ' has-rail' : ''}`}>
+      <aside className="sidebar-shell" aria-label="Основная навигация">
+        <div className="sidebar-brand">
+          <span className="brand-symbol" aria-hidden="true">
+            <Icon name="target" size={24} />
+          </span>
+          <div className="sidebar-brand-text">
+            <strong>GPS Checker</strong>
+            <span>Map Photo</span>
+          </div>
+        </div>
+        <Navigation activeScreen={activeScreen} onScreenChange={onScreenChange} collapsed={sidebarCollapsed} />
+      </aside>
+
+      <TopBar
+        photoCount={photoCount}
+        activeScreen={activeScreen}
+        isBusy={isBusy}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+        onMenuClick={() => setMobileMenuOpen(true)}
+      />
+
       <div className="app-layout">
-        <Navigation activeScreen={activeScreen} onScreenChange={onScreenChange} />
         <div className="screen-content">
           {children}
         </div>
       </div>
       {footer}
+
+      <div
+        className={`mobile-nav-backdrop${mobileMenuOpen ? ' is-open' : ''}`}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
+      />
+      <aside className={`mobile-nav-drawer${mobileMenuOpen ? ' is-open' : ''}`} aria-label="Мобильное меню">
+        <div className="drawer-heading">
+          <div className="sidebar-brand">
+            <span className="brand-symbol" aria-hidden="true">
+              <Icon name="target" size={24} />
+            </span>
+            <div className="sidebar-brand-text">
+              <strong>GPS Checker</strong>
+              <span>Map Photo</span>
+            </div>
+          </div>
+          <button type="button" className="icon-button" onClick={() => setMobileMenuOpen(false)} aria-label="Закрыть меню">
+            <Icon name="close" />
+          </button>
+        </div>
+        <Navigation activeScreen={activeScreen} onScreenChange={onScreenChange} onNavigate={() => setMobileMenuOpen(false)} />
+      </aside>
     </main>
   );
 }

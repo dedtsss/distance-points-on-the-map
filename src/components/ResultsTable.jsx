@@ -58,6 +58,8 @@ export default function ResultsTable({
           <thead>
             <tr>
               <th>№ фото</th>
+              <th>Файл</th>
+              <th>Внутреннее имя</th>
               <th>Индекс</th>
               <th>Координаты</th>
               <th>Качество</th>
@@ -71,6 +73,8 @@ export default function ResultsTable({
             {photos.map((photo) => (
               <tr key={photo.id}>
                 <th scope="row">{photo.number}</th>
+                <td className="result-file-cell">{photo.fileName || 'без имени'}</td>
+                <td className="result-file-cell">{photo.displayFileName || photo.internalName || 'ожидает индекса'}</td>
                 <td>
                   <div className="table-index-cell">
                     <span>{indexText(photo)}</span>
