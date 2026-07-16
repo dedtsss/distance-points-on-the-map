@@ -1388,7 +1388,7 @@ tbody th,
     padding-bottom: 3px;
   }
   .map-canvas { min-height: 560px; }
-  .map-side-panel { max-height: 46vh; }
+  .map-side-panel { max-height: 36vh; }
   .point-list-item {
     grid-template-columns: auto minmax(0, 1fr);
   }
