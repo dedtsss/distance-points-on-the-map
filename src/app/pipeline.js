@@ -3,6 +3,7 @@ import { cleanImageForUpload } from '../features/cleanup/cleanImageForUpload.js'
 import { calculateDistances } from '../features/distance/distanceService.js';
 import { readGpsPipeline } from '../features/gps/readGpsPipeline.js';
 import { validateCoordinateBatch } from '../features/gps/coordinateSanity.js';
+import { applyPointIdentity, pointIdentityPatch } from '../features/points/pointIdentity.js';
 import { uploadCleanedPhotos } from '../features/upload/uploadService.js';
 import { USER_ERRORS, technicalErrorMessage } from '../utils/errors.js';
 
@@ -19,19 +20,28 @@ const isLowPrecisionGps = (gps) => (
   || (gps?.gpsWarnings || gps?.warnings || []).includes('low_precision_coordinate')
 );
 
+const indexPatchFromGps = (photo, gps) => (
+  photo?.indexStatus === 'manual'
+    ? {}
+    : {
+      indexFromOcr: gps?.indexFromOcr || null,
+      indexStatus: gps?.indexStatus || (gps?.indexFromOcr ? 'uncertain' : 'missing'),
+    }
+);
+
 export async function runPhotoPipeline(options) {
   const readGps = options.dependencies?.readGps || readGpsPipeline;
   const calculate = options.dependencies?.calculateDistances || calculateDistances;
   const clean = options.dependencies?.clean || cleanImageForUpload;
   const upload = options.dependencies?.upload || uploadCleanedPhotos;
   const stages = { gps: true, cleanup: true, upload: true, ...options.stages };
-  const jobs = new Map(options.photos.map((photo) => [photo.id, { ...photo }]));
+  const jobs = new Map(options.photos.map((photo) => [photo.id, applyPointIdentity({ ...photo })]));
   const log = (message, photoId = null, type = 'info') => options.onLog?.({ message, photoId, type });
 
   const patchPhoto = (photoId, patch) => {
-    const next = { ...jobs.get(photoId), ...patch };
+    const next = applyPointIdentity({ ...jobs.get(photoId), ...patch });
     jobs.set(photoId, next);
-    options.onPhotoUpdate?.(photoId, patch);
+    options.onPhotoUpdate?.(photoId, { ...patch, ...pointIdentityPatch(next) });
     return next;
   };
 
@@ -69,6 +79,7 @@ export async function runPhotoPipeline(options) {
         gpsSource: gps.source,
         gpsConfidence: gps.confidence ?? (gps.source === 'exif' ? 1 : 0),
         ocrStatus: gps.ocrStatus || (gps.source === 'exif' ? 'exif' : 'uncertain'),
+        ...indexPatchFromGps(jobs.get(initialPhoto.id), gps),
         manualCoordinates: false,
         coordinateQuality: lowPrecisionGps
           ? 'low_precision'
@@ -87,6 +98,7 @@ export async function runPhotoPipeline(options) {
         gpsSource: null,
         gpsConfidence: gps.confidence || 0,
         ocrStatus: gps.ocrStatus || 'missing',
+        ...indexPatchFromGps(jobs.get(initialPhoto.id), gps),
         manualCoordinates: false,
         coordinateQuality: gps.ocrStatus === 'suspect' ? 'suspicious' : 'missing',
         coordinatePrecision: gps.coordinatePrecision || null,
@@ -115,6 +127,7 @@ export async function runPhotoPipeline(options) {
         gpsSource: null,
         gpsConfidence: 0,
         ocrStatus: 'error',
+        ...indexPatchFromGps(jobs.get(initialPhoto.id), null),
         manualCoordinates: false,
         coordinateQuality: 'missing',
         coordinatePrecision: null,

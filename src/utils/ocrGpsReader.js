@@ -10,7 +10,7 @@ const DEFAULT_PREPROCESS_OPTIONS = {
 };
 
 const DEFAULT_MIN_PARSER_CONFIDENCE = 0.55;
-const OVERLAY_OCR_WHITELIST = '0123456789., NSEWnsew+-±mм';
+const OVERLAY_OCR_WHITELIST = '0123456789., NSEWnsew+-±mм:#№IiDdXxEeNnOoRrИиНнДдЕеКкСсМмРр';
 
 const OCR_ROIS = [
   { name: 'bottom_35', crop: { xRatio: 0, yRatio: 0.65, widthRatio: 1, heightRatio: 0.35 } },
@@ -110,7 +110,7 @@ export const OCR_ATTEMPT_VARIANTS = [
   attemptVariant('full_image', 'grayscale_contrast'),
 ];
 
-const OCR_CHAR_WHITELIST = '0123456789.,-+ NSEWnsew LATLON:°′″ /';
+const OCR_CHAR_WHITELIST = '0123456789.,-+ NSEWnsew LATLON:°′″ /#№IiDdXxEeNnOoRrИиНнДдЕеКкСсМмРр';
 const DECIMAL_NUMBER_RE = /[-+]?\d{1,3}\.\d{3,10}/g;
 const KARELIA_SHORT_DECIMAL_PAIR_RE = /((?:6[0-9]|70)\.\d{2,10})\D{0,30}((?:2[5-9]|3[0-9]|40)\.\d{2,10})/g;
 
@@ -604,7 +604,13 @@ const stripCoordinateNumbers = (text) => text
   .replace(/[-+]?\d{1,3}\.\d{2,10}\s*[NS]?\s*[, ]+\s*[-+]?\d{1,3}\.\d{2,10}\s*[EW]?/gi, ' ');
 
 const normalizeIndexCandidate = (value) => {
-  const index = String(value || '').trim();
+  const index = String(value || '')
+    .normalize('NFKC')
+    .replace(/[OoОо]/g, '0')
+    .replace(/[Il|]/g, '1')
+    .replace(/[Bb]/g, '8')
+    .replace(/[Ss]/g, '5')
+    .match(/\d{1,6}/)?.[0] || '';
 
   if (!index || /^0+$/.test(index)) {
     return null;
@@ -613,17 +619,30 @@ const normalizeIndexCandidate = (value) => {
   return index;
 };
 
-const parseIndex = (normalizedText) => {
+const makeIndexResult = (value, status = 'found') => {
+  const indexFromOcr = normalizeIndexCandidate(value);
+  return {
+    indexFromOcr,
+    indexStatus: indexFromOcr ? status : 'missing',
+  };
+};
+
+export const parseIndex = (normalizedText) => {
+  const result = parseIndexDetails(normalizedText);
+  return result.indexFromOcr;
+};
+
+export const parseIndexDetails = (normalizedText) => {
   const labeled = normalizedText.match(
-    /(?:номер\s+индекса|номер\s+index|index\s+number|индекс(?:а)?|index|idx|id)\s*[:=\-]?\s*([A-Za-zА-Яа-я]?\d{1,6})/i,
+    /(?:номер\s+индекса|номер\s+index|index\s+number|индекс(?:а)?|index|idx)\s*[:=\-]?\s*([A-Za-zА-Яа-я]?\d{1,6})/i,
   );
   if (labeled) {
-    return normalizeIndexCandidate(labeled[1]);
+    return makeIndexResult(labeled[1], 'found');
   }
 
-  const symbolLabeled = normalizedText.match(/(?:№|#)\s*(\d{3,6})/);
+  const symbolLabeled = normalizedText.match(/(?:№|#|n[o0]\.?)\s*(\d{3,6})/i);
   if (symbolLabeled) {
-    return normalizeIndexCandidate(symbolLabeled[1]);
+    return makeIndexResult(symbolLabeled[1], 'found');
   }
 
   const firstCoordinateIndex = normalizedText.search(DECIMAL_NUMBER_RE);
@@ -634,18 +653,18 @@ const parseIndex = (normalizedText) => {
   const standaloneAfterCoordinates = textAfterCoordinates.match(/(?:^|\s|#)(\d{3,6})(?![.,]\d)(?=\s|$|[#.,;:])/);
 
   if (standaloneAfterCoordinates) {
-    return normalizeIndexCandidate(standaloneAfterCoordinates[1]);
+    return makeIndexResult(standaloneAfterCoordinates[1], 'uncertain');
   }
 
   if (firstCoordinateIndex > 0) {
     const prefix = normalizedText.slice(0, firstCoordinateIndex);
     const fallback = prefix.match(/(?:^|\s)(\d{3,5})(?=\s|$)/);
     if (fallback) {
-      return normalizeIndexCandidate(fallback[1]);
+      return makeIndexResult(fallback[1], 'uncertain');
     }
   }
 
-  return null;
+  return { indexFromOcr: null, indexStatus: 'missing' };
 };
 
 const scoreCandidate = ({ latitude, longitude, baseConfidence, warnings, correctionCount = 0, contextStrength = 0 }) => {
@@ -775,7 +794,8 @@ export function parseGpsFromOcrText(text, options = {}) {
   const normalizedText = normalized.text;
   const correctionCount = normalized.correctionCount;
   const warnings = [];
-  const indexFromOcr = parseIndex(normalizedText);
+  const parsedIndex = parseIndexDetails(normalizedText);
+  const { indexFromOcr, indexStatus } = parsedIndex;
   const candidates = [];
   const decimalMatches = normalizedText.match(DECIMAL_NUMBER_RE) || [];
 
@@ -945,6 +965,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       latitude: null,
       longitude: null,
       indexFromOcr,
+      indexStatus,
       rawText,
       normalizedText,
       correctionCount,
@@ -965,6 +986,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       latitude: null,
       longitude: null,
       indexFromOcr,
+      indexStatus,
       rawText,
       normalizedText,
       correctionCount,
@@ -985,6 +1007,7 @@ export function parseGpsFromOcrText(text, options = {}) {
       latitude: null,
       longitude: null,
       indexFromOcr,
+      indexStatus,
       rawText,
       normalizedText,
       correctionCount,
@@ -1003,6 +1026,7 @@ export function parseGpsFromOcrText(text, options = {}) {
     latitude: best.latitude,
     longitude: best.longitude,
     indexFromOcr,
+    indexStatus,
     rawText,
     normalizedText,
     correctionCount,
@@ -1242,6 +1266,7 @@ export async function readGpsFromImageOcr(file, options = {}) {
       latitude: null,
       longitude: null,
       indexFromOcr: best?.parsed?.indexFromOcr || null,
+      indexStatus: best?.parsed?.indexStatus || (best?.parsed?.indexFromOcr ? 'uncertain' : 'missing'),
       rawText: best?.rawText || '',
       normalizedText: best?.normalizedText || '',
       confidence: best?.score || 0,
@@ -1260,6 +1285,7 @@ export async function readGpsFromImageOcr(file, options = {}) {
       latitude: null,
       longitude: null,
       indexFromOcr: null,
+      indexStatus: 'missing',
       rawText: '',
       normalizedText: '',
       confidence: 0,
