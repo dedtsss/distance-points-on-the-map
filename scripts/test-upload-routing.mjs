@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict';
 
-import { parseFreeimageApiPage } from '../workers/host-proxy/freeimage.js';
-import { parseNinjaboxForm, parseNinjaboxGallery } from '../workers/host-proxy/ninjabox.js';
+import { parseFreeimageApiPage, uploadFreeimage } from '../workers/host-proxy/freeimage.js';
+import { parseNinjaboxForm, parseNinjaboxGallery, uploadNinjabox } from '../workers/host-proxy/ninjabox.js';
+import {
+  assertProviderHeadersPrivate,
+  buildProviderHeaders,
+  formDataPrivacyFields,
+} from '../workers/host-proxy/privacyHeaders.js';
 import {
   composeBundleItem,
   handleWorkerRequest,
   isAuthorizedRequest,
   uploadBundle,
 } from '../workers/host-proxy/worker.js';
+import { uploadX0 } from '../workers/host-proxy/x0.js';
 import { requestUploadBundle, uploadCleanedPhotos } from '../src/features/upload/uploadService.js';
 import { validateProviderSettings } from '../src/features/upload/providerPolicy.js';
 
@@ -36,6 +42,20 @@ assert.deepEqual(gallery, [
   { url: 'https://ninjabox.org/i/photo-1', directUrl: 'https://ninjabox.org/storage/gallery/one.png' },
   { url: 'https://ninjabox.org/i/photo-2', directUrl: 'https://ninjabox.org/storage/gallery/two.png' },
 ]);
+
+const providerHeaderCases = [
+  buildProviderHeaders('freeimage', 'html'),
+  buildProviderHeaders('freeimage', 'api'),
+  buildProviderHeaders('ninjabox', 'html'),
+  buildProviderHeaders('ninjabox', 'html_upload'),
+  buildProviderHeaders('x0', 'api'),
+];
+for (const headers of providerHeaderCases) {
+  assert.equal(assertProviderHeadersPrivate(headers), true);
+  assert.equal(/GPS-Checker-Map-Photo/i.test(Object.values(headers).join(' ')), false);
+  assert.equal(Object.keys(headers).some((name) => /^(authorization|cookie|cf-access-client-id|cf-access-client-secret)$/i.test(name)), false);
+}
+assert.equal(buildProviderHeaders('ninjabox', 'html_upload').Referer, 'https://ninjabox.org/');
 
 const success = { ok: true, url: 'https://example.test/view', directUrl: 'https://example.test/image.jpg' };
 const failed = { ok: false, url: null, directUrl: null, error: 'failed' };
@@ -130,6 +150,22 @@ assert.equal(disabledFallbackBundle.items[0].links.length, 0);
 assert.equal(validateProviderSettings({ freeimage: false, ninjabox: false }).valid, false);
 assert.equal(validateProviderSettings({ freeimage: true, ninjabox: false }).valid, true);
 
+const privacyFiles = [
+  new File(['first'], 'gps-001.jpg', { type: 'image/jpeg' }),
+  new File(['second'], 'gps-002.jpg', { type: 'image/jpeg' }),
+];
+const privacyBundle = await uploadBundle(privacyFiles, ['photo-a', 'photo-b'], {
+  freeimage: async (file) => ({ provider: 'freeimage', ok: true, url: `https://free.test/${file.name}`, directUrl: `https://free.test/d/${file.name}` }),
+  ninjabox: async (batch) => ({
+    ok: true,
+    galleryUrl: 'https://ninja.test/gallery',
+    items: batch.map((file) => ({ url: `https://ninja.test/${file.name}`, directUrl: `https://ninja.test/d/${file.name}` })),
+  }),
+});
+assert.deepEqual(privacyBundle.items.map((item) => item.photoId), ['photo-a', 'photo-b']);
+assert.deepEqual(privacyBundle.items.map((item) => item.fileName), ['gps-001.jpg', 'gps-002.jpg']);
+assert.equal(privacyBundle.items[0].links[0].url, 'https://free.test/gps-001.jpg');
+
 const cleanedEntries = files.map((file, index) => ({ photoId: String(index), file, originalFile: null, cleaned: true }));
 let requestEntries = null;
 let requestPolicy = null;
@@ -168,7 +204,7 @@ assert.equal(normalized.get('0').freeimageUrl, 'https://free.test/0');
 assert.equal(normalized.get('0').ninjaboxUrl, 'https://ninja.test/0');
 assert.equal(normalized.get('0').fallbackUrl, '');
 
-const originalFetch = globalThis.fetch;
+const providerOriginalFetch = globalThis.fetch;
 let inspectedUploadFields = null;
 globalThis.fetch = async (_url, init) => {
   const body = init.body;
@@ -199,7 +235,7 @@ try {
     displayFileName: 'index-5939.jpg',
   }], 'https://worker.test/', undefined, { providers: 'freeimage', includeX0: false, fallback: 'none' });
 } finally {
-  globalThis.fetch = originalFetch;
+  globalThis.fetch = providerOriginalFetch;
 }
 assert.deepEqual(inspectedUploadFields.filter((field) => field.key === 'files').map((field) => field.value), ['gps-001.jpg']);
 assert.equal(inspectedUploadFields.some((field) => /5939|index-5939/.test(field.value)), false);
@@ -314,5 +350,76 @@ const bearerResponse = await handleWorkerRequest(new Request('https://gps.bruce-
   APP_ACCESS_TOKEN: 'app-token',
 });
 assert.equal(bearerResponse.status, 200);
+
+const originalFetch = globalThis.fetch;
+const capturedProviderRequests = [];
+const responseWithUrl = (body, init, url) => {
+  const response = new Response(body, init);
+  Object.defineProperty(response, 'url', { value: url });
+  return response;
+};
+globalThis.fetch = async (url, init = {}) => {
+  const requestUrl = String(url);
+  const headers = init.headers || {};
+  const formFields = init.body instanceof FormData ? formDataPrivacyFields(init.body) : [];
+  capturedProviderRequests.push({ url: requestUrl, headers, formFields });
+
+  if (requestUrl === 'https://freeimage.host/api') {
+    return responseWithUrl(`
+      <h2>API Key</h2><div><input value="public-test-key"></div>
+      <h3>Request URL</h3><div><input value="https://freeimage.host/api/1/upload"></div>
+    `, { status: 200, headers: { 'Content-Type': 'text/html' } }, requestUrl);
+  }
+  if (requestUrl === 'https://freeimage.host/api/1/upload') {
+    return responseWithUrl(JSON.stringify({
+      status_code: 200,
+      image: { url_viewer: 'https://freeimage.host/i/private', url: 'https://iili.io/private.jpg' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }, requestUrl);
+  }
+  if (requestUrl === 'https://ninjabox.org/') {
+    return responseWithUrl(`
+      <form action="https://ninjabox.org/put" method="post">
+        <input type="hidden" name="csrf" value="test-token">
+        <input name="files" type="file" multiple>
+      </form>
+    `, { status: 200, headers: { 'Content-Type': 'text/html' } }, requestUrl);
+  }
+  if (requestUrl === 'https://ninjabox.org/put') {
+    return responseWithUrl(`
+      <a href="https://ninjabox.org/i/photo-1"><img src="https://ninjabox.org/storage/gallery/one.jpg"></a>
+      <a href="https://ninjabox.org/i/photo-2"><img src="https://ninjabox.org/storage/gallery/two.jpg"></a>
+    `, { status: 200, headers: { 'Content-Type': 'text/html' } }, requestUrl);
+  }
+  if (requestUrl === 'https://x0.at/') {
+    return responseWithUrl('https://x0.at/private.jpg\n', { status: 200, headers: { 'Content-Type': 'text/plain' } }, requestUrl);
+  }
+  throw new Error(`Unexpected fetch URL: ${requestUrl}`);
+};
+
+try {
+  await uploadFreeimage(privacyFiles[0]);
+  await uploadNinjabox(privacyFiles);
+  await uploadX0(privacyFiles[1]);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+for (const request of capturedProviderRequests) {
+  assert.equal(assertProviderHeadersPrivate(request.headers), true, request.url);
+  assert.equal(Object.keys(request.headers).some((name) => /^(authorization|cookie|cf-access-client-id|cf-access-client-secret)$/i.test(name)), false, request.url);
+}
+
+const outboundFileNames = capturedProviderRequests
+  .flatMap((request) => request.formFields)
+  .filter((field) => field.kind === 'file')
+  .map((field) => field.filename);
+assert.equal(outboundFileNames.length, 4);
+assert.equal(outboundFileNames.some((name) => /gps-00[12]/i.test(name)), false);
+assert.ok(outboundFileNames.every((name) => /^image-[a-z0-9]+\.jpg$/i.test(name)));
+
+const outboundFieldNames = capturedProviderRequests.flatMap((request) => request.formFields.map((field) => field.name));
+assert.ok(outboundFieldNames.includes('source'));
+assert.ok(outboundFieldNames.includes('files'));
+assert.ok(outboundFieldNames.includes('file'));
 
 console.log('Upload routing tests passed');
