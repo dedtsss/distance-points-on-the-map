@@ -1,6 +1,7 @@
+import { buildProviderHeaders, toProviderUploadFile } from './privacyHeaders.js';
+
 const UPLOAD_URL = 'https://x0.at/';
 const REQUEST_TIMEOUT_MS = 45_000;
-const USER_AGENT = 'GPS-Checker-Map-Photo/1.0';
 
 const isPublicUrl = (value) => {
   try {
@@ -12,13 +13,14 @@ const isPublicUrl = (value) => {
 };
 
 export async function uploadX0(file) {
+  const providerFile = toProviderUploadFile(file);
   const form = new FormData();
-  form.append('file', file, file.name);
+  form.append('file', providerFile, providerFile.name);
   form.append('id_length', '12');
   const startedAt = performance.now();
   const response = await fetch(UPLOAD_URL, {
     method: 'POST',
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/plain, */*;q=0.1' },
+    headers: buildProviderHeaders('x0', 'api'),
     body: form,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });

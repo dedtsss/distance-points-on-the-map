@@ -1,7 +1,8 @@
+import { buildProviderHeaders, toProviderUploadFile } from './privacyHeaders.js';
+
 const API_PAGE_URL = 'https://freeimage.host/api';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 45_000;
-const USER_AGENT = 'GPS-Checker-Map-Photo/1.0';
 
 let cachedConfig = null;
 
@@ -15,7 +16,7 @@ async function getApiConfig(forceRefresh = false) {
   if (!forceRefresh && cachedConfig && cachedConfig.expiresAt > Date.now()) return cachedConfig;
 
   const response = await fetch(API_PAGE_URL, {
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' },
+    headers: buildProviderHeaders('freeimage', 'html'),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const html = await response.text();
@@ -35,15 +36,16 @@ const isKeyError = (response, payload, text) => (
 );
 
 async function uploadOnce(file, config) {
+  const providerFile = toProviderUploadFile(file);
   const form = new FormData();
   form.append('key', config.key);
   form.append('action', 'upload');
   form.append('format', 'json');
-  form.append('source', file, file.name);
+  form.append('source', providerFile, providerFile.name);
   const startedAt = performance.now();
   const response = await fetch(config.endpoint, {
     method: 'POST',
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+    headers: buildProviderHeaders('freeimage', 'api'),
     body: form,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });

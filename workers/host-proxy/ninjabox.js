@@ -1,6 +1,7 @@
+import { buildProviderHeaders, toProviderUploadFile } from './privacyHeaders.js';
+
 const PAGE_URL = 'https://ninjabox.org/';
 const REQUEST_TIMEOUT_MS = 60_000;
-const USER_AGENT = 'GPS-Checker-Map-Photo/1.0';
 
 const decodeHtml = (value) => String(value || '')
   .replaceAll('&amp;', '&')
@@ -54,7 +55,7 @@ const isChallenge = (response, text) => (
 
 export async function uploadNinjabox(files) {
   const page = await fetch(PAGE_URL, {
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' },
+    headers: buildProviderHeaders('ninjabox', 'html'),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const html = await page.text();
@@ -66,14 +67,17 @@ export async function uploadNinjabox(files) {
 
   const form = new FormData();
   for (const hidden of definition.hiddenInputs) form.append(hidden.name, hidden.value);
-  for (const file of files) form.append(definition.fileField, file, file.name);
+  for (const file of files) {
+    const providerFile = toProviderUploadFile(file);
+    form.append(definition.fileField, providerFile, providerFile.name);
+  }
   if (!form.has('password')) form.append('password', '');
   if (!form.has('delete_after_days')) form.append('delete_after_days', '180');
 
   const startedAt = performance.now();
   const response = await fetch(definition.endpoint, {
     method: 'POST',
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html, */*;q=0.1', Referer: PAGE_URL },
+    headers: buildProviderHeaders('ninjabox', 'html_upload'),
     body: form,
     redirect: 'follow',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
