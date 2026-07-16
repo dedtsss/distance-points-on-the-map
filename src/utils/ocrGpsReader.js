@@ -1184,7 +1184,13 @@ export async function readGpsFromImageOcr(file, options = {}) {
         attempt.score = scoreOcrAttempt(attempt);
         attempts.push(attempt);
 
+        const lowPrecisionParsed = parsed.ok
+          && (
+            parsed.coordinateQuality === 'low_precision'
+            || (parsed.warnings || []).includes('low_precision_coordinate')
+          );
         if ((parsed.ok && attempt.score >= 0.78 && attempt.correctionCount <= 1)
+          || lowPrecisionParsed
           || hasOnlyLowPrecisionWarning(attempt)) break;
       } catch (error) {
         attempts.push({
