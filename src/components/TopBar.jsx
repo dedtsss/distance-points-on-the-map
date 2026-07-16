@@ -33,7 +33,7 @@ export default function TopBar({
       <div className="top-app-bar-actions">
         <div className={`system-pill${isBusy ? ' is-busy' : ''}`} aria-live="polite">
           <span className="system-dot" aria-hidden="true" />
-          {isBusy ? 'Обработка' : 'Система в норме'}
+          {isBusy ? 'Обработка' : 'Готово'}
         </div>
         <div className="top-app-bar-meta" aria-label="Количество выбранных фото">
           <span>{photoCount}</span>

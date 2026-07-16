@@ -1353,6 +1353,9 @@ tbody th,
   .journal-entry {
     grid-template-columns: 1fr;
   }
+  .surface-panel > .results-table-section {
+    display: none;
+  }
   .photo-card-header { display: grid; }
   .photo-card-fields { gap: 8px; }
   .photo-card-actions button,
