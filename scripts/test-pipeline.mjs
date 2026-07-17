@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { applyManualCoordinateCorrection, getProgressSummary, replacePhotoBatch } from '../src/app/appState.js';
+import { applyManualCoordinateCorrection, applyManualIndexCorrection, getProgressSummary, replacePhotoBatch } from '../src/app/appState.js';
 import { runPhotoPipeline } from '../src/app/pipeline.js';
 import { calculateDistances } from '../src/features/distance/distanceService.js';
 import { readGpsPipeline } from '../src/features/gps/readGpsPipeline.js';
@@ -148,6 +148,28 @@ assert.equal(indexedResult.photos[1].internalName, 'photo-002-no-index');
 assert.ok(preferredFilenames.every((name) => /^gps-\d{3}\.jpg$/.test(name)));
 assert.ok(indexedUploadEntries.every((entry) => !entry.file.name.includes('5939')));
 assert.equal(indexedResult.photos[0].uploadStatus, 'done');
+
+const manualIndexBase = applyManualIndexCorrection([await makePhoto('manual-index', 1)], 'manual-index', '0123');
+const manualIndexResult = await runPhotoPipeline({
+  photos: manualIndexBase,
+  stages: { gps: true, cleanup: false, upload: false },
+  dependencies: {
+    readGps: async () => ({
+      found: true,
+      coordinates: { latitude: 62.2, longitude: 34.2 },
+      source: 'ocr',
+      confidence: 0.91,
+      ocrStatus: 'confident',
+      indexFromOcr: '9999',
+      indexStatus: 'found',
+      orientation: 1,
+      debug: {},
+    }),
+  },
+});
+assert.equal(manualIndexResult.photos[0].indexFromOcr, '0123');
+assert.equal(manualIndexResult.photos[0].indexStatus, 'manual');
+assert.equal(manualIndexResult.photos[0].internalName, 'index-0123');
 
 // A suspicious OCR candidate is informational and does not block cleanup/upload.
 const suspiciousResult = await runPhotoPipeline({

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
+  chooseIndexCandidate,
   decimalPlaces,
+  extractIndexCandidatesFromText,
   parseGpsFromOcrText,
   readGpsFromImageOcr,
   selectBestOcrAttempt,
@@ -73,6 +75,34 @@ assert.equal(parseGpsFromOcrText('IDX 5939').indexFromOcr, '5939');
 assert.equal(parseGpsFromOcrText('№5939').indexFromOcr, '5939');
 assert.equal(parseGpsFromOcrText('#5939').indexFromOcr, '5939');
 assert.equal(parseGpsFromOcrText('Index: 5939').indexStatus, 'found');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456 0123').indexFromOcr, '0123');
+assert.equal(parseGpsFromOcrText('64.123456 N 30.123456 E 12345').indexFromOcr, '12345');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\n00042').indexFromOcr, '00042');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\n0000').indexFromOcr, '0000');
+assert.equal(parseGpsFromOcrText('Index: OIBS').indexFromOcr, '0185');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\nO123').indexFromOcr, '0123');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\n№12345').indexFromOcr, '12345');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\nиндекс 4821').indexFromOcr, '4821');
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\n123').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456\n123456').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456, 2379м').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('64.123456, 30.123456').indexFromOcr, null);
+assert.equal(parseGpsFromOcrText('Дата 2026-07-17 64.123456, 30.123456').indexFromOcr, null);
+
+const repeatedIndex = chooseIndexCandidate([
+  { value: '0123', source: 'index_ocr', attemptName: 'line:original', ocrConfidence: 0.61, score: 0.7, isolatedLine: true },
+  { value: '0123', source: 'index_ocr', attemptName: 'line:threshold', ocrConfidence: 0.58, score: 0.68, isolatedLine: true },
+]);
+assert.equal(repeatedIndex.indexFromOcr, '0123');
+assert.equal(repeatedIndex.indexStatus, 'found');
+const weakSingleIndex = chooseIndexCandidate(extractIndexCandidatesFromText('12345', {
+  source: 'index_ocr',
+  ocrConfidence: 0.42,
+  isolatedLine: true,
+  attemptName: 'single_weak',
+}));
+assert.equal(weakSingleIndex.indexFromOcr, '12345');
+assert.equal(weakSingleIndex.indexStatus, 'uncertain');
 
 assert.equal(decimalPlaces('30,62000'), 5);
 assert.equal(decimalPlaces('30.62'), 2);
