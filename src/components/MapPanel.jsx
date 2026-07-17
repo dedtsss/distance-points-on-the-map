@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildMapModel } from '../features/map/mapModel.js';
 import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
+import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates } from '../utils/format.js';
 import { formatDistanceMeters } from '../utils/geoDistance.js';
 import EmptyState from './EmptyState.jsx';
@@ -24,7 +25,7 @@ const popupHtml = (photo, providerSettings) => {
     <div class="map-popup">
       <strong>${escapeHtml(photo.pointLabel || `Фото ${photo.number}`)}</strong>
       <dl>
-        <div><dt>Индекс</dt><dd>${escapeHtml(photo.indexFromOcr || 'не найден')}</dd></div>
+        <div><dt>Индекс</dt><dd>${escapeHtml(indexDisplayText(photo))}</dd></div>
         <div><dt>Файл</dt><dd>${escapeHtml(photo.displayFileName || photo.fileName || '')}</dd></div>
         <div><dt>Координаты</dt><dd>${escapeHtml(formatCoordinates(photo.coordinates))}</dd></div>
         <div><dt>Качество</dt><dd>${escapeHtml(photo.coordinateQuality || 'missing')}</dd></div>
@@ -35,14 +36,30 @@ const popupHtml = (photo, providerSettings) => {
   `;
 };
 
-const markerClass = (point, selected) => {
-  if (selected) return 'selected';
-  if (point.lowPrecision) return 'low-precision';
-  if (point.suspicious) return 'suspicious';
-  if (point.distanceStatus === 'too_close') return 'conflict';
-  if (point.strict) return 'strict';
-  return 'neutral';
-};
+const pointHasConflict = (point) => point.distanceStatus === 'too_close';
+
+const markerClassName = (point, selected = false) => [
+  'map-marker',
+  pointHasConflict(point) ? 'is-conflict' : '',
+  selected ? 'is-selected' : '',
+].filter(Boolean).join(' ');
+
+const pointDotClassName = (point, selected = false) => [
+  'point-dot',
+  pointHasConflict(point) ? 'is-conflict' : '',
+  selected ? 'is-selected' : '',
+].filter(Boolean).join(' ');
+
+const createMarkerIcon = (L, point, selected = false) => L.divIcon({
+  className: markerClassName(point, selected),
+  html: '<span></span>',
+  iconSize: selected ? [26, 26] : [18, 18],
+  iconAnchor: selected ? [13, 13] : [9, 9],
+});
+
+const conflictLineTooltip = (line, thresholdMeters) => (
+  `${line.pointALabel} - ${line.pointBLabel}: ${formatDistanceMeters(line.distanceMeters)} м; порог ${formatDistanceMeters(thresholdMeters)} м`
+);
 
 const matchesFilter = (point, filter) => {
   if (filter === 'strict') return point.strict;
@@ -60,15 +77,49 @@ export default function MapPanel({
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
+  const leafletRef = useRef(null);
+  const layerGroupRef = useRef(null);
   const markersRef = useRef(new Map());
+  const selectedPointRef = useRef(null);
+  const fittedPointsKeyRef = useRef('');
+  const lastFocusPhotoIdRef = useRef(null);
+  const [leafletReady, setLeafletReady] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => (
     typeof window === 'undefined' ? true : !window.matchMedia('(max-width: 860px)').matches
   ));
   const [filter, setFilter] = useState('all');
   const [selectedPointId, setSelectedPointId] = useState(focusPhotoId || null);
   const model = useMemo(() => buildMapModel(photos, thresholdMeters), [photos, thresholdMeters]);
-  const filteredPoints = model.points.filter((point) => matchesFilter(point, filter));
-  const selectedPoint = model.points.find((point) => point.id === selectedPointId) || filteredPoints[0] || model.points[0] || null;
+  const filteredPoints = useMemo(() => (
+    model.points.filter((point) => matchesFilter(point, filter))
+  ), [filter, model.points]);
+  const selectedPoint = model.points.find((point) => point.id === selectedPointId)
+    || filteredPoints[0]
+    || model.points[0]
+    || null;
+  const visiblePointIds = useMemo(() => new Set(filteredPoints.map((point) => point.id)), [filteredPoints]);
+  const layerDataKey = useMemo(() => JSON.stringify({
+    filter,
+    points: filteredPoints.map((point) => ({
+      id: point.id,
+      latitude: point.coordinates.latitude,
+      longitude: point.coordinates.longitude,
+      label: point.label,
+      conflict: pointHasConflict(point),
+      fileName: point.photo.displayFileName || point.photo.fileName || '',
+      index: point.photo.indexFromOcr || '',
+      indexStatus: point.photo.indexStatus || '',
+    })),
+    conflicts: model.conflicts
+      .filter((line) => visiblePointIds.has(line.pointAId) && visiblePointIds.has(line.pointBId))
+      .map((line) => ({ id: line.id, distanceMeters: line.distanceMeters })),
+    providerSettings,
+  }), [filter, filteredPoints, model.conflicts, providerSettings, visiblePointIds]);
+  const fitPointsKey = useMemo(() => JSON.stringify(model.points.map((point) => ({
+    id: point.id,
+    latitude: point.coordinates.latitude,
+    longitude: point.coordinates.longitude,
+  }))), [model.points]);
   const filterOptions = [
     { value: 'all', label: 'Все', count: model.points.length },
     { value: 'strict', label: 'ОК', count: model.points.filter((point) => point.strict).length },
@@ -77,9 +128,23 @@ export default function MapPanel({
     { value: 'conflicts', label: 'Конфликты', count: model.points.filter((point) => point.distanceStatus === 'too_close').length },
   ];
 
+  const fitToPoints = (points) => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !points.length) return;
+    const bounds = L.latLngBounds(points.map((point) => [point.coordinates.latitude, point.coordinates.longitude]));
+    if (bounds.isValid()) map.fitBounds(bounds.pad(0.2), { maxZoom: 17 });
+  };
+
+  const fitVisiblePoints = () => fitToPoints(filteredPoints.length > 0 ? filteredPoints : model.points);
+
   useEffect(() => {
     if (focusPhotoId) setSelectedPointId(focusPhotoId);
   }, [focusPhotoId]);
+
+  useEffect(() => {
+    if (!selectedPointId && filteredPoints[0]) setSelectedPointId(filteredPoints[0].id);
+  }, [filteredPoints, selectedPointId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -92,91 +157,134 @@ export default function MapPanel({
 
   useEffect(() => {
     let cancelled = false;
-    let layerGroup = null;
 
-    async function renderMap() {
-      if (!containerRef.current || model.points.length === 0) return;
+    async function createMap() {
+      if (!containerRef.current || mapRef.current || model.points.length === 0) return;
       const leaflet = await import('leaflet');
       const L = leaflet.default || leaflet;
       if (cancelled) return;
 
-      if (!mapRef.current) {
-        mapRef.current = L.map(containerRef.current, {
-          zoomControl: true,
-          attributionControl: true,
-        });
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap contributors',
-        }).addTo(mapRef.current);
-      }
-
-      layerGroup = L.layerGroup().addTo(mapRef.current);
-      markersRef.current = new Map();
-      model.lines.forEach((line) => {
-        const pointA = model.points.find((point) => point.id === line.pointAId);
-        const pointB = model.points.find((point) => point.id === line.pointBId);
-        if (!pointA || !pointB) return;
-        L.polyline(
-          [
-            [pointA.coordinates.latitude, pointA.coordinates.longitude],
-            [pointB.coordinates.latitude, pointB.coordinates.longitude],
-          ],
-          {
-            color: line.conflict ? '#ffb4ab' : '#6ddbd3',
-            weight: line.conflict ? 4 : 2,
-            opacity: line.conflict ? 0.95 : 0.62,
-            dashArray: line.conflict ? '0' : '6 8',
-          },
-        )
-          .bindTooltip(`${line.pointALabel} - ${line.pointBLabel}: ${formatDistanceMeters(line.distanceMeters)} м`)
-          .addTo(layerGroup);
+      leafletRef.current = L;
+      mapRef.current = L.map(containerRef.current, {
+        zoomControl: true,
+        attributionControl: true,
       });
-
-      const labelsPermanent = typeof window === 'undefined'
-        ? true
-        : !window.matchMedia('(max-width: 640px)').matches;
-
-      model.points.forEach((point) => {
-        if (!matchesFilter(point, filter)) return;
-        const selected = point.id === selectedPointId;
-        const icon = L.divIcon({
-          className: `map-marker map-marker-${markerClass(point, selected)}`,
-          html: '<span></span>',
-          iconSize: selected ? [24, 24] : [18, 18],
-          iconAnchor: selected ? [12, 12] : [9, 9],
-        });
-        const marker = L.marker([point.coordinates.latitude, point.coordinates.longitude], { icon })
-          .bindTooltip(point.label, {
-            permanent: labelsPermanent,
-            direction: 'right',
-            className: 'map-label',
-            offset: [10, ((point.order % 5) - 2) * 18],
-          })
-          .bindPopup(popupHtml(point.photo, providerSettings))
-          .on('click', () => setSelectedPointId(point.id))
-          .addTo(layerGroup);
-        markersRef.current.set(point.id, marker);
-      });
-
-      const boundsSource = filteredPoints.length > 0 ? filteredPoints : model.points;
-      const bounds = L.latLngBounds(boundsSource.map((point) => [point.coordinates.latitude, point.coordinates.longitude]));
-      if (bounds.isValid()) mapRef.current.fitBounds(bounds.pad(0.2), { maxZoom: 17 });
-      const focused = selectedPointId ? model.points.find((point) => point.id === selectedPointId) : null;
-      if (focused) {
-        mapRef.current.panTo([focused.coordinates.latitude, focused.coordinates.longitude]);
-        markersRef.current.get(focused.id)?.openTooltip();
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(mapRef.current);
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1') {
+        window.__gpsCheckerMap = mapRef.current;
       }
+      setLeafletReady(true);
     }
 
-    renderMap();
+    createMap();
     return () => {
       cancelled = true;
-      if (layerGroup && mapRef.current) mapRef.current.removeLayer(layerGroup);
     };
-  }, [model, providerSettings, focusPhotoId, filter, filteredPoints, selectedPointId]);
+  }, [model.points.length]);
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!leafletReady || !L || !map || model.points.length === 0) return undefined;
+
+    if (layerGroupRef.current) map.removeLayer(layerGroupRef.current);
+    const layerGroup = L.layerGroup().addTo(map);
+    layerGroupRef.current = layerGroup;
+    markersRef.current = new Map();
+
+    model.conflicts.forEach((line) => {
+      if (!visiblePointIds.has(line.pointAId) || !visiblePointIds.has(line.pointBId)) return;
+      const pointA = model.points.find((point) => point.id === line.pointAId);
+      const pointB = model.points.find((point) => point.id === line.pointBId);
+      if (!pointA || !pointB) return;
+      L.polyline(
+        [
+          [pointA.coordinates.latitude, pointA.coordinates.longitude],
+          [pointB.coordinates.latitude, pointB.coordinates.longitude],
+        ],
+        {
+          color: '#ff5449',
+          weight: 5,
+          opacity: 0.96,
+          dashArray: null,
+          lineCap: 'round',
+          lineJoin: 'round',
+        },
+      )
+        .bindTooltip(conflictLineTooltip(line, model.thresholdMeters))
+        .addTo(layerGroup);
+    });
+
+    const labelsPermanent = typeof window === 'undefined'
+      ? true
+      : !window.matchMedia('(max-width: 640px)').matches;
+
+    filteredPoints.forEach((point) => {
+      const marker = L.marker([point.coordinates.latitude, point.coordinates.longitude], {
+        icon: createMarkerIcon(L, point, false),
+      })
+        .bindTooltip(point.label, {
+          permanent: labelsPermanent,
+          direction: 'right',
+          className: 'map-label',
+          offset: [10, ((point.order % 5) - 2) * 18],
+        })
+        .bindPopup(popupHtml(point.photo, providerSettings), { autoPan: false })
+        .on('click', () => setSelectedPointId(point.id))
+        .addTo(layerGroup);
+      markersRef.current.set(point.id, marker);
+    });
+
+    if (fittedPointsKeyRef.current !== fitPointsKey) {
+      fittedPointsKeyRef.current = fitPointsKey;
+      fitToPoints(model.points);
+    }
+
+    return () => {
+      if (mapRef.current && layerGroupRef.current === layerGroup) {
+        mapRef.current.removeLayer(layerGroup);
+        layerGroupRef.current = null;
+      }
+    };
+  }, [leafletReady, layerDataKey, fitPointsKey, model, filteredPoints, providerSettings, visiblePointIds]);
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    if (!leafletReady || !L) return;
+
+    const previousId = selectedPointRef.current;
+    const previousPoint = model.points.find((point) => point.id === previousId);
+    const previousMarker = previousId ? markersRef.current.get(previousId) : null;
+    if (previousMarker && previousPoint) previousMarker.setIcon(createMarkerIcon(L, previousPoint, false));
+
+    const marker = selectedPoint ? markersRef.current.get(selectedPoint.id) : null;
+    if (marker && selectedPoint) {
+      marker.setIcon(createMarkerIcon(L, selectedPoint, true));
+      marker.openTooltip();
+    }
+    selectedPointRef.current = selectedPoint?.id || null;
+  }, [leafletReady, layerDataKey, model.points, selectedPoint]);
+
+  useEffect(() => {
+    if (!focusPhotoId || lastFocusPhotoIdRef.current === focusPhotoId) return;
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    const focused = model.points.find((point) => point.id === focusPhotoId);
+    if (!leafletReady || !L || !map || !focused) return;
+    lastFocusPhotoIdRef.current = focusPhotoId;
+    const latLng = L.latLng(focused.coordinates.latitude, focused.coordinates.longitude);
+    if (!map.getBounds().pad(-0.08).contains(latLng)) {
+      map.panInside(latLng, { padding: [80, 80], animate: true });
+    }
+  }, [focusPhotoId, leafletReady, model.points]);
 
   useEffect(() => () => {
+    if (typeof window !== 'undefined' && window.__gpsCheckerMap === mapRef.current) {
+      delete window.__gpsCheckerMap;
+    }
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
@@ -191,14 +299,20 @@ export default function MapPanel({
     <section className={`map-panel${panelOpen ? ' panel-open' : ' panel-collapsed'}`}>
       <div className="map-toolbar">
         <div className="map-legend" aria-label="Легенда карты">
-          <StatusChip tone="success">confident/manual</StatusChip>
-          <StatusChip tone="warning">low_precision</StatusChip>
+          <StatusChip tone="neutral">обычная точка</StatusChip>
           <StatusChip tone="error">конфликт &lt; {thresholdMeters} м</StatusChip>
+          <StatusChip tone="info">выбранная точка</StatusChip>
         </div>
-        <button type="button" className="button-secondary compact-button" onClick={() => setPanelOpen((value) => !value)}>
-          <Icon name={panelOpen ? 'chevronRight' : 'chevronLeft'} size={16} />
-          {panelOpen ? 'Скрыть точки' : 'Показать точки'}
-        </button>
+        <div className="map-toolbar-actions">
+          <button type="button" className="button-secondary compact-button" onClick={fitVisiblePoints}>
+            <Icon name="target" size={16} />
+            Показать все точки
+          </button>
+          <button type="button" className="button-secondary compact-button" onClick={() => setPanelOpen((value) => !value)}>
+            <Icon name={panelOpen ? 'chevronRight' : 'chevronLeft'} size={16} />
+            {panelOpen ? 'Скрыть точки' : 'Показать точки'}
+          </button>
+        </div>
       </div>
       <div className="map-workspace">
         <div className="map-canvas" ref={containerRef} aria-label="Карта точек" />
@@ -217,6 +331,7 @@ export default function MapPanel({
             <article className="selected-point-card">
               <h3>{selectedPoint.label}</h3>
               <dl>
+                <div><dt>Индекс</dt><dd>{indexDisplayText(selectedPoint.photo)}</dd></div>
                 <div><dt>Файл</dt><dd>{selectedPoint.photo.displayFileName || selectedPoint.photo.fileName}</dd></div>
                 <div><dt>Координаты</dt><dd>{formatCoordinates(selectedPoint.coordinates)}</dd></div>
                 <div><dt>Качество</dt><dd>{selectedPoint.photo.coordinateQuality || 'missing'}</dd></div>
@@ -234,10 +349,10 @@ export default function MapPanel({
                 className={`point-list-item${point.id === selectedPoint?.id ? ' is-selected' : ''}`}
                 onClick={() => setSelectedPointId(point.id)}
               >
-                <span className={`point-dot point-dot-${markerClass(point, false)}`} aria-hidden="true" />
+                <span className={pointDotClassName(point, point.id === selectedPoint?.id)} aria-hidden="true" />
                 <span>
                   <strong>{point.label}</strong>
-                  <small>{point.photo.displayFileName || point.photo.fileName}</small>
+                  <small>{indexDisplayText(point.photo)} · {point.photo.displayFileName || point.photo.fileName}</small>
                 </span>
                 <StatusChip tone={point.distanceStatus === 'too_close' ? 'error' : point.lowPrecision || point.suspicious ? 'warning' : 'success'}>
                   {point.distanceStatus === 'too_close' ? 'конфликт' : point.photo.coordinateQuality || 'ok'}

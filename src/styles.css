@@ -857,6 +857,13 @@ tbody th,
   flex-wrap: wrap;
   gap: 8px;
 }
+.map-toolbar-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .map-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
@@ -966,12 +973,15 @@ tbody th,
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--color-outline-strong);
+  background: var(--color-primary);
 }
-.point-dot-strict { background: var(--color-success); }
-.point-dot-conflict { background: var(--color-error); }
-.point-dot-low-precision,
-.point-dot-suspicious { background: var(--color-warning); }
+.point-dot.is-conflict { background: var(--color-error); }
+.point-dot.is-selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary), transparent 35%);
+}
+.point-dot.is-conflict.is-selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error), transparent 28%);
+}
 .map-conflicts {
   border-top: 1px solid var(--color-outline);
   color: var(--text-secondary);
@@ -990,19 +1000,21 @@ tbody th,
   height: 18px;
   border: 3px solid #101522;
   border-radius: 50%;
+  background: var(--color-primary);
   box-shadow: 0 0 0 2px rgb(255 255 255 / 70%), 0 8px 16px rgb(0 0 0 / 35%);
 }
-.map-marker-selected span {
-  width: 24px;
-  height: 24px;
-  background: var(--color-primary);
-  box-shadow: 0 0 0 3px #fff, 0 0 24px rgb(157 140 255 / 75%);
+.map-marker.is-conflict span {
+  background: var(--color-error);
 }
-.map-marker-strict span { background: var(--color-success); }
-.map-marker-conflict span { background: var(--color-error); }
-.map-marker-low-precision span,
-.map-marker-suspicious span { background: var(--color-warning); }
-.map-marker-neutral span { background: var(--color-outline-strong); }
+.map-marker.is-selected span {
+  width: 26px;
+  height: 26px;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 8px color-mix(in srgb, var(--color-primary), transparent 46%), 0 0 24px rgb(157 140 255 / 75%);
+}
+.map-marker.is-conflict.is-selected span {
+  background: var(--color-error);
+  box-shadow: 0 0 0 3px #fff, 0 0 0 8px color-mix(in srgb, var(--color-error), transparent 42%), 0 0 24px rgb(255 84 73 / 72%);
+}
 .map-label {
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 999px;
@@ -1384,6 +1396,12 @@ tbody th,
   }
   .map-toolbar {
     display: grid;
+  }
+  .map-toolbar-actions {
+    justify-content: stretch;
+  }
+  .map-toolbar-actions > button {
+    flex: 1 1 100%;
   }
   .map-legend {
     flex-wrap: nowrap;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates, formatFileSize } from '../utils/format.js';
 import Icon from './Icon.jsx';
 import StatusChip from './StatusChip.jsx';
@@ -85,7 +86,7 @@ export default function PhotoCard({
         <dl className="photo-card-fields">
           <div><dt>Размер</dt><dd>{formatFileSize(photo.size)}</dd></div>
           <div><dt>Внутреннее имя</dt><dd>{photo.displayFileName || photo.internalName || 'ожидает индекса'}</dd></div>
-          <div><dt>Индекс</dt><dd>{photo.indexFromOcr || (photo.indexStatus === 'uncertain' ? 'требует проверки' : 'не найден')}</dd></div>
+          <div><dt>Индекс</dt><dd>{indexDisplayText(photo)}</dd></div>
           <div><dt>Координаты</dt><dd>{formatCoordinates(photo.coordinates, {
             coordinateText: photo.coordinateQuality === 'low_precision' ? photo.coordinateText : null,
             coordinatePrecision: photo.coordinateQuality === 'low_precision' ? photo.coordinatePrecision : null,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
+import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates } from '../utils/format';
 import StatusChip from './StatusChip.jsx';
 
@@ -26,10 +27,7 @@ const coordinateQualityText = (photo) => {
 };
 
 const indexStatusText = (photo) => {
-  if (photo.indexStatus === 'manual') return `Индекс: ${photo.indexFromOcr}`;
-  if (photo.indexStatus === 'found') return `Индекс: ${photo.indexFromOcr}`;
-  if (photo.indexStatus === 'uncertain') return 'Индекс требует проверки';
-  return 'Индекс не найден';
+  return indexDisplayText(photo);
 };
 
 const lowPrecisionHint = (photo) => {

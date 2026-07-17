@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
+import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates } from '../utils/format.js';
 import StatusChip from './StatusChip.jsx';
 
@@ -8,12 +9,6 @@ const distanceText = (photo) => {
   if (photo.coordinateQuality === 'suspicious') return 'suspicious';
   if (!photo.coordinates) return 'missing_coordinates';
   return photo.distanceStatus || 'pending';
-};
-
-const indexText = (photo) => {
-  if (photo.indexStatus === 'uncertain') return 'требует проверки';
-  if (photo.indexFromOcr) return photo.indexFromOcr;
-  return 'не найден';
 };
 
 function InlineIndexEditor({ photo, onApplyIndex }) {
@@ -77,7 +72,7 @@ export default function ResultsTable({
                 <td className="result-file-cell">{photo.displayFileName || photo.internalName || 'ожидает индекса'}</td>
                 <td>
                   <div className="table-index-cell">
-                    <span>{indexText(photo)}</span>
+                    <span>{indexDisplayText(photo)}</span>
                     <InlineIndexEditor photo={photo} onApplyIndex={onApplyIndex} />
                   </div>
                 </td>
