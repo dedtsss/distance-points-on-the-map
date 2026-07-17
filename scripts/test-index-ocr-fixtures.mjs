@@ -58,28 +58,49 @@ try {
       context.fillText(testCase.indexLine, x + block.paddingX + 12, y + block.paddingY + testCase.font.coordinate + 24);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', testCase.quality));
       const file = new File([blob], `${testCase.name}.jpg`, { type: 'image/jpeg' });
-      const parsed = await ocr.readGpsFromImageOcr(file, { timeBudgetMs: 70_000 });
-      return {
-        ok: parsed.ok,
-        latitude: parsed.latitude,
-        longitude: parsed.longitude,
-        indexFromOcr: parsed.indexFromOcr,
-        indexStatus: parsed.indexStatus,
-        chosenIndexCandidate: parsed.chosenIndexCandidate,
-        indexAttempts: (parsed.indexAttempts || []).map((attempt) => ({
-          name: attempt.name,
-          rawText: attempt.rawText,
-          normalizedText: attempt.normalizedText,
-          ocrConfidence: attempt.ocrConfidence,
-          candidates: attempt.indexCandidates?.map((candidate) => candidate.value),
-        })),
-      };
+      const startedAt = performance.now();
+      try {
+        const parsed = await ocr.readGpsFromImageOcr(file, { timeBudgetMs: 70_000 });
+        return {
+          ok: parsed.ok,
+          latitude: parsed.latitude,
+          longitude: parsed.longitude,
+          indexFromOcr: parsed.indexFromOcr,
+          indexStatus: parsed.indexStatus,
+          chosenIndexCandidate: parsed.chosenIndexCandidate,
+          elapsedMs: Math.round(performance.now() - startedAt),
+          error: null,
+          indexAttempts: (parsed.indexAttempts || []).map((attempt) => ({
+            name: attempt.name,
+            rawText: attempt.rawText,
+            normalizedText: attempt.normalizedText,
+            ocrConfidence: attempt.ocrConfidence,
+            rejectionReason: attempt.rejectionReason,
+            candidates: attempt.indexCandidates?.map((candidate) => candidate.value),
+          })),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          indexFromOcr: null,
+          indexStatus: 'missing',
+          chosenIndexCandidate: null,
+          elapsedMs: Math.round(performance.now() - startedAt),
+          error: error instanceof Error ? error.message : String(error),
+          indexAttempts: [],
+        };
+      }
     }, { sourceUrl: moduleUrl, testCase });
 
+    const recognitionAttemptCount = result.indexAttempts.filter((attempt) => attempt.name !== 'index_time_budget').length;
+    assert.equal(result.error, null, testCase.name);
     assert.equal(result.indexFromOcr, testCase.expectedIndex, testCase.name);
     assert.match(result.indexStatus, /^(found|uncertain)$/, testCase.name);
-    assert.ok(result.indexAttempts.length > 0, testCase.name);
+    assert.ok(recognitionAttemptCount > 0, testCase.name);
+    assert.ok(recognitionAttemptCount <= 10, testCase.name);
+    assert.ok(Number.isFinite(result.elapsedMs) && result.elapsedMs >= 0, testCase.name);
     assert.ok(result.chosenIndexCandidate, testCase.name);
+    console.log(`${testCase.name}: elapsedMs=${result.elapsedMs} indexAttempts=${recognitionAttemptCount} index=${result.indexFromOcr} error=${result.error || 'none'}`);
   }
 } finally {
   await browser.close();

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_MAX_INDEX_ATTEMPTS,
   chooseIndexCandidate,
   decimalPlaces,
   extractIndexCandidatesFromText,
@@ -205,5 +206,163 @@ assert.equal(lowPrecisionOcr.ocrStatus, 'low_precision');
 assert.equal(lowPrecisionOcr.coordinateQuality, 'low_precision');
 assert.equal(lowPrecisionOcr.attempts.length, 1);
 assert.equal(recognizeCalls, 1);
+
+const mockCanvas = (name) => ({
+  name,
+  width: 96,
+  height: 24,
+  sourceBounds: { x: 0, y: 0, width: 96, height: 24 },
+  toDataURL: () => '',
+});
+
+const indexRecognitionAttempts = (result) => (result.indexAttempts || [])
+  .filter((attempt) => attempt.name !== 'index_time_budget');
+
+const hasIndexBudgetExhausted = (result) => (result.indexAttempts || [])
+  .some((attempt) => attempt.rejectionReason === 'index_ocr_time_budget_exhausted');
+
+const runMockedIndexFlow = async ({
+  indexTexts,
+  indexConfidence = 30,
+  indexAdvanceMs = 0,
+  coordinateText = '64.123456, 30.123456',
+  coordinateAdvanceMs = 0,
+  maxIndexAttempts = DEFAULT_MAX_INDEX_ATTEMPTS,
+  indexTimeBudgetMs = 1_000,
+  timeBudgetMs = 20_000,
+  lineFound = true,
+} = {}) => {
+  const originalDateNow = Date.now;
+  let now = 0;
+  let coordinateRecognitions = 0;
+  let indexRecognitions = 0;
+  const remainingIndexTexts = [...(indexTexts || [])];
+  Date.now = () => now;
+  try {
+    const result = await readGpsFromImageOcr({ name: 'mock-index.jpg' }, {
+      variants: [
+        { name: 'coordinate_mock', cropName: 'coordinate_mock', crop: {}, preprocess: { method: 'original' } },
+      ],
+      maxAttempts: 1,
+      timeBudgetMs,
+      indexTimeBudgetMs,
+      maxIndexAttempts,
+      dependencies: {
+        loadImage: async () => ({ naturalWidth: 1200, naturalHeight: 900, width: 1200, height: 900 }),
+        createSession: async () => ({ terminate: async () => {} }),
+        crop: () => mockCanvas('coordinate'),
+        cropOverlay: () => mockCanvas('index-fallback'),
+        detectBlackOverlay: () => ({
+          found: true,
+          detectorName: 'black_bottom_right_overlay',
+          bounds: { x: 900, y: 720, width: 300, height: 160 },
+          canvas: mockCanvas('overlay'),
+        }),
+        detectIndexLine: () => (lineFound
+          ? { found: true, bounds: { x: 900, y: 820, width: 300, height: 44 }, canvas: mockCanvas('index-line') }
+          : { found: false, reason: 'line_not_found' }),
+        preprocess: (canvas) => canvas,
+        recognize: async (_canvas, recognizeOptions = {}) => {
+          const isIndexOcr = String(recognizeOptions.whitelist || '').includes('Index')
+            && !String(recognizeOptions.whitelist || '').includes('LAT');
+          if (isIndexOcr) {
+            indexRecognitions += 1;
+            now += indexAdvanceMs;
+            return { text: remainingIndexTexts.shift() ?? '', confidence: indexConfidence };
+          }
+          coordinateRecognitions += 1;
+          now += coordinateAdvanceMs;
+          return { text: coordinateText, confidence: 96 };
+        },
+      },
+    });
+    return { result, coordinateRecognitions, indexRecognitions };
+  } finally {
+    Date.now = originalDateNow;
+  }
+};
+
+const noIndexLimited = await runMockedIndexFlow({
+  indexTexts: Array.from({ length: 20 }, () => ''),
+  maxIndexAttempts: 4,
+  indexTimeBudgetMs: 1_000,
+  lineFound: false,
+});
+assert.equal(noIndexLimited.result.indexFromOcr, null);
+assert.equal(noIndexLimited.indexRecognitions, 4);
+assert.equal(indexRecognitionAttempts(noIndexLimited.result).length, 4);
+
+const slowIndex = await runMockedIndexFlow({
+  indexTexts: ['', '', ''],
+  indexTimeBudgetMs: 5,
+  indexAdvanceMs: 6,
+});
+assert.equal(slowIndex.indexRecognitions, 1);
+assert.equal(hasIndexBudgetExhausted(slowIndex.result), true);
+
+const candidateBeforeBudget = await runMockedIndexFlow({
+  indexTexts: ['5939', '', ''],
+  indexConfidence: 42,
+  indexTimeBudgetMs: 5,
+  indexAdvanceMs: 6,
+});
+assert.equal(candidateBeforeBudget.result.indexFromOcr, '5939');
+assert.equal(hasIndexBudgetExhausted(candidateBeforeBudget.result), true);
+
+const confidentIndex = await runMockedIndexFlow({
+  indexTexts: ['5939', '', ''],
+  indexConfidence: 91,
+  indexTimeBudgetMs: 1_000,
+  indexAdvanceMs: 1,
+});
+assert.equal(confidentIndex.result.indexFromOcr, '5939');
+assert.equal(confidentIndex.result.indexStatus, 'found');
+assert.equal(confidentIndex.indexRecognitions, 1);
+assert.equal(hasIndexBudgetExhausted(confidentIndex.result), false);
+
+const separateBudgets = await runMockedIndexFlow({
+  indexTexts: ['5192', '', ''],
+  indexConfidence: 42,
+  coordinateAdvanceMs: 10_000,
+  indexAdvanceMs: 6,
+  timeBudgetMs: 20_000,
+  indexTimeBudgetMs: 5,
+});
+assert.equal(separateBudgets.result.ok, true);
+assert.equal(separateBudgets.coordinateRecognitions, 1);
+assert.equal(separateBudgets.result.attempts.some((attempt) => (
+  attempt.rejectionReason === 'ocr_time_budget_exhausted'
+)), false);
+assert.equal(hasIndexBudgetExhausted(separateBudgets.result), true);
+
+const originalDateNow = Date.now;
+let coordinateNow = 0;
+Date.now = () => coordinateNow;
+try {
+  const coordinateBudget = await readGpsFromImageOcr({ name: 'coordinate-budget.jpg' }, {
+    variants: [
+      { name: 'first_noise', cropName: 'first_noise', crop: {}, preprocess: { method: 'original' } },
+      { name: 'second_should_not_run', cropName: 'second_should_not_run', crop: {}, preprocess: { method: 'original' } },
+    ],
+    timeBudgetMs: 20_000,
+    skipIndexOcr: true,
+    dependencies: {
+      loadImage: async () => ({ naturalWidth: 100, naturalHeight: 100 }),
+      createSession: async () => ({ terminate: async () => {} }),
+      crop: () => mockCanvas('coordinate-budget'),
+      preprocess: (canvas) => canvas,
+      recognize: async () => {
+        coordinateNow += 20_001;
+        return { text: 'noise without coordinates', confidence: 20 };
+      },
+    },
+  });
+  assert.equal(coordinateBudget.attempts.some((attempt) => (
+    attempt.rejectionReason === 'ocr_time_budget_exhausted'
+  )), true);
+  assert.equal(coordinateBudget.indexAttempts.length, 0);
+} finally {
+  Date.now = originalDateNow;
+}
 
 console.log('OCR parser tests passed');

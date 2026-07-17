@@ -115,6 +115,9 @@ const INDEX_OCR_WHITELIST = '0123456789OoОоIl|BbSs№#IndexINDEXИндекси
 const DECIMAL_NUMBER_RE = /[-+]?\d{1,3}\.\d{3,10}/g;
 const KARELIA_SHORT_DECIMAL_PAIR_RE = /((?:6[0-9]|70)\.\d{2,10})\D{0,30}((?:2[5-9]|3[0-9]|40)\.\d{2,10})/g;
 const INDEX_TOKEN_RE = /(?<![\d.,])([0-9OoОоIl|BbSs]{4,5})(?![\d.,])(?!(?:\s*[mм]))/g;
+export const DEFAULT_MAX_INDEX_ATTEMPTS = 10;
+export const DEFAULT_INDEX_TIME_BUDGET_MS = 22_000;
+export const DEFAULT_MOBILE_INDEX_TIME_BUDGET_MS = 14_000;
 
 const INDEX_PREPROCESS_VARIANTS = [
   { name: 'original_4x', preprocess: { method: 'original', upscale: 4 }, pageSegMode: '7' },
@@ -125,6 +128,7 @@ const INDEX_PREPROCESS_VARIANTS = [
   { name: 'threshold_150_4x_psm8', preprocess: { method: 'threshold', upscale: 4, threshold: 150, contrast: 2.1 }, pageSegMode: '8' },
   { name: 'grayscale_contrast_4x_psm13', preprocess: { method: 'grayscale', upscale: 4, contrast: 2.05 }, pageSegMode: '13' },
 ];
+const INDEX_VARIANT_BY_NAME = new Map(INDEX_PREPROCESS_VARIANTS.map((variant) => [variant.name, variant]));
 
 export function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
@@ -1296,13 +1300,13 @@ const indexFallbackCrops = [
   { name: 'overlay_lower_55', overlayCrop: { yRatio: 0.45, heightRatio: 0.55, paddingPx: 6 }, isolatedLine: false },
   { name: 'overlay_lower_40', overlayCrop: { yRatio: 0.58, heightRatio: 0.42, paddingPx: 6 }, isolatedLine: false },
   { name: 'overlay_lower_right', overlayCrop: { xRatio: 0.32, yRatio: 0.42, widthRatio: 0.68, heightRatio: 0.58, paddingPx: 6 }, isolatedLine: false },
-  { name: 'overlay_lower_padded', overlayCrop: { yRatio: 0.5, heightRatio: 0.48, paddingPx: 10 }, isolatedLine: false },
 ];
 
 function buildIndexCropCandidates(image, overlayDetection, options = {}) {
   if (!overlayDetection?.found) return [];
   const crops = [];
   const detectLine = options.dependencies?.detectIndexLine || detectIndexTextLine;
+  const cropOverlay = options.dependencies?.cropOverlay || cropDetectedOverlayLine;
   const line = detectLine(image, overlayDetection, options);
   if (line?.found && line.canvas) {
     crops.push({
@@ -1316,7 +1320,7 @@ function buildIndexCropCandidates(image, overlayDetection, options = {}) {
 
   indexFallbackCrops.forEach((item) => {
     try {
-      const canvas = cropDetectedOverlayLine(image, overlayDetection, item.overlayCrop);
+      const canvas = cropOverlay(image, overlayDetection, item.overlayCrop);
       crops.push({
         name: item.name,
         canvas,
@@ -1330,8 +1334,79 @@ function buildIndexCropCandidates(image, overlayDetection, options = {}) {
   return crops;
 }
 
+const isMobileRuntime = (options = {}) => {
+  if (options.mobile === true || options.isMobile === true) return true;
+  if (options.mobile === false || options.isMobile === false) return false;
+  const userAgent = globalThis.navigator?.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+};
+
+const resolveIndexTimeBudgetMs = (options = {}) => {
+  const explicit = Number(options.indexTimeBudgetMs);
+  if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+  return isMobileRuntime(options) ? DEFAULT_MOBILE_INDEX_TIME_BUDGET_MS : DEFAULT_INDEX_TIME_BUDGET_MS;
+};
+
+const resolveMaxIndexAttempts = (options = {}) => {
+  const explicit = Number(options.maxIndexAttempts);
+  return Math.max(1, Math.floor(Number.isFinite(explicit) ? explicit : DEFAULT_MAX_INDEX_ATTEMPTS));
+};
+
+const indexVariants = (names) => names.map((name) => INDEX_VARIANT_BY_NAME.get(name)).filter(Boolean);
+
+function buildIndexAttemptPlan(crops, maxIndexAttempts) {
+  const byName = new Map((crops || []).map((crop) => [crop.name, crop]));
+  const plan = [];
+  const add = (cropName, variantNames) => {
+    const crop = byName.get(cropName);
+    if (!crop) return;
+    indexVariants(variantNames).forEach((variant) => {
+      if (plan.length < maxIndexAttempts) plan.push({ crop, variant });
+    });
+  };
+
+  add('detected_lower_text_line', ['original_4x', 'grayscale_contrast_4x', 'threshold_150_4x']);
+  add('overlay_lower_55', ['original_4x', 'grayscale_contrast_4x', 'threshold_150_4x']);
+  add('overlay_lower_40', ['original_4x', 'grayscale_contrast_4x']);
+  add('overlay_lower_right', ['original_4x', 'threshold_150_4x']);
+  return plan;
+}
+
+const indexBudgetAttempt = ({ elapsedMs, indexTimeBudgetMs, maxIndexAttempts }) => ({
+  name: 'index_time_budget',
+  cropName: null,
+  cropBounds: null,
+  cropDimensions: null,
+  preparedDimensions: null,
+  preprocessingMethod: null,
+  pageSegMode: null,
+  overlayDetected: true,
+  rawText: '',
+  normalizedText: '',
+  ocrConfidence: 0,
+  indexCandidates: [],
+  rejectionReason: 'index_ocr_time_budget_exhausted',
+  warnings: ['index_ocr_time_budget_exhausted'],
+  elapsedMs,
+  indexTimeBudgetMs,
+  maxIndexAttempts,
+});
+
 async function runIndexOcr(image, session, overlayDetections, options = {}) {
   const attempts = [];
+  const allCandidates = [];
+  const indexStartedAt = Date.now();
+  const indexTimeBudgetMs = resolveIndexTimeBudgetMs(options);
+  const maxIndexAttempts = resolveMaxIndexAttempts(options);
+  const finish = () => ({ attempts, chosen: chooseIndexCandidate(allCandidates), indexTimeBudgetMs, maxIndexAttempts });
+  const stopForBudget = () => {
+    attempts.push(indexBudgetAttempt({
+      elapsedMs: Date.now() - indexStartedAt,
+      indexTimeBudgetMs,
+      maxIndexAttempts,
+    }));
+    return finish();
+  };
   const detector = options.dependencies?.detectBlackOverlay || options.dependencies?.detectOverlay || detectBlackBottomRightOverlay;
   let overlayDetection = overlayDetections.get('black_bottom_right_overlay');
   if (!overlayDetection) {
@@ -1368,76 +1443,89 @@ async function runIndexOcr(image, session, overlayDetections, options = {}) {
     };
   }
 
-  const allCandidates = [];
-  for (const crop of crops) {
-    for (const variant of INDEX_PREPROCESS_VARIANTS) {
-      const name = `${crop.name}:${variant.name}`;
-      let prepared = null;
-      try {
-        prepared = (options.dependencies?.preprocess || preprocessForOcr)(crop.canvas, variant.preprocess);
-        options.onProgress?.({ status: `recognizing_index:${name}`, progress: 0 });
-        const recognized = await (options.dependencies?.recognize || recognizeTextFromCanvas)(prepared, {
-          ...options,
-          session,
-          whitelist: INDEX_OCR_WHITELIST,
-          pageSegMode: variant.pageSegMode,
-        });
-        const ocrConfidence = Math.max(0, Math.min(0.99, Number(recognized.confidence) / 100));
-        const indexCandidates = extractIndexCandidatesFromText(recognized.text, {
-          source: 'index_ocr',
-          defaultStatus: 'uncertain',
-          ocrConfidence,
-          cropBounds: crop.sourceBounds,
-          cropName: crop.name,
-          attemptName: name,
-          isolatedLine: crop.isolatedLine,
-        });
-        allCandidates.push(...indexCandidates);
-        attempts.push({
-          name,
-          cropName: crop.name,
-          cropBounds: crop.sourceBounds,
-          cropDimensions: { width: crop.canvas.width, height: crop.canvas.height },
-          preparedDimensions: { width: prepared.width, height: prepared.height },
-          preprocessingMethod: variant.name,
-          pageSegMode: variant.pageSegMode,
-          overlayDetected: true,
-          overlayBounds: overlayDetection.bounds || null,
-          rawText: recognized.text || '',
-          normalizedText: normalizeIndexOcrText(recognized.text || ''),
-          ocrConfidence,
-          indexCandidates,
-          cropPreview: options.debug === true ? safeCanvasDataUrl(crop.canvas) : '',
-          processedPreview: options.debug === true ? safeCanvasDataUrl(prepared) : '',
-          rejectionReason: indexCandidates.length > 0 ? null : 'index_not_found',
-        });
-        const chosen = chooseIndexCandidate(allCandidates);
-        if (chosen.indexStatus === 'found' && chosen.chosenIndexCandidate?.repeated) {
-          return { attempts, chosen };
-        }
-      } catch (error) {
-        attempts.push({
-          name,
-          cropName: crop.name,
-          cropBounds: crop.sourceBounds,
-          cropDimensions: { width: crop.canvas.width, height: crop.canvas.height },
-          preparedDimensions: prepared ? { width: prepared.width, height: prepared.height } : null,
-          preprocessingMethod: variant.name,
-          pageSegMode: variant.pageSegMode,
-          overlayDetected: true,
-          overlayBounds: overlayDetection.bounds || null,
-          rawText: '',
-          normalizedText: '',
-          ocrConfidence: 0,
-          indexCandidates: [],
-          rejectionReason: error instanceof Error ? error.message : String(error),
-        });
-        if (error?.name === 'TimeoutError') return { attempts, chosen: chooseIndexCandidate(allCandidates) };
-      }
+  const plan = buildIndexAttemptPlan(crops, maxIndexAttempts);
+  if (plan.length === 0) {
+    return {
+      attempts: [{
+        name: 'index_attempt_plan_empty',
+        detectorName: 'black_bottom_right_overlay',
+        overlayDetected: true,
+        overlayDetection,
+        indexCandidates: [],
+        rejectionReason: 'index_attempt_plan_empty',
+      }],
+      chosen: chooseIndexCandidate([]),
+      indexTimeBudgetMs,
+      maxIndexAttempts,
+    };
+  }
+
+  for (const { crop, variant } of plan) {
+    if (Date.now() - indexStartedAt >= indexTimeBudgetMs) return stopForBudget();
+    const name = `${crop.name}:${variant.name}`;
+    let prepared = null;
+    try {
+      prepared = (options.dependencies?.preprocess || preprocessForOcr)(crop.canvas, variant.preprocess);
+      options.onProgress?.({ status: `recognizing_index:${name}`, progress: 0 });
+      const recognized = await (options.dependencies?.recognize || recognizeTextFromCanvas)(prepared, {
+        ...options,
+        session,
+        whitelist: INDEX_OCR_WHITELIST,
+        pageSegMode: variant.pageSegMode,
+      });
+      const ocrConfidence = Math.max(0, Math.min(0.99, Number(recognized.confidence) / 100));
+      const indexCandidates = extractIndexCandidatesFromText(recognized.text, {
+        source: 'index_ocr',
+        defaultStatus: 'uncertain',
+        ocrConfidence,
+        cropBounds: crop.sourceBounds,
+        cropName: crop.name,
+        attemptName: name,
+        isolatedLine: crop.isolatedLine,
+      });
+      allCandidates.push(...indexCandidates);
+      attempts.push({
+        name,
+        cropName: crop.name,
+        cropBounds: crop.sourceBounds,
+        cropDimensions: { width: crop.canvas.width, height: crop.canvas.height },
+        preparedDimensions: { width: prepared.width, height: prepared.height },
+        preprocessingMethod: variant.name,
+        pageSegMode: variant.pageSegMode,
+        overlayDetected: true,
+        overlayBounds: overlayDetection.bounds || null,
+        rawText: recognized.text || '',
+        normalizedText: normalizeIndexOcrText(recognized.text || ''),
+        ocrConfidence,
+        indexCandidates,
+        cropPreview: options.debug === true ? safeCanvasDataUrl(crop.canvas) : '',
+        processedPreview: options.debug === true ? safeCanvasDataUrl(prepared) : '',
+        rejectionReason: indexCandidates.length > 0 ? null : 'index_not_found',
+      });
+      const chosen = chooseIndexCandidate(allCandidates);
+      if (chosen.indexStatus === 'found') return finish();
+    } catch (error) {
+      attempts.push({
+        name,
+        cropName: crop.name,
+        cropBounds: crop.sourceBounds,
+        cropDimensions: { width: crop.canvas.width, height: crop.canvas.height },
+        preparedDimensions: prepared ? { width: prepared.width, height: prepared.height } : null,
+        preprocessingMethod: variant.name,
+        pageSegMode: variant.pageSegMode,
+        overlayDetected: true,
+        overlayBounds: overlayDetection.bounds || null,
+        rawText: '',
+        normalizedText: '',
+        ocrConfidence: 0,
+        indexCandidates: [],
+        rejectionReason: error instanceof Error ? error.message : String(error),
+      });
+      if (error?.name === 'TimeoutError') return finish();
     }
   }
 
-  return { attempts, chosen: chooseIndexCandidate(allCandidates) };
+  return finish();
 }
 
 export async function readGpsFromImageOcr(file, options = {}) {
