@@ -673,11 +673,13 @@ export function extractIndexCandidatesFromText(text, metadata = {}) {
   const candidates = [];
   const seen = new Set();
   const add = (match, status, source, extra = {}) => {
+    const contextText = extra.contextText || normalizedText;
+    const matchText = String(match?.[0] || match);
     const value = normalizeIndexCandidate(match?.[1] || match);
     if (!value) return;
-    const start = Number.isInteger(match?.index) ? match.index : normalizedText.indexOf(String(match?.[0] || match));
-    const end = start >= 0 ? start + String(match?.[0] || match).length : start;
-    if (start >= 0 && looksLikeDateOrTimeContext(normalizedText, start, end)) return;
+    const start = Number.isInteger(match?.index) ? match.index : contextText.indexOf(matchText);
+    const end = start >= 0 ? start + matchText.length : start;
+    if (start >= 0 && looksLikeDateOrTimeContext(contextText, start, end)) return;
     const key = `${value}:${source}:${start}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -719,6 +721,7 @@ export function extractIndexCandidatesFromText(text, metadata = {}) {
   const textAfterCoordinates = stripCoordinateNumbers(normalizedText);
   for (const match of textAfterCoordinates.matchAll(INDEX_TOKEN_RE)) {
     add(match, metadata.defaultStatus || 'uncertain', metadata.source || 'standalone_text', {
+      contextText: textAfterCoordinates,
       isolatedLine: /^[\s#№:=-]*[0-9OoОоIl|BbSs]{4,5}[\s#№:=-]*$/i.test(textAfterCoordinates),
     });
   }

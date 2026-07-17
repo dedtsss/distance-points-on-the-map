@@ -90,6 +90,26 @@ assert.equal(parseGpsFromOcrText('64.123456, 30.123456, 2379м').indexFromOcr, n
 assert.equal(parseGpsFromOcrText('64.123456, 30.123456').indexFromOcr, null);
 assert.equal(parseGpsFromOcrText('Дата 2026-07-17 64.123456, 30.123456').indexFromOcr, null);
 
+const coordinateDateOrTimeTexts = [
+  '64.123456, 30.123456 2026-07-17',
+  '64.123456, 30.123456 17.07.2026',
+  '64.123456, 30.123456 12:34',
+  '64.123456, 30.123456 2026-07-17 12:34:56',
+];
+for (const text of coordinateDateOrTimeTexts) {
+  assert.equal(parseGpsFromOcrText(text).indexFromOcr, null, text);
+  assert.deepEqual(extractIndexCandidatesFromText(text), [], text);
+}
+
+const coordinateStandaloneIndexTexts = [
+  ['64.123456, 30.123456 5939', '5939'],
+  ['64.123456, 30.123456 12345', '12345'],
+  ['64.123456, 30.123456 0123', '0123'],
+];
+for (const [text, expectedIndex] of coordinateStandaloneIndexTexts) {
+  assert.equal(parseGpsFromOcrText(text).indexFromOcr, expectedIndex, text);
+}
+
 const repeatedIndex = chooseIndexCandidate([
   { value: '0123', source: 'index_ocr', attemptName: 'line:original', ocrConfidence: 0.61, score: 0.7, isolatedLine: true },
   { value: '0123', source: 'index_ocr', attemptName: 'line:threshold', ocrConfidence: 0.58, score: 0.68, isolatedLine: true },
