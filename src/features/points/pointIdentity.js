@@ -9,9 +9,16 @@ const normalizeIndexCharacters = (value) => String(value || '')
 
 export function normalizeIndexValue(value) {
   const normalized = normalizeIndexCharacters(value);
-  const match = normalized.match(/\d{1,6}/);
-  if (!match || /^0+$/.test(match[0])) return null;
-  return match[0];
+  const match = normalized.match(/(?:^|\D)(\d{4,5})(?!\d)/);
+  if (!match) return null;
+  return match[1];
+}
+
+export function indexDisplayText(photo = {}) {
+  const index = normalizeIndexValue(photo.indexFromOcr ?? photo.index);
+  if (!index) return 'Индекс не найден';
+  if (photo.indexStatus === 'uncertain') return `Индекс: ${index} — проверить`;
+  return `Индекс: ${index}`;
 }
 
 export function buildPointIdentity(photo = {}) {
