@@ -1,0 +1,155 @@
+{
+  "baseUrl": "http://127.0.0.1:4173/",
+  "startedAt": "2026-07-16T22:00:52.890Z",
+  "screenshots": [
+    "dashboard-desktop.png",
+    "upload-desktop.png",
+    "map-desktop.png",
+    "results-desktop.png",
+    "sessions-desktop.png",
+    "journal-desktop.png",
+    "settings-desktop.png",
+    "dashboard-mobile-390.png",
+    "navigation-mobile-390.png",
+    "upload-mobile-390.png",
+    "map-mobile-390.png",
+    "results-mobile-390.png"
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "badResponses": [],
+  "layoutMetrics": [
+    {
+      "name": "dashboard-desktop-1440",
+      "viewport": "1440x900",
+      "clientWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "documentScrollWidth": 1440,
+      "horizontalScroll": false
+    },
+    {
+      "name": "desktop-1440",
+      "viewport": "1440x900",
+      "clientWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "documentScrollWidth": 1440,
+      "horizontalScroll": false
+    },
+    {
+      "name": "desktop-1280",
+      "viewport": "1280x800",
+      "clientWidth": 1280,
+      "bodyScrollWidth": 1280,
+      "documentScrollWidth": 1280,
+      "horizontalScroll": false
+    },
+    {
+      "name": "tablet-768",
+      "viewport": "768x1024",
+      "clientWidth": 768,
+      "bodyScrollWidth": 768,
+      "documentScrollWidth": 768,
+      "horizontalScroll": false
+    },
+    {
+      "name": "mobile-390",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "bodyScrollWidth": 390,
+      "documentScrollWidth": 390,
+      "horizontalScroll": false
+    },
+    {
+      "name": "mobile-360",
+      "viewport": "360x800",
+      "clientWidth": 360,
+      "bodyScrollWidth": 360,
+      "documentScrollWidth": 360,
+      "horizontalScroll": false
+    },
+    {
+      "name": "results-mobile-390-final",
+      "viewport": "390x844",
+      "clientWidth": 390,
+      "bodyScrollWidth": 390,
+      "documentScrollWidth": 390,
+      "horizontalScroll": false
+    },
+    {
+      "name": "results-mobile-360-final",
+      "viewport": "360x800",
+      "clientWidth": 360,
+      "bodyScrollWidth": 360,
+      "documentScrollWidth": 360,
+      "horizontalScroll": false
+    }
+  ],
+  "dashboard": {
+    "emptyExplainsNoHistory": true,
+    "hasFakeYesterday": false,
+    "hasFakeStorage": false,
+    "hasFakeServiceStatus": false
+  },
+  "uploadSmoke": {
+    "filePickerSelected": 2,
+    "removeOneLeft": 1,
+    "finalCardCount": 2,
+    "requestCount": 1,
+    "sameOriginUpload": true,
+    "genericFilenames": true,
+    "originalNamesNotInMultipart": true
+  },
+  "mapSmoke": {
+    "leafletLoaded": 1,
+    "markers": 2,
+    "zoomBox": {
+      "x": 293,
+      "y": 208.375,
+      "width": 34,
+      "height": 64
+    },
+    "sidePanelBox": {
+      "x": 1082,
+      "y": 197.375,
+      "width": 340,
+      "height": 640
+    },
+    "selectedCardVisible": true,
+    "mobileSheetInitiallyOpen": false,
+    "mobilePointItems": 19,
+    "mobileZoomVisibleWithSheetOpen": false,
+    "mobileZoomVisibleAfterSheetClose": true,
+    "mobileZoomCoveredAfterSheetClose": false
+  },
+  "sessionRestore": {
+    "promptVisible": true,
+    "restoredCards": 0,
+    "bodyHasRestoredNotice": true
+  },
+  "mobileResults": {
+    "desktopTableDisplay": "none",
+    "cardCount": 20,
+    "bodyTextHasLowPrecision": true,
+    "bodyTextHasConflict": true
+  },
+  "buildInfo": {
+    "text": "О ПРИЛОЖЕНИИ\n\nВерсия и сборка\nВерсия\n0.2.0\nДата сборки\n2026-07-16T22:00:43.788Z\nВетка\nfeat/material3-dashboard-redesign\nCommit\nd5e415e\nСостояние\nЧистая сборка\nproviderSettings\ntrue\nsessionRestore\ntrue\npreviews\ntrue\nmultiPassOcr\ntrue",
+    "hasDirty": false,
+    "hasCommit": true
+  },
+  "checks": {
+    "focusVisible": true,
+    "confirmDialogVisible": true,
+    "confirmDialogClosedWithEscape": true,
+    "allScreensVisited": true,
+    "screenshotsCreated": 12,
+    "consoleErrorsCount": 0,
+    "pageErrorsCount": 0,
+    "failedRequestsCount": 0,
+    "badResponsesCount": 0
+  },
+  "defects": [],
+  "status": "passed",
+  "finishedAt": "2026-07-16T22:01:18.646Z"
+}

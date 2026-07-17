@@ -4,14 +4,21 @@ const BUILD = typeof __BUILD_INFO__ === 'undefined' ? {
 
 export default function BuildInfo() {
   return (
-    <details className="build-info">
-      <summary>Версия приложения: {BUILD.version} · {BUILD.commit}{BUILD.dirty ? '-dirty' : ''}</summary>
+    <section className="build-info" aria-labelledby="build-info-title">
+      <div className="panel-heading">
+        <div>
+          <p className="page-eyebrow">О приложении</p>
+          <h3 id="build-info-title">Версия и сборка</h3>
+        </div>
+      </div>
       <dl>
-        <div><dt>Сборка</dt><dd>{BUILD.timestamp}</dd></div>
+        <div><dt>Версия</dt><dd>{BUILD.version}</dd></div>
+        <div><dt>Дата сборки</dt><dd>{BUILD.timestamp}</dd></div>
         <div><dt>Ветка</dt><dd>{BUILD.branch}</dd></div>
-        <div><dt>Commit</dt><dd>{BUILD.commit}</dd></div>
+        <div><dt>Commit</dt><dd>{BUILD.commit}{BUILD.dirty ? '-dirty' : ''}</dd></div>
+        <div><dt>Состояние</dt><dd>{BUILD.dirty ? 'Есть незакоммиченные изменения' : 'Чистая сборка'}</dd></div>
         {Object.entries(BUILD.features).map(([key, enabled]) => <div key={key}><dt>{key}</dt><dd>{String(enabled)}</dd></div>)}
       </dl>
-    </details>
+    </section>
   );
 }
