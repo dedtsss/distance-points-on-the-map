@@ -13,9 +13,14 @@ Target private production frontend and API:
 ```text
 https://gps.bruce-group.net/
 https://gps.bruce-group.net/api/upload
+https://gps-guest.bruce-group.net/
+https://gps-guest.bruce-group.net/api/upload
 ```
 
-Production is prepared as one Cloudflare Worker that serves the Vite `dist` frontend through Workers Static Assets and handles the upload proxy API from the same origin.
+Production is prepared as two independent Cloudflare Workers that both serve the same Vite `dist` frontend and upload proxy API:
+
+- owner Worker (`wrangler.toml`) for `gps.bruce-group.net` with Cloudflare Access (Google);
+- guest Worker (`wrangler.guest.toml`) for `gps-guest.bruce-group.net` with Worker Basic Auth.
 
 ## Local Development
 
@@ -44,6 +49,7 @@ Run a Worker/static-assets dry run:
 
 ```bash
 npx wrangler deploy --dry-run --config wrangler.toml
+npx wrangler deploy --dry-run --config wrangler.guest.toml
 ```
 
 ## Production Worker Layout
@@ -57,13 +63,22 @@ npx wrangler deploy --dry-run --config wrangler.toml
 - custom domain: `gps.bruce-group.net`
 - `workers_dev = false` so the production app is not exposed on a public `workers.dev` URL
 
+`wrangler.guest.toml` defines:
+
+- Worker name: `gps-checker-map-photo-guest`
+- same entrypoint: `workers/host-proxy/worker.js`
+- same static assets directory: `./dist`
+- custom domain: `gps-guest.bruce-group.net`
+- `BASIC_AUTH_USERNAME = "guest"` (non-secret var)
+- `workers_dev = false`
+
 Routes:
 
 - `GET /` and static assets: served from `dist` after access checks
 - `POST /api/upload`: upload proxy API
 - `POST /`: legacy upload endpoint kept for old smoke scripts and old frontend builds
 
-To change the production hostname, update the single `[[routes]].pattern` value in `wrangler.toml`. The GitHub Actions environment URL is display-only and should be updated to match.
+To change hostnames, update `[[routes]].pattern` in both Wrangler configs. Owner and guest names/routes must stay different.
 
 ## Vite Base and API URL
 
@@ -100,29 +115,33 @@ VITE_BASE_PATH=/ VITE_UPLOAD_PROXY_URL=/api/upload npm run build
 
 ## Access Control
 
-Preferred production protection: Cloudflare Access.
+Owner (`gps.bruce-group.net`): Cloudflare Access (Google login) stays enabled.
+To avoid a second browser login prompt on owner hostname, keep `BASIC_AUTH_PASSWORD` unset in owner Worker.
 
-1. In Cloudflare Zero Trust, create a Self-hosted/private Access application.
-2. Add public hostname `gps.bruce-group.net`.
-3. Add an Allow policy for the owner identity only.
-4. Keep Worker fallback auth disabled or set it as a backup.
+Guest (`gps-guest.bruce-group.net`): Worker Basic Auth is mandatory on every request.
 
-Worker fallback protection is also implemented. Do not commit secrets.
-
-Basic Auth:
+Set guest password only as Worker secret (never in Git/docs/issue/PR logs):
 
 ```bash
-npx wrangler secret put BASIC_AUTH_PASSWORD --config wrangler.toml
+npx wrangler secret put BASIC_AUTH_PASSWORD --config wrangler.guest.toml
 ```
 
-Default username is `owner` from `wrangler.toml`:
+Rotate guest password by re-running the same command with a new value. Code/config changes are not required.
+
+If account-level Access default-deny is enabled, create an exact-host bypass only for `gps-guest.bruce-group.net` so the Worker Basic Auth prompt can be shown.
+
+Worker fallback access remains available for CI/machine/break-glass via `APP_ACCESS_TOKEN` and `X-App-Access-Token` or `Authorization: Bearer`.
+
+Do not commit secrets.
+
+Default owner username is `owner` from `wrangler.toml` (used only if owner Basic Auth secret is intentionally configured):
 
 ```toml
 [vars]
 BASIC_AUTH_USERNAME = "owner"
 ```
 
-Token/header access:
+Token/header access (owner/guest machine access compatibility):
 
 ```bash
 npx wrangler secret put APP_ACCESS_TOKEN --config wrangler.toml
@@ -143,7 +162,8 @@ Prerequisites:
 
 - `bruce-group.net` is an active Cloudflare zone in the target account.
 - No conflicting DNS record already exists for `gps.bruce-group.net`.
-- The Worker is deployed with the `[[routes]]` custom domain entry from `wrangler.toml`.
+- No conflicting DNS record already exists for `gps-guest.bruce-group.net`.
+- Workers are deployed with `[[routes]]` custom domain entries from both Wrangler configs.
 
 Wrangler-managed custom domain:
 
@@ -156,9 +176,9 @@ custom_domain = true
 Dashboard alternative:
 
 1. Cloudflare Dashboard → Workers & Pages.
-2. Select `gps-checker-map-photo`.
+2. Select `gps-checker-map-photo` (owner) or `gps-checker-map-photo-guest` (guest).
 3. Settings → Domains & Routes → Add → Custom Domain.
-4. Enter `gps.bruce-group.net`.
+4. Enter `gps.bruce-group.net` for owner Worker or `gps-guest.bruce-group.net` for guest Worker.
 
 Cloudflare creates or manages the required DNS/certificate state for the custom domain. Remove any conflicting manual DNS record first.
 
@@ -168,14 +188,15 @@ Production Worker deploy:
 
 ```text
 .github/workflows/deploy-worker.yml
+.github/workflows/deploy-worker-guest.yml
 ```
 
 Triggers:
 
-- push to `main`
-- manual `workflow_dispatch`
+- owner workflow: push to `main` and manual `workflow_dispatch`
+- guest workflow: manual `workflow_dispatch` only
 
-It does not deploy from PRs. It runs `npm test`, builds with `npm run build:cloudflare`, then deploys Worker plus static assets.
+Neither deploys from PRs. Guest deploy workflow runs `npm test`, `npm run build:cloudflare`, `git diff --check`, owner+guest dry-runs, secret preflight (`BASIC_AUTH_PASSWORD` presence), then deploys guest Worker/static assets.
 
 Required GitHub secrets:
 
@@ -209,6 +230,7 @@ Manual Worker smoke test:
 
 ```bash
 WORKER_URL=https://gps.bruce-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
+GUEST_BASIC_AUTH_PASSWORD='<guest-password>' node scripts/test-worker-guest-auth.mjs
 ```
 
 If Cloudflare Access protects the domain, use service token headers:
@@ -229,7 +251,9 @@ npm ci
 npm test
 npm run build:cloudflare
 npx wrangler deploy --dry-run --config wrangler.toml
+npx wrangler deploy --dry-run --config wrangler.guest.toml
 npx wrangler deploy --config wrangler.toml
+npx wrangler deploy --config wrangler.guest.toml
 ```
 
 Do not run the final deploy command until the custom domain and access policy/secrets are ready.

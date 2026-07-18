@@ -24,6 +24,7 @@
     "test:map-viewport": "node scripts/test-map-viewport.mjs",
     "test:ui": "node scripts/test-ui-render.mjs",
     "test:preview-smoke": "node scripts/test-preview-smoke.mjs",
+    "test:worker-guest-auth": "node scripts/test-worker-guest-auth.mjs",
     "debug:index-ocr": "node scripts/debug-index-ocr.mjs",
     "test:browser-audit": "node artifacts/browser-audit/iteration3-browser-check.mjs",
     "test:image-hosts": "node scripts/image-host-lab/test-hosts.mjs",
