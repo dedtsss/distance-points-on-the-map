@@ -278,12 +278,12 @@ const workerProviderOverrides = {
     items: batch.map((file) => ({ url: `https://ninja.worker/${file.name}`, directUrl: `https://ninja.worker/d/${file.name}` })),
   }),
 };
-const makeUploadRequest = (url) => {
+const makeUploadRequest = (url, headers = {}) => {
   const formData = new FormData();
   formData.append('target', 'bundle');
   formData.append('photoId', 'worker-a');
   formData.append('files', files[0], 'worker-a.jpg');
-  return new Request(url, { method: 'POST', body: formData });
+  return new Request(url, { method: 'POST', headers, body: formData });
 };
 const apiUploadResponse = await handleWorkerRequest(
   makeUploadRequest('https://gps.bruce-group.net/api/upload'),
@@ -331,6 +331,15 @@ const expectBasicChallenge = (response) => {
   assert.match(response.headers.get('Cache-Control'), /no-store/);
 };
 
+assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/'), {}), true);
+const ownerAccessFrontendResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
+  headers: { Accept: 'text/html' },
+}), assetEnv);
+assert.equal(ownerAccessFrontendResponse.status, 200);
+const ownerAccessUploadResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/api/upload', {
+  method: 'OPTIONS',
+}), assetEnv);
+assert.equal(ownerAccessUploadResponse.status, 204);
 assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/'), { BASIC_AUTH_PASSWORD: 'secret' }), false);
 const basicAuthorization = `Basic ${Buffer.from('owner:secret').toString('base64')}`;
 assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/', {
@@ -351,14 +360,33 @@ const authorizedResponse = await handleWorkerRequest(new Request('https://gps.br
 });
 assert.equal(authorizedResponse.status, 200);
 const guestBasicAuthorization = `Basic ${Buffer.from('guest:guest-secret').toString('base64')}`;
+assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/'), {
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+}), false);
+expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Accept: 'text/html' },
+}), {
+  ...assetEnv,
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+}));
+expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/upload', {
+  method: 'OPTIONS',
+}), {
+  ...assetEnv,
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+}));
 assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Authorization: guestBasicAuthorization },
-}), { BASIC_AUTH_PASSWORD: 'guest-secret', BASIC_AUTH_USERNAME: 'guest' }), true);
+}), { BASIC_AUTH_PASSWORD: 'guest-secret', BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'guest' }), true);
 expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Accept: 'text/html' },
 }), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
   BASIC_AUTH_USERNAME: 'guest',
 }));
 expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
@@ -369,6 +397,7 @@ expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.br
 }), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
   BASIC_AUTH_USERNAME: 'guest',
 }));
 const guestFrontendResponse = await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
@@ -379,6 +408,7 @@ const guestFrontendResponse = await handleWorkerRequest(new Request('https://gps
 }), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
   BASIC_AUTH_USERNAME: 'guest',
 });
 assert.equal(guestFrontendResponse.status, 200);
@@ -387,6 +417,7 @@ expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.br
 }), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
   BASIC_AUTH_USERNAME: 'guest',
 }));
 const guestUploadResponse = await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/upload', {
@@ -395,13 +426,25 @@ const guestUploadResponse = await handleWorkerRequest(new Request('https://gps-g
 }), {
   ...assetEnv,
   BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
   BASIC_AUTH_USERNAME: 'guest',
 });
 assert.equal(guestUploadResponse.status, 204);
+const guestUploadPostResponse = await handleWorkerRequest(
+  makeUploadRequest('https://gps-guest.bruce-group.net/api/upload', { Authorization: guestBasicAuthorization }),
+  {
+    ...assetEnv,
+    BASIC_AUTH_PASSWORD: 'guest-secret',
+    BASIC_AUTH_REQUIRED: 'true',
+    BASIC_AUTH_USERNAME: 'guest',
+  },
+  workerProviderOverrides,
+);
+assert.equal(guestUploadPostResponse.status, 200);
 const appTokenBasicAuthorization = `Basic ${Buffer.from('guest:app-token').toString('base64')}`;
 assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Authorization: appTokenBasicAuthorization },
-}), { APP_ACCESS_TOKEN: 'app-token', BASIC_AUTH_USERNAME: 'guest' }), false);
+}), { APP_ACCESS_TOKEN: 'app-token', BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'guest' }), false);
 const bearerResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
   headers: { Authorization: 'Bearer app-token' },
 }), {

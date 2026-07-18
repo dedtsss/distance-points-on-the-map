@@ -37,6 +37,7 @@ const safeEqual = (left, right) => {
 const getBasicAuthPassword = (env = {}) => String(env.BASIC_AUTH_PASSWORD || '').trim();
 const getBearerToken = (env = {}) => String(env.APP_ACCESS_TOKEN || '').trim();
 const getAccessUsername = (env = {}) => String(env.BASIC_AUTH_USERNAME || 'owner');
+const isBasicAuthRequired = (env = {}) => String(env.BASIC_AUTH_REQUIRED || '').trim().toLowerCase() === 'true';
 
 const decodeBasicCredentials = (authorization) => {
   const match = String(authorization || '').match(/^Basic\s+(.+)$/i);
@@ -57,7 +58,7 @@ const decodeBasicCredentials = (authorization) => {
 export function isAuthorizedRequest(request, env = {}) {
   const basicPassword = getBasicAuthPassword(env);
   const bearerToken = getBearerToken(env);
-  if (!basicPassword && !bearerToken) return true;
+  const basicRequired = isBasicAuthRequired(env);
 
   const authorization = request.headers.get('Authorization') || '';
   const basic = decodeBasicCredentials(authorization);
@@ -67,7 +68,12 @@ export function isAuthorizedRequest(request, env = {}) {
 
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] || '';
   const headerToken = request.headers.get('X-App-Access-Token') || '';
-  return Boolean(bearerToken) && (safeEqual(bearer, bearerToken) || safeEqual(headerToken, bearerToken));
+  if (bearerToken && (safeEqual(bearer, bearerToken) || safeEqual(headerToken, bearerToken))) {
+    return true;
+  }
+
+  if (basicRequired) return false;
+  return !basicPassword && !bearerToken;
 }
 
 const unauthorized = () => new Response('Authentication required', {

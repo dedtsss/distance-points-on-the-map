@@ -70,6 +70,8 @@ npx wrangler deploy --dry-run --config wrangler.guest.toml
 - same static assets directory: `./dist`
 - custom domain: `gps-guest.bruce-group.net`
 - `BASIC_AUTH_USERNAME = "guest"` (non-secret var)
+- `BASIC_AUTH_REQUIRED = "true"` (guest-only fail-closed mode)
+- `[secrets].required = ["BASIC_AUTH_PASSWORD"]`
 - `workers_dev = false`
 
 Routes:
@@ -118,15 +120,28 @@ VITE_BASE_PATH=/ VITE_UPLOAD_PROXY_URL=/api/upload npm run build
 Owner (`gps.bruce-group.net`): Cloudflare Access (Google login) stays enabled.
 To avoid a second browser login prompt on owner hostname, keep `BASIC_AUTH_PASSWORD` unset in owner Worker.
 
-Guest (`gps-guest.bruce-group.net`): Worker Basic Auth is mandatory on every request.
+Guest (`gps-guest.bruce-group.net`): Worker Basic Auth is mandatory on every browser request. `BASIC_AUTH_REQUIRED = "true"` makes the guest Worker fail closed: if `BASIC_AUTH_PASSWORD` is missing, frontend and `/api/upload` return `401` with `WWW-Authenticate: Basic` and `Cache-Control: no-store`.
 
-Set guest password only as Worker secret (never in Git/docs/issue/PR logs):
+First guest publication must upload the Worker and `BASIC_AUTH_PASSWORD` in the same deploy command so `gps-guest.bruce-group.net` is never published without the password. Read the password silently, write it to a temporary JSON secrets file with mode `600`, deploy with `--secrets-file`, then delete the file immediately:
 
 ```bash
-npx wrangler secret put BASIC_AUTH_PASSWORD --config wrangler.guest.toml
+read -r -s -p "Guest password: " GUEST_BASIC_AUTH_PASSWORD; echo
+guest_secrets_file="$(mktemp)"
+cleanup_guest_secrets() {
+  rm -f "$guest_secrets_file"
+  unset GUEST_BASIC_AUTH_PASSWORD
+}
+trap cleanup_guest_secrets EXIT
+chmod 600 "$guest_secrets_file"
+python3 - <<'PY' > "$guest_secrets_file"
+import json
+import os
+print(json.dumps({"BASIC_AUTH_PASSWORD": os.environ["GUEST_BASIC_AUTH_PASSWORD"]}))
+PY
+npx wrangler deploy --secrets-file "$guest_secrets_file" --config wrangler.guest.toml
 ```
 
-Rotate guest password by re-running the same command with a new value. Code/config changes are not required.
+Do not echo the password, paste it into shell history, commit it, or leave the custom hostname published from a deploy that did not include `BASIC_AUTH_PASSWORD`. Rotate guest password by re-running the same temporary `--secrets-file` deploy command with a new value. Code/config changes are not required.
 
 If account-level Access default-deny is enabled, create an exact-host bypass only for `gps-guest.bruce-group.net` so the Worker Basic Auth prompt can be shown.
 
@@ -140,7 +155,7 @@ Rate-limit failed guest logins with an exact-host Cloudflare WAF rate limiting r
 
 Do not apply this rule to `gps.bruce-group.net` or other BRUCE hostnames. Count only `401` responses so normal authenticated frontend and upload traffic is not rate-limited.
 
-Worker fallback access remains available for CI/machine/break-glass via `APP_ACCESS_TOKEN` and `X-App-Access-Token` or `Authorization: Bearer`. Basic Auth never uses `APP_ACCESS_TOKEN` as a password; browser guest access uses only `BASIC_AUTH_PASSWORD`.
+Worker fallback access remains available for CI/machine/break-glass via `APP_ACCESS_TOKEN` and `X-App-Access-Token` or `Authorization: Bearer`. Basic Auth never uses `APP_ACCESS_TOKEN` as a password; browser guest access uses only `BASIC_AUTH_PASSWORD`, and an absent guest password never opens the frontend or `/api/upload` publicly.
 
 Do not commit secrets.
 
@@ -165,7 +180,7 @@ Authorization: Bearer <APP_ACCESS_TOKEN>
 X-App-Access-Token: <APP_ACCESS_TOKEN>
 ```
 
-If neither Cloudflare Access nor a Worker auth secret is configured, the deployed Worker is public. Configure one before production use.
+Owner without `BASIC_AUTH_REQUIRED` keeps the previous Worker-level pass-through so Cloudflare Access can handle Google login without a second Basic Auth prompt. If owner is deployed without Cloudflare Access and without Worker auth secrets, that owner Worker is public. Configure one before production use.
 
 ## Custom Domain
 
@@ -207,13 +222,14 @@ Triggers:
 - owner workflow: push to `main` and manual `workflow_dispatch`
 - guest workflow: manual `workflow_dispatch` only
 
-Neither deploys from PRs. Guest deploy workflow installs Playwright Chromium/dependencies, runs `npm test`, `npm run build:cloudflare`, `git diff --check`, owner+guest dry-runs, repository/build-output secret scan, secret preflight (`BASIC_AUTH_PASSWORD` presence), then deploys guest Worker/static assets.
+Neither deploys from PRs. Guest deploy workflow installs Playwright Chromium/dependencies, runs `npm test`, `npm run build:cloudflare`, `git diff --check`, owner+guest dry-runs, repository/build-output secret scan, validates GitHub secret `BASIC_AUTH_PASSWORD`, then creates a temporary mode-`600` secrets file and deploys guest Worker/static assets with `wrangler deploy --secrets-file`. The password is not printed and the temporary file is deleted via `trap`.
 
 Required GitHub secrets:
 
 ```text
 CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
+BASIC_AUTH_PASSWORD
 ```
 
 Optional Worker secret for machine/break-glass access:
@@ -267,10 +283,9 @@ npm run build:cloudflare
 npx wrangler deploy --dry-run --config wrangler.toml
 npx wrangler deploy --dry-run --config wrangler.guest.toml
 npx wrangler deploy --config wrangler.toml
-npx wrangler deploy --config wrangler.guest.toml
 ```
 
-Do not run the final deploy command until the custom domain and access policy/secrets are ready.
+For guest production, use the temporary `--secrets-file` command from Access Control instead of a plain deploy. Do not run any final deploy command until the custom domain and access policy/secrets are ready.
 
 ## Rollback
 

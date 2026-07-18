@@ -77,13 +77,14 @@ unset GUEST_BASIC_AUTH_PASSWORD
 
 - Owner production: приватный Cloudflare Worker на `https://gps.bruce-group.net/` (Google Cloudflare Access).
 - Guest production: отдельный Cloudflare Worker на `https://gps-guest.bruce-group.net/` (Worker Basic Auth).
+- Guest Worker работает в fail-closed режиме `BASIC_AUTH_REQUIRED=true`: без `BASIC_AUTH_PASSWORD` frontend и `/api/upload` отвечают `401`, а первый deploy передаёт пароль через временный `wrangler deploy --secrets-file` файл с правами `600`.
 - Worker отдаёт frontend из `dist` и обслуживает upload API на `/api/upload`.
 - `.github/workflows/deploy-worker.yml` — production Cloudflare Worker + Static Assets, только `main` или manual.
-- `.github/workflows/deploy-worker-guest.yml` — ручной deploy guest Worker + проверки разделения owner/guest и preflight `BASIC_AUTH_PASSWORD`.
+- `.github/workflows/deploy-worker-guest.yml` — ручной deploy guest Worker + проверки разделения owner/guest и атомарная публикация `BASIC_AUTH_PASSWORD` через `--secrets-file`.
 - `.github/workflows/deploy.yml` — legacy GitHub Pages, только manual.
 - `.github/workflows/test-worker-upload.yml` — manual smoke-test bundle upload.
 
-Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`. Guest вход использует только Worker secret `BASIC_AUTH_PASSWORD` в `wrangler.guest.toml`; `APP_ACCESS_TOKEN` сохраняется как машинная/CI совместимость только через Bearer или `X-App-Access-Token`, не как Basic Auth пароль. Секреты фотохостингов не используются.
+Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` и `BASIC_AUTH_PASSWORD` для guest workflow. Guest вход использует только Worker secret `BASIC_AUTH_PASSWORD` в `wrangler.guest.toml`; `APP_ACCESS_TOKEN` сохраняется как машинная/CI совместимость только через Bearer или `X-App-Access-Token`, не как Basic Auth пароль. Секреты фотохостингов не используются.
 
 Подробно: [DEPLOYMENT.md](DEPLOYMENT.md).
 
