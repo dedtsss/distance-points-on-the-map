@@ -34,7 +34,7 @@ const safeEqual = (left, right) => {
   return diff === 0;
 };
 
-const getBasicAuthPassword = (env = {}) => String(env.BASIC_AUTH_PASSWORD || env.APP_ACCESS_TOKEN || '').trim();
+const getBasicAuthPassword = (env = {}) => String(env.BASIC_AUTH_PASSWORD || '').trim();
 const getBearerToken = (env = {}) => String(env.APP_ACCESS_TOKEN || '').trim();
 const getAccessUsername = (env = {}) => String(env.BASIC_AUTH_USERNAME || 'owner');
 

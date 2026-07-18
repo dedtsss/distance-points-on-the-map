@@ -130,7 +130,17 @@ Rotate guest password by re-running the same command with a new value. Code/conf
 
 If account-level Access default-deny is enabled, create an exact-host bypass only for `gps-guest.bruce-group.net` so the Worker Basic Auth prompt can be shown.
 
-Worker fallback access remains available for CI/machine/break-glass via `APP_ACCESS_TOKEN` and `X-App-Access-Token` or `Authorization: Bearer`.
+Rate-limit failed guest logins with an exact-host Cloudflare WAF rate limiting rule:
+
+- Rule name: `GPS Guest Basic Auth failed login throttle`
+- Scope/counting expression: `http.host eq "gps-guest.bruce-group.net" and http.response.code eq 401`
+- Characteristics: client IP
+- Threshold: 10 matching responses per 1 minute
+- Mitigation: Block or Managed Challenge for 10 minutes
+
+Do not apply this rule to `gps.bruce-group.net` or other BRUCE hostnames. Count only `401` responses so normal authenticated frontend and upload traffic is not rate-limited.
+
+Worker fallback access remains available for CI/machine/break-glass via `APP_ACCESS_TOKEN` and `X-App-Access-Token` or `Authorization: Bearer`. Basic Auth never uses `APP_ACCESS_TOKEN` as a password; browser guest access uses only `BASIC_AUTH_PASSWORD`.
 
 Do not commit secrets.
 
@@ -145,6 +155,7 @@ Token/header access (owner/guest machine access compatibility):
 
 ```bash
 npx wrangler secret put APP_ACCESS_TOKEN --config wrangler.toml
+npx wrangler secret put APP_ACCESS_TOKEN --config wrangler.guest.toml
 ```
 
 Requests can then use:
@@ -196,7 +207,7 @@ Triggers:
 - owner workflow: push to `main` and manual `workflow_dispatch`
 - guest workflow: manual `workflow_dispatch` only
 
-Neither deploys from PRs. Guest deploy workflow runs `npm test`, `npm run build:cloudflare`, `git diff --check`, owner+guest dry-runs, secret preflight (`BASIC_AUTH_PASSWORD` presence), then deploys guest Worker/static assets.
+Neither deploys from PRs. Guest deploy workflow installs Playwright Chromium/dependencies, runs `npm test`, `npm run build:cloudflare`, `git diff --check`, owner+guest dry-runs, repository/build-output secret scan, secret preflight (`BASIC_AUTH_PASSWORD` presence), then deploys guest Worker/static assets.
 
 Required GitHub secrets:
 
@@ -205,7 +216,7 @@ CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 ```
 
-Optional GitHub secret for manual smoke tests against token-protected Worker:
+Optional Worker secret for machine/break-glass access:
 
 ```text
 APP_ACCESS_TOKEN
@@ -230,7 +241,10 @@ Manual Worker smoke test:
 
 ```bash
 WORKER_URL=https://gps.bruce-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
-GUEST_BASIC_AUTH_PASSWORD='<guest-password>' node scripts/test-worker-guest-auth.mjs
+read -r -s -p "Guest password: " GUEST_BASIC_AUTH_PASSWORD; echo
+export GUEST_BASIC_AUTH_PASSWORD
+node scripts/test-worker-guest-auth.mjs
+unset GUEST_BASIC_AUTH_PASSWORD
 ```
 
 If Cloudflare Access protects the domain, use service token headers:

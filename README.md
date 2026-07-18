@@ -67,7 +67,10 @@ WORKER_URL=https://gps.bruce-group.net/api/upload WORKER_ACCESS_TOKEN=<token> no
 Guest Basic Auth smoke (без печати пароля в команду/логи):
 
 ```bash
-GUEST_BASIC_AUTH_PASSWORD='<guest-password>' node scripts/test-worker-guest-auth.mjs
+read -r -s -p "Guest password: " GUEST_BASIC_AUTH_PASSWORD; echo
+export GUEST_BASIC_AUTH_PASSWORD
+node scripts/test-worker-guest-auth.mjs
+unset GUEST_BASIC_AUTH_PASSWORD
 ```
 
 ## Деплой
@@ -80,7 +83,7 @@ GUEST_BASIC_AUTH_PASSWORD='<guest-password>' node scripts/test-worker-guest-auth
 - `.github/workflows/deploy.yml` — legacy GitHub Pages, только manual.
 - `.github/workflows/test-worker-upload.yml` — manual smoke-test bundle upload.
 
-Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`. Guest вход использует только Worker secret `BASIC_AUTH_PASSWORD` в `wrangler.guest.toml`; `APP_ACCESS_TOKEN` сохраняется как машинная/CI совместимость (Bearer или `X-App-Access-Token`). Секреты фотохостингов не используются.
+Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`. Guest вход использует только Worker secret `BASIC_AUTH_PASSWORD` в `wrangler.guest.toml`; `APP_ACCESS_TOKEN` сохраняется как машинная/CI совместимость только через Bearer или `X-App-Access-Token`, не как Basic Auth пароль. Секреты фотохостингов не используются.
 
 Подробно: [DEPLOYMENT.md](DEPLOYMENT.md).
 
