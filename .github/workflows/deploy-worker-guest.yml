@@ -45,8 +45,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BASIC_AUTH_USERNAME: ${{ secrets.BASIC_AUTH_USERNAME }}
-          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+          BASIC_AUTH_USERNAME: ${{ secrets.GPSMAP_USER_GUEST_LOGIN || secrets.BASIC_AUTH_USERNAME }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.GPSMAP_USER_GUEST_PASSWORD || secrets.BASIC_AUTH_PASSWORD }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Missing GitHub secret: CLOUDFLARE_API_TOKEN"
@@ -57,15 +57,15 @@ jobs:
             exit 1
           fi
           if [ -z "$BASIC_AUTH_USERNAME" ]; then
-            echo "::error::Missing GitHub secret: BASIC_AUTH_USERNAME"
+            echo "::error::Missing GitHub secret: GPSMAP_USER_GUEST_LOGIN (or legacy BASIC_AUTH_USERNAME)"
             exit 1
           fi
           if [ -z "$BASIC_AUTH_PASSWORD" ]; then
-            echo "::error::Missing GitHub secret: BASIC_AUTH_PASSWORD"
+            echo "::error::Missing GitHub secret: GPSMAP_USER_GUEST_PASSWORD (or legacy BASIC_AUTH_PASSWORD)"
             exit 1
           fi
           echo "Cloudflare deployment secrets are present."
-          echo "Guest Basic Auth deployment secret is present."
+          echo "Guest Basic Auth deployment secrets are present."
 
       - name: Install dependencies
         run: npm ci
@@ -140,8 +140,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BASIC_AUTH_USERNAME: ${{ secrets.BASIC_AUTH_USERNAME }}
-          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+          BASIC_AUTH_USERNAME: ${{ secrets.GPSMAP_USER_GUEST_LOGIN || secrets.BASIC_AUTH_USERNAME }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.GPSMAP_USER_GUEST_PASSWORD || secrets.BASIC_AUTH_PASSWORD }}
         run: |
           set -euo pipefail
           umask 077
