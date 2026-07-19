@@ -33,11 +33,15 @@ export async function readGpsPipeline(stableFile, options = {}) {
   let exifError = null;
 
   const finish = (result) => {
-    recordOcrDiagnostic({
-      stableFile,
-      elapsedMs: Date.now() - startedAt,
-      result,
-    });
+    try {
+      recordOcrDiagnostic({
+        stableFile,
+        elapsedMs: Date.now() - startedAt,
+        result,
+      });
+    } catch {
+      // Diagnostic persistence is best-effort and must never break OCR or EXIF processing.
+    }
     return result;
   };
 
