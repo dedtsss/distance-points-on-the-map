@@ -1,3 +1,4 @@
+# Trigger marker for a fresh guest production deployment.
 name: Deploy Cloudflare Guest Worker
 
 on:
@@ -154,8 +155,8 @@ jobs:
           python3 - <<'PY' > "$secrets_file"
           import json, os
           print(json.dumps({
-            "BASIC_AUTH_USERNAME": os.environ["BASIC_AUTH_USERNAME"],
-            "BASIC_AUTH_PASSWORD": os.environ["BASIC_AUTH_PASSWORD"],
+              "BASIC_AUTH_USERNAME": os.environ["BASIC_AUTH_USERNAME"],
+              "BASIC_AUTH_PASSWORD": os.environ["BASIC_AUTH_PASSWORD"],
           }))
           PY
           npx wrangler deploy --secrets-file "$secrets_file" --config wrangler.guest.toml
