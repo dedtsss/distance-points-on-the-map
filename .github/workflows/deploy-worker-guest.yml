@@ -1,4 +1,4 @@
-# Trigger marker for a fresh guest production deployment.
+# Guest production deployment. Existing Cloudflare Worker secrets are preserved.
 name: Deploy Cloudflare Guest Worker
 
 on:
@@ -41,12 +41,10 @@ jobs:
           node-version: '20'
           cache: npm
 
-      - name: Validate deployment secrets
+      - name: Validate Cloudflare deployment credentials
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BASIC_AUTH_USERNAME: ${{ secrets.GPSMAP_USER_GUEST_LOGIN || secrets.BASIC_AUTH_USERNAME }}
-          BASIC_AUTH_PASSWORD: ${{ secrets.GPSMAP_USER_GUEST_PASSWORD || secrets.BASIC_AUTH_PASSWORD }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Missing GitHub secret: CLOUDFLARE_API_TOKEN"
@@ -56,16 +54,8 @@ jobs:
             echo "::error::Missing GitHub secret: CLOUDFLARE_ACCOUNT_ID"
             exit 1
           fi
-          if [ -z "$BASIC_AUTH_USERNAME" ]; then
-            echo "::error::Missing GitHub secret: GPSMAP_USER_GUEST_LOGIN (or legacy BASIC_AUTH_USERNAME)"
-            exit 1
-          fi
-          if [ -z "$BASIC_AUTH_PASSWORD" ]; then
-            echo "::error::Missing GitHub secret: GPSMAP_USER_GUEST_PASSWORD (or legacy BASIC_AUTH_PASSWORD)"
-            exit 1
-          fi
-          echo "Cloudflare deployment secrets are present."
-          echo "Guest Basic Auth deployment secrets are present."
+          echo "Cloudflare deployment credentials are present."
+          echo "Guest Basic Auth credentials will be reused from existing Cloudflare Worker secrets."
 
       - name: Install dependencies
         run: npm ci
@@ -140,23 +130,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BASIC_AUTH_USERNAME: ${{ secrets.GPSMAP_USER_GUEST_LOGIN || secrets.BASIC_AUTH_USERNAME }}
-          BASIC_AUTH_PASSWORD: ${{ secrets.GPSMAP_USER_GUEST_PASSWORD || secrets.BASIC_AUTH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          umask 077
-          secrets_file="$(mktemp)"
-          cleanup() {
-            rm -f "$secrets_file"
-            unset BASIC_AUTH_USERNAME BASIC_AUTH_PASSWORD
-          }
-          trap cleanup EXIT
-          chmod 600 "$secrets_file"
-          python3 - <<'PY' > "$secrets_file"
-          import json, os
-          print(json.dumps({
-              "BASIC_AUTH_USERNAME": os.environ["BASIC_AUTH_USERNAME"],
-              "BASIC_AUTH_PASSWORD": os.environ["BASIC_AUTH_PASSWORD"],
-          }))
-          PY
-          npx wrangler deploy --secrets-file "$secrets_file" --config wrangler.guest.toml
+        run: npx wrangler deploy --config wrangler.guest.toml
