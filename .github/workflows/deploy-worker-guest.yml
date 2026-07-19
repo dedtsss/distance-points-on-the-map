@@ -1,6 +1,20 @@
 name: Deploy Cloudflare Guest Worker
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/host-proxy/**'
+      - 'wrangler.toml'
+      - 'wrangler.guest.toml'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'scripts/test-worker-guest-auth.mjs'
+      - '.github/workflows/deploy-worker-guest.yml'
   workflow_dispatch:
 
 permissions:
