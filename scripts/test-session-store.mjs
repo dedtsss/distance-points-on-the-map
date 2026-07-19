@@ -15,6 +15,7 @@ const storage = {
 const heavyFile = new File(['source'], 'source.jpg', { type: 'image/jpeg' });
 const snapshot = saveLastSession({
   sessionId: 'session-1',
+  name: 'GPS object 15',
   createdAt: '2026-07-04T10:00:00.000Z',
   thresholdMeters: 25,
   activeScreen: 'map',
@@ -23,6 +24,7 @@ const snapshot = saveLastSession({
     id: 'photo-1',
     number: 1,
     fileName: 'source.jpg',
+    relativePath: 'GPS object 15/day2/source.jpg',
     safeName: 'source.jpg',
     size: heavyFile.size,
     indexFromOcr: '5939',
@@ -103,16 +105,20 @@ for (const forbidden of ['sourceBuffer', 'stableBlob', 'stableFile', 'cleanedBlo
   assert.equal(storedText.includes(forbidden), false);
 }
 assert.equal(snapshot.photos[0].freeimageUrl, 'https://free.test/1');
+assert.equal(snapshot.name, 'GPS object 15');
 assert.equal(snapshot.activeScreen, 'map');
+assert.equal(snapshot.photos[0].relativePath, 'GPS object 15/day2/source.jpg');
 assert.equal(snapshot.photos[0].indexFromOcr, '5939');
 assert.equal(snapshot.photos[0].displayFileName, 'index-5939.jpg');
 const loaded = loadLastSession(storage);
 assert.equal(loaded.sessionId, 'session-1');
+assert.equal(loaded.name, 'GPS object 15');
 assert.equal(loaded.version, 1);
 assert.equal(loaded.activeScreen, 'map');
 const restored = restoreSessionPhotos(loaded);
 assert.equal(restored[0].stableFile, null);
 assert.equal(restored[0].id, 'photo-1');
+assert.equal(restored[0].relativePath, 'GPS object 15/day2/source.jpg');
 assert.equal(restored[0].uploadResult.links.length, 2);
 assert.equal(restored[0].uploadResult.ninjaboxGalleryUrl, 'https://ninja.test/gallery');
 assert.equal(restored[0].status, 'uploaded');

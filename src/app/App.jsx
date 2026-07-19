@@ -19,6 +19,15 @@ import SettingsScreen from '../components/SettingsScreen.jsx';
 import UploadDropzone from '../components/UploadDropzone.jsx';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService.js';
 import { bufferSelectedFiles } from '../features/files/stableFileStore.js';
+import {
+  FOLDER_IMPORT_STATUSES,
+  applyBufferResultToFolderReport,
+  createFolderImportReport,
+  prepareFolderImportFromDataTransfer,
+  prepareFolderImportFromDirectoryHandle,
+  prepareFolderImportFromFileList,
+  requestDirectoryHandle,
+} from '../features/files/folderPicker.js';
 import { normalizeCoordinates } from '../features/gps/coordinateParser.js';
 import { normalizeIndexValue } from '../features/points/pointIdentity.js';
 import {
@@ -44,9 +53,10 @@ import {
 import { runPhotoPipeline } from './pipeline.js';
 import { UPLOAD_RULES_EXPLANATION } from './pipelineRules.js';
 
-const newSessionMeta = () => ({
+const newSessionMeta = (name = '') => ({
   sessionId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   createdAt: new Date().toISOString(),
+  name,
 });
 
 const debugModeFromLocation = () => (
@@ -59,7 +69,7 @@ const buildVisibleSessions = ({ sessionMeta, photos, savedSession }) => {
   if (sessionMeta && photos.length > 0) {
     sessions.push({
       ...sessionMeta,
-      name: photos.some((photo) => photo.restored) ? 'Восстановленная сессия' : 'Текущая сессия',
+      name: sessionMeta.name || (photos.some((photo) => photo.restored) ? 'Восстановленная сессия' : 'Текущая сессия'),
       photos,
       status: photos.some((photo) => ['reading_gps', 'cleaning', 'uploading'].includes(photo.status)) ? 'обрабатывается' : 'локальная',
     });
@@ -68,7 +78,7 @@ const buildVisibleSessions = ({ sessionMeta, photos, savedSession }) => {
   if (savedSession && savedSession.sessionId !== sessionMeta?.sessionId) {
     sessions.push({
       ...savedSession,
-      name: 'Последняя сохранённая сессия',
+      name: savedSession.name || 'Последняя сохранённая сессия',
       photos: savedSession.photos || [],
       status: 'сохранена',
     });
@@ -86,6 +96,10 @@ function UploadScreen({
   providerSettings,
   thresholdMeters,
   onFiles,
+  onFolderFiles,
+  onPickFolder,
+  onDropItems,
+  onCancelFolderImport,
   onRun,
   onClearResult,
   onApplyCoordinates,
@@ -94,9 +108,11 @@ function UploadScreen({
   onRemovePhoto,
   onOpenOnMap,
   onOpenSettings,
+  folderImport,
 }) {
   const hasStableFiles = photos.some((photo) => photo.stableFile);
   const hasCleanedPhotos = photos.some((photo) => photo.cleanedBlob);
+  const isBuffering = mode === 'buffering' || folderImport?.status === FOLDER_IMPORT_STATUSES.ADDING;
 
   return (
     <>
@@ -120,12 +136,17 @@ function UploadScreen({
       <UploadDropzone
         photos={photos}
         isBusy={isBusy}
-        isBuffering={mode === 'buffering'}
+        isBuffering={isBuffering}
         onFiles={onFiles}
+        onFolderFiles={onFolderFiles}
+        onPickFolder={onPickFolder}
+        onDropItems={onDropItems}
+        onCancelFolderImport={onCancelFolderImport}
         onOpenSettings={onOpenSettings}
+        folderImport={folderImport}
       />
 
-      {mode === 'buffering' && <LoadingState title="Подготовка фотографий">Создаются стабильные копии и миниатюры в памяти браузера.</LoadingState>}
+      {isBuffering && <LoadingState title="Подготовка фотографий">Создаются стабильные копии и миниатюры в памяти браузера.</LoadingState>}
 
       {photos.length > 0 && (
         <section className="run-card sticky-action-panel">
@@ -150,7 +171,7 @@ function UploadScreen({
 
       {photos.length === 0 ? (
         <EmptyState title="Фотографии ещё не выбраны" icon="upload">
-          Перетащите изображения в область загрузки или нажмите «Выбрать файлы».
+          Перетащите изображения в область загрузки или нажмите «Выбрать фотографии».
         </EmptyState>
       ) : (
         <section className="photo-grid" aria-label="Выбранные фотографии" aria-live="polite">
@@ -197,6 +218,7 @@ export default function App() {
   const [photos, setPhotos] = useState([]);
   const [errors, setErrors] = useState([]);
   const [mode, setMode] = useState('idle');
+  const [folderImport, setFolderImport] = useState({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
   const [savedSession, setSavedSession] = useState(() => loadLastSession());
   const [sessionMeta, setSessionMeta] = useState(null);
   const [providerSettings, setProviderSettings] = useState({ ...DEFAULT_PROVIDER_SETTINGS });
@@ -208,11 +230,17 @@ export default function App() {
   const [activeSince, setActiveSince] = useState(null);
   const [sessionDiagnostics, setSessionDiagnostics] = useState(() => getSessionDiagnostics());
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const folderImportAbortRef = useRef(null);
   const photosRef = useRef(photos);
   photosRef.current = photos;
   const debugMode = useMemo(debugModeFromLocation, []);
   const providerValidation = useMemo(() => validateProviderSettings(providerSettings), [providerSettings]);
-  const isBusy = mode === 'buffering' || mode === 'running';
+  const folderImportBusy = [
+    FOLDER_IMPORT_STATUSES.SELECTING,
+    FOLDER_IMPORT_STATUSES.SCANNING,
+    FOLDER_IMPORT_STATUSES.ADDING,
+  ].includes(folderImport.status);
+  const isBusy = mode === 'buffering' || mode === 'running' || folderImportBusy;
   const hasUploadedPhotos = photos.some((photo) => photo.uploadResult?.links?.length > 0);
   const hasRestoredPhotos = photos.some((photo) => photo.restored);
   const canRunFullCheck = photos.some((photo) => photo.stableFile);
@@ -221,6 +249,23 @@ export default function App() {
   const addLog = (message, type = 'info') => setJournal((current) => [...current, {
     id: `${Date.now()}-${Math.random()}`, time: new Date().toLocaleTimeString('ru-RU'), message, type,
   }].slice(-200));
+
+  const notifyImportReady = (source, batchPhotos) => {
+    try {
+      globalThis.__gpsImportTestSink?.({
+        source,
+        photos: (batchPhotos || []).map((photo) => ({
+          fileName: photo.fileName,
+          relativePath: photo.relativePath || '',
+          stableFileName: photo.stableFile?.name || '',
+          stableFileType: photo.stableFile?.type || '',
+          stableFileIsFile: typeof File !== 'undefined' && photo.stableFile instanceof File,
+        })),
+      });
+    } catch {
+      // Test-only diagnostics must never affect the user flow.
+    }
+  };
 
   const sessionRevision = useMemo(() => JSON.stringify(photos.map((photo) => ({
     id: photo.id,
@@ -248,6 +293,7 @@ export default function App() {
     userError: photo.userError,
     userWarnings: photo.userWarnings,
     thumbnailDataUrl: photo.thumbnailDataUrl,
+    relativePath: photo.relativePath,
   }))), [photos]);
 
   useEffect(() => () => {
@@ -277,11 +323,19 @@ export default function App() {
   }, [sessionRevision, providerSettings, sessionMeta, debugMode, thresholdMeters, activeScreen]);
 
   const clearCurrentPhotos = () => photosRef.current.forEach((photo) => releasePhotoBuffers(photo));
+  const modeAfterImport = () => (photosRef.current.length > 0 ? 'ready' : 'idle');
+
+  const folderImportCancelled = (error) => (
+    error?.name === 'AbortError'
+    || error?.code === 20
+    || /aborted|cancel/i.test(String(error?.message || ''))
+  );
 
   const handleFilesSelected = async (selectedFiles) => {
     const files = Array.from(selectedFiles || []);
     if (files.length === 0) return;
     setMode('buffering');
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     setErrors([]);
     clearCurrentPhotos();
     deleteLastSession();
@@ -293,6 +347,7 @@ export default function App() {
       const buffered = await bufferSelectedFiles(files);
       const nextBatch = replacePhotoBatch([], buffered.bufferedFiles);
       setPhotos(nextBatch.photos);
+      notifyImportReady('files', nextBatch.photos);
       setErrors(buffered.errors);
       setSessionMeta(newSessionMeta());
       setMode(nextBatch.photos.length > 0 ? 'ready' : 'idle');
@@ -302,6 +357,152 @@ export default function App() {
       setMode('idle');
       if (debugMode) console.error(error);
     }
+  };
+
+  const finishPreparedFolderImport = async (prepared, controller) => {
+    const addingReport = createFolderImportReport({ ...prepared.report, status: FOLDER_IMPORT_STATUSES.ADDING });
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.ADDING, report: addingReport, error: '' });
+    setMode('buffering');
+
+    if (prepared.files.length === 0) {
+      const doneReport = createFolderImportReport({ ...prepared.report, status: FOLDER_IMPORT_STATUSES.DONE });
+      setFolderImport({ status: FOLDER_IMPORT_STATUSES.DONE, report: doneReport, error: '' });
+      setMode(modeAfterImport());
+      addLog(`Папка ${doneReport.folderName}: найдено ${doneReport.foundFiles}, добавлено 0, пропущено ${doneReport.skippedFiles}.`, 'warning');
+      return;
+    }
+
+    const buffered = await bufferSelectedFiles(prepared.files, { signal: controller.signal });
+    const finalReport = applyBufferResultToFolderReport(prepared.report, buffered);
+    const nextBatch = replacePhotoBatch([], buffered.bufferedFiles);
+
+    clearCurrentPhotos();
+    deleteLastSession();
+    setPhotos(nextBatch.photos);
+    notifyImportReady('folder', nextBatch.photos);
+    setSavedSession(null);
+    setActiveScreen('upload');
+    setSessionMeta(newSessionMeta(finalReport.folderName));
+    setErrors(buffered.errors);
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.DONE, report: finalReport, error: '' });
+    setMode(nextBatch.photos.length > 0 ? 'ready' : 'idle');
+    addLog(`Папка ${finalReport.folderName}: найдено ${finalReport.foundFiles}, добавлено ${finalReport.addedPhotos}, пропущено ${finalReport.skippedFiles}.`, finalReport.addedPhotos > 0 ? 'success' : 'warning');
+  };
+
+  const runFolderImport = async (loadPrepared, initialReport) => {
+    const controller = new AbortController();
+    folderImportAbortRef.current = controller;
+    setErrors([]);
+    setMode(modeAfterImport());
+    setFolderImport({
+      status: initialReport?.status || FOLDER_IMPORT_STATUSES.SCANNING,
+      report: initialReport || null,
+      error: '',
+    });
+
+    try {
+      const prepared = await loadPrepared(controller.signal);
+      if (controller.signal.aborted) {
+        const error = new Error('Folder import was cancelled.');
+        error.name = 'AbortError';
+        throw error;
+      }
+      await finishPreparedFolderImport(prepared, controller);
+    } catch (error) {
+      if (folderImportCancelled(error)) {
+        const report = initialReport
+          ? createFolderImportReport({ ...initialReport, status: FOLDER_IMPORT_STATUSES.CANCELLED })
+          : null;
+        setFolderImport({ status: FOLDER_IMPORT_STATUSES.CANCELLED, report, error: '' });
+        setMode(modeAfterImport());
+        addLog('Импорт папки отменён', 'warning');
+      } else {
+        setFolderImport({
+          status: FOLDER_IMPORT_STATUSES.ERROR,
+          report: initialReport || null,
+          error: 'Не удалось выбрать или прочитать папку.',
+        });
+        setErrors(['Не удалось выбрать или прочитать папку. Выберите другую физическую папку или отдельные фотографии.']);
+        setMode(modeAfterImport());
+        addLog('Импорт папки: ошибка', 'error');
+        if (debugMode) console.error(error);
+      }
+    } finally {
+      if (folderImportAbortRef.current === controller) folderImportAbortRef.current = null;
+    }
+  };
+
+  const handlePickFolder = async () => {
+    await runFolderImport(async (signal) => {
+      setFolderImport({ status: FOLDER_IMPORT_STATUSES.SELECTING, report: null, error: '' });
+      const directoryHandle = await requestDirectoryHandle();
+      const scanningReport = createFolderImportReport({
+        status: FOLDER_IMPORT_STATUSES.SCANNING,
+        folderName: directoryHandle?.name || 'Выбранная папка',
+        source: 'showDirectoryPicker',
+      });
+      setFolderImport({ status: FOLDER_IMPORT_STATUSES.SCANNING, report: scanningReport, error: '' });
+      return prepareFolderImportFromDirectoryHandle(directoryHandle, { signal });
+    }, createFolderImportReport({ status: FOLDER_IMPORT_STATUSES.SELECTING }));
+  };
+
+  const handleFolderFilesSelected = async (selectedFiles) => {
+    const files = Array.from(selectedFiles || []);
+    if (files.length === 0) {
+      setFolderImport({ status: FOLDER_IMPORT_STATUSES.CANCELLED, report: null, error: '' });
+      return;
+    }
+    const initialReport = createFolderImportReport({ status: FOLDER_IMPORT_STATUSES.SCANNING, source: 'input' });
+    await runFolderImport(async () => prepareFolderImportFromFileList(files, { source: 'input' }), initialReport);
+  };
+
+  const handleDropItems = async (dataTransfer) => {
+    const items = Array.from(dataTransfer?.items || []);
+    if (items.length === 0) return false;
+
+    let prepared;
+    const controller = new AbortController();
+    folderImportAbortRef.current = controller;
+    try {
+      prepared = await prepareFolderImportFromDataTransfer(dataTransfer, { signal: controller.signal });
+    } catch (error) {
+      folderImportAbortRef.current = null;
+      if (debugMode) console.error(error);
+      return false;
+    }
+
+    if (!prepared.hasDirectory) {
+      folderImportAbortRef.current = null;
+      return false;
+    }
+
+    setErrors([]);
+    try {
+      await finishPreparedFolderImport(prepared, controller);
+    } catch (error) {
+      if (folderImportCancelled(error)) {
+        setFolderImport({ status: FOLDER_IMPORT_STATUSES.CANCELLED, report: prepared.report, error: '' });
+        setMode(modeAfterImport());
+      } else {
+        setFolderImport({ status: FOLDER_IMPORT_STATUSES.ERROR, report: prepared.report, error: 'Не удалось обработать перетащенную папку.' });
+        setErrors(['Не удалось обработать перетащенную папку.']);
+        setMode(modeAfterImport());
+        if (debugMode) console.error(error);
+      }
+    } finally {
+      if (folderImportAbortRef.current === controller) folderImportAbortRef.current = null;
+    }
+    return true;
+  };
+
+  const handleCancelFolderImport = () => {
+    folderImportAbortRef.current?.abort();
+    setFolderImport((current) => ({
+      status: FOLDER_IMPORT_STATUSES.CANCELLED,
+      report: current.report ? createFolderImportReport({ ...current.report, status: FOLDER_IMPORT_STATUSES.CANCELLED }) : null,
+      error: '',
+    }));
+    setMode(modeAfterImport());
   };
 
   const handleRun = async (stages, label) => {
@@ -334,7 +535,12 @@ export default function App() {
           photos: result.photos,
           providerSettings,
         });
-        setSessionMeta({ sessionId: snapshot.sessionId, createdAt: snapshot.createdAt, updatedAt: snapshot.updatedAt });
+        setSessionMeta({
+          sessionId: snapshot.sessionId,
+          createdAt: snapshot.createdAt,
+          updatedAt: snapshot.updatedAt,
+          name: snapshot.name || sessionMeta?.name || '',
+        });
       } catch (storageError) {
         setErrors(['Обработка завершена, но браузер не смог сохранить последний результат.']);
         if (debugMode) console.error(storageError);
@@ -357,8 +563,9 @@ export default function App() {
     setProviderSettings(normalizeProviderSettings(savedSession.providerSettings || DEFAULT_PROVIDER_SETTINGS));
     setThresholdMeters(Number(savedSession.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
     setActiveScreen(normalizeScreen(savedSession.activeScreen || 'results'));
-    setSessionMeta({ sessionId: savedSession.sessionId, createdAt: savedSession.createdAt, updatedAt: savedSession.updatedAt });
+    setSessionMeta({ sessionId: savedSession.sessionId, createdAt: savedSession.createdAt, updatedAt: savedSession.updatedAt, name: savedSession.name || '' });
     setErrors([]);
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     setMode('done');
     setSavedSession(null);
     setSessionDiagnostics({ ...getSessionDiagnostics(), accepted: true });
@@ -376,6 +583,7 @@ export default function App() {
     deleteLastSession();
     setPhotos([]);
     setErrors([]);
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     setMode('idle');
     setSessionMeta(null);
     setSavedSession(null);
@@ -482,7 +690,7 @@ export default function App() {
       <LastSessionPrompt session={savedSession} onRestore={handleRestore} onDelete={handleDeleteSaved} />
       {hasRestoredPhotos && (
         <aside className="notice notice-neutral">
-          Восстановлен сохранённый результат без исходных файлов. Для нового cleanup или upload выберите фотографии заново.
+          Восстановлен сохранённый результат без исходных файлов и без доступа к локальной папке. Для нового cleanup или upload выберите фотографии заново.
         </aside>
       )}
 
@@ -508,6 +716,10 @@ export default function App() {
           providerSettings={providerSettings}
           thresholdMeters={thresholdMeters}
           onFiles={handleFilesSelected}
+          onFolderFiles={handleFolderFilesSelected}
+          onPickFolder={handlePickFolder}
+          onDropItems={handleDropItems}
+          onCancelFolderImport={handleCancelFolderImport}
           onRun={handleRun}
           onClearResult={() => setConfirmClearOpen(true)}
           onApplyCoordinates={handleManualCoordinates}
@@ -516,6 +728,7 @@ export default function App() {
           onRemovePhoto={handleRemovePhoto}
           onOpenOnMap={handleOpenOnMap}
           onOpenSettings={() => navigate('settings')}
+          folderImport={folderImport}
         />
       )}
 

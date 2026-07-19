@@ -32,6 +32,11 @@ const noMime = await createStableFileCopy({
 });
 assert.equal(noMime.stableFile.type, 'image/jpeg');
 
+const folderFile = new File(['folder'], 'photo2.jpg', { type: 'image/jpeg' });
+const folderCopy = await createStableFileCopy({ file: folderFile, relativePath: 'GPS object 15/day2/photo2.jpg' }, 1);
+assert.equal(folderCopy.relativePath, 'GPS object 15/day2/photo2.jpg');
+assert.equal(folderCopy.originalName, 'photo2.jpg');
+
 const thumbnailOrder = [];
 const buffered = await bufferSelectedFiles([
   new File(['one'], 'one.jpg', { type: 'image/jpeg' }),
