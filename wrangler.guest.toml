@@ -12,11 +12,13 @@ run_worker_first = true
 not_found_handling = "single-page-application"
 
 [vars]
-BASIC_AUTH_USERNAME = "guest"
 BASIC_AUTH_REQUIRED = "true"
 
 [secrets]
-required = ["BASIC_AUTH_PASSWORD"]
+required = [
+  "BASIC_AUTH_USERNAME",
+  "BASIC_AUTH_PASSWORD"
+]
 
 [[routes]]
 pattern = "gps-guest.bruce-group.net"

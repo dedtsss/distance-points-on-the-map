@@ -364,6 +364,25 @@ assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/
   BASIC_AUTH_REQUIRED: 'true',
   BASIC_AUTH_USERNAME: 'guest',
 }), false);
+assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Authorization: `Basic ${Buffer.from('owner:guest-secret').toString('base64')}` },
+}), {
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+}), false);
+expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Accept: 'text/html' },
+}), {
+  ...assetEnv,
+  BASIC_AUTH_REQUIRED: 'true',
+}));
+expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Accept: 'text/html' },
+}), {
+  ...assetEnv,
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+}));
 expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Accept: 'text/html' },
 }), {
@@ -393,6 +412,17 @@ expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.br
   headers: {
     Accept: 'text/html',
     Authorization: `Basic ${Buffer.from('guest:wrong-secret').toString('base64')}`,
+  },
+}), {
+  ...assetEnv,
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+}));
+expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: {
+    Accept: 'text/html',
+    Authorization: `Basic ${Buffer.from('wrong-user:guest-secret').toString('base64')}`,
   },
 }), {
   ...assetEnv,
@@ -445,6 +475,22 @@ const appTokenBasicAuthorization = `Basic ${Buffer.from('guest:app-token').toStr
 assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Authorization: appTokenBasicAuthorization },
 }), { APP_ACCESS_TOKEN: 'app-token', BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'guest' }), false);
+assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Authorization: `Basic ${Buffer.from('app-token:guest-secret').toString('base64')}` },
+}), {
+  APP_ACCESS_TOKEN: 'app-token',
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+}), false);
+expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Authorization: 'Bearer app-token' },
+}), {
+  ...assetEnv,
+  APP_ACCESS_TOKEN: 'app-token',
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+}));
 const bearerResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
   headers: { Authorization: 'Bearer app-token' },
 }), {
