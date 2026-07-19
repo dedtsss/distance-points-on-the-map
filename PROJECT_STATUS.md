@@ -1,20 +1,42 @@
 # GPS Checker Map Photo — Project Status
 
-Last updated: 2026-07-04
+Last updated: 2026-07-19
 
 ## Current algorithm
 
 The application has one automatic flow:
 
-1. Copy every picker `File` immediately into a stable in-memory `ArrayBuffer`/`Blob`/`File`.
-2. Create a lightweight thumbnail with a maximum side of 320 px.
-3. Read coordinates through a sequential, memory-bounded multi-pass OCR session, then use EXIF as fallback.
-4. Calculate distances only for photos with usable coordinates.
-5. Clean metadata independently for every photo.
-6. Upload only successfully cleaned copies through the Cloudflare Worker.
-7. Keep links, statuses, coordinates and thumbnails; release full buffers after successful upload.
+1. Collect user-selected photos from either ordinary file input, folder input, File System Access directory handles, or safe desktop Chromium folder drop support.
+2. Filter and sort folder selections by natural relative path order, then keep only files allowed by the current validation rules and `MAX_PHOTOS`.
+3. Copy every accepted picker `File` into a stable in-memory `ArrayBuffer`/`Blob`/`File` with bounded copy concurrency.
+4. Preserve `relativePath` as lightweight metadata when the browser provides it.
+5. Create a lightweight thumbnail with a maximum side of 320 px.
+6. Read coordinates through a sequential, memory-bounded multi-pass OCR session, then use EXIF as fallback.
+7. Calculate distances only for photos with usable coordinates.
+8. Clean metadata independently for every photo.
+9. Upload only successfully cleaned copies through the Cloudflare Worker.
+10. Keep links, statuses, coordinates, relative paths and thumbnails; release full buffers after successful upload.
 
-The order is always the browser `FileList` order. `number = index + 1`. Cleaned names are `gps-001.jpg`, `gps-002.jpg`, and so on. `photoId` is the authoritative result key.
+Ordinary file input keeps the browser `FileList` order. Folder import uses natural ordering by `relativePath`/name, so `photo2.jpg` comes before `photo10.jpg`. `number = index + 1`. Cleaned names are `gps-001.jpg`, `gps-002.jpg`, and so on. `photoId` is the authoritative result key.
+
+## Folder picker policy
+
+The upload screen exposes two separate actions:
+
+- `Выбрать фотографии`: ordinary `<input type="file" multiple>` for one or more images.
+- `Выбрать папку`: shown only when feature detection finds `window.showDirectoryPicker` or `input.webkitdirectory`.
+
+Folder import is progressive enhancement:
+
+- File System Access API `showDirectoryPicker` is used when available.
+- `<input type="file" webkitdirectory multiple accept="image/*">` is the required fallback.
+- Desktop Chromium drag/drop can import folder entries when `getAsFileSystemHandle` or `webkitGetAsEntry` is available.
+
+The app selects physical folders exposed by the system file picker. It does not claim support for virtual gallery albums, cloud collections, Favorites or Recents as folders. Android Chrome/WebView/PWA behavior depends on actual browser API support. Firefox and Safari keep ordinary file input when folder APIs are absent.
+
+Supported folder images are JPG/JPEG, PNG and WebP. HEIC/HEIF are skipped because the current browser OCR/cleanup pipeline does not guarantee support. Files with explicit unsupported MIME types are not accepted only because their extension looks like an image. System junk, empty files, duplicates, read errors and files beyond the existing 20-photo limit are reported in the folder summary.
+
+No Android permissions, `MANAGE_EXTERNAL_STORAGE`, APK, MediaStore or Storage Access Framework are used in the web implementation. A future APK would be required for deeper Android media-library behavior such as virtual albums or durable MediaStore/SAF access.
 
 ## Upload blocking rules
 
@@ -83,16 +105,18 @@ The latest result is stored under:
 gps-checker-last-session-v1
 ```
 
-Stored data includes session timestamps, threshold, provider settings, filenames, lightweight thumbnails, coordinates, distance/cleanup/upload statuses and public result links.
+Stored data includes session timestamps, threshold, provider settings, filenames, lightweight thumbnails, coordinates, distance/cleanup/upload statuses and public result links. Folder-created sessions may also include a display name derived from the selected folder and each photo's `relativePath`.
 
 Never stored:
 
 - `File` or `Blob`;
 - source/stable/cleaned buffers;
 - object URLs;
+- directory handles;
+- browser storage permissions;
 - full debug or raw image data.
 
-On reload the user may restore or delete the saved result. “Clear result” removes both current UI state and the stored session.
+On reload the user may restore or delete the saved result. Restore is display-only: it does not restore access to the previous local folder. “Clear result” removes both current UI state and the stored session.
 
 The snapshot is refreshed after meaningful photo-state updates, not only after the final batch result. Restored sessions contain display-only data: cleanup/upload cannot resume without selecting the source files again. OCR confidence/status and manual-coordinate flags are preserved.
 

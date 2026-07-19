@@ -25,6 +25,7 @@ export function createPhotoJob(bufferedFile, index) {
     id: makePhotoId(),
     number: index + 1,
     fileName: bufferedFile.originalName,
+    relativePath: bufferedFile.relativePath || '',
     safeName: bufferedFile.safeName,
     type: bufferedFile.type,
     size: bufferedFile.size,

@@ -39,6 +39,7 @@ export function serializePhotoForSession(photo) {
     photoId: photo.id || photo.photoId || '',
     number: photo.number,
     fileName: photo.fileName || '',
+    relativePath: photo.relativePath || '',
     safeName: photo.safeName || '',
     size: Number(photo.size) || 0,
     indexFromOcr: photo.indexFromOcr || null,
@@ -91,7 +92,7 @@ export function getSessionDiagnostics(storage = globalThis.localStorage) {
   }
 }
 
-export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, photos, providerSettings, activeScreen }) {
+export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, photos, providerSettings, activeScreen, name }) {
   const timestamp = nowIso();
   return {
     version: 1,
@@ -100,6 +101,7 @@ export function createSessionSnapshot({ sessionId, createdAt, thresholdMeters, p
     updatedAt: timestamp,
     thresholdMeters,
     activeScreen: activeScreen || 'upload',
+    name: name || '',
     providerSettings: providerSettings ? { ...providerSettings } : undefined,
     photos: (photos || []).map(serializePhotoForSession),
   };
@@ -143,6 +145,7 @@ export function restoreSessionPhotos(session) {
       id: photo.photoId || `restored-${session.sessionId}-${photo.number || index + 1}`,
       number: photo.number || index + 1,
       fileName: photo.fileName,
+      relativePath: photo.relativePath || '',
       safeName: photo.safeName,
       size: photo.size,
       indexFromOcr: photo.indexFromOcr || null,

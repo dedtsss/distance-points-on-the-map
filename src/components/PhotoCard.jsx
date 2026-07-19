@@ -86,6 +86,7 @@ export default function PhotoCard({
         <dl className="photo-card-fields">
           <div><dt>Размер</dt><dd>{formatFileSize(photo.size)}</dd></div>
           <div><dt>Внутреннее имя</dt><dd>{photo.displayFileName || photo.internalName || 'ожидает индекса'}</dd></div>
+          {photo.relativePath && <div><dt>Путь</dt><dd>{photo.relativePath}</dd></div>}
           <div><dt>Индекс</dt><dd>{indexDisplayText(photo)}</dd></div>
           <div><dt>Координаты</dt><dd>{formatCoordinates(photo.coordinates, {
             coordinateText: photo.coordinateQuality === 'low_precision' ? photo.coordinateText : null,
