@@ -1,8 +1,9 @@
+import { recordOcrDiagnostic } from '../diagnostics/ocrDiagnostics.js';
 import { normalizeCoordinates } from './coordinateParser.js';
 import { readCoordinatesFromExif } from './exifFallback.js';
 import { readCoordinatesWithOcr } from './ocrReader.js';
 
-const debugOcr = (ocr, includeDetails = false) => ({
+const debugOcr = (ocr, includeDetails = true) => ({
   rawText: ocr?.rawText || '',
   normalizedText: ocr?.normalizedText || '',
   indexFromOcr: ocr?.indexFromOcr || null,
@@ -26,9 +27,19 @@ const debugOcr = (ocr, includeDetails = false) => ({
 export async function readGpsPipeline(stableFile, options = {}) {
   const readOcr = options.dependencies?.readOcr || readCoordinatesWithOcr;
   const readExif = options.dependencies?.readExif || readCoordinatesFromExif;
+  const startedAt = Date.now();
   let ocr = null;
   let ocrError = null;
   let exifError = null;
+
+  const finish = (result) => {
+    recordOcrDiagnostic({
+      stableFile,
+      elapsedMs: Date.now() - startedAt,
+      result,
+    });
+    return result;
+  };
 
   try {
     ocr = await readOcr(stableFile, {
@@ -47,7 +58,7 @@ export async function readGpsPipeline(stableFile, options = {}) {
     } catch (error) {
       exifError = error instanceof Error ? error.message : String(error);
     }
-    return {
+    return finish({
       found: true,
       coordinates: ocrCoordinates,
       source: 'ocr',
@@ -62,8 +73,8 @@ export async function readGpsPipeline(stableFile, options = {}) {
       gpsWarnings: ocr.warnings || [],
       ocrAttemptCount: ocr.attempts?.length || 0,
       orientation: orientationExif?.orientation || 1,
-      debug: { ocr: debugOcr(ocr, options.debug === true), ocrError, exif: orientationExif, exifError },
-    };
+      debug: { ocr: debugOcr(ocr, true), ocrError, exif: orientationExif, exifError },
+    });
   }
 
   let exif = null;
@@ -78,7 +89,7 @@ export async function readGpsPipeline(stableFile, options = {}) {
     exif?.coordinates?.longitude,
   );
   if (exifCoordinates) {
-    return {
+    return finish({
       found: true,
       coordinates: exifCoordinates,
       source: 'exif',
@@ -92,11 +103,11 @@ export async function readGpsPipeline(stableFile, options = {}) {
       gpsWarnings: [],
       ocrAttemptCount: ocr?.attempts?.length || 0,
       orientation: exif?.orientation || 1,
-      debug: { ocr: debugOcr(ocr, options.debug === true), ocrError, exif, exifError },
-    };
+      debug: { ocr: debugOcr(ocr, true), ocrError, exif, exifError },
+    });
   }
 
-  return {
+  return finish({
     found: false,
     coordinates: null,
     source: null,
@@ -111,10 +122,10 @@ export async function readGpsPipeline(stableFile, options = {}) {
     ocrAttemptCount: ocr?.attempts?.length || 0,
     orientation: exif?.orientation || 1,
     debug: {
-      ocr: debugOcr(ocr, options.debug === true),
+      ocr: debugOcr(ocr, true),
       ocrError,
       exif,
       exifError: exifError || exif?.exifError || null,
     },
-  };
+  });
 }
