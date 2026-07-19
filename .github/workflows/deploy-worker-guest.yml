@@ -1,0 +1,147 @@
+name: Deploy Cloudflare Guest Worker
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-guest-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production-guest
+      url: https://gps-guest.bruce-group.net/
+    env:
+      VITE_BASE_PATH: /
+      VITE_UPLOAD_PROXY_URL: /api/upload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Validate deployment secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BASIC_AUTH_USERNAME: ${{ secrets.BASIC_AUTH_USERNAME }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Missing GitHub secret: CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Missing GitHub secret: CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+          if [ -z "$BASIC_AUTH_USERNAME" ]; then
+            echo "::error::Missing GitHub secret: BASIC_AUTH_USERNAME"
+            exit 1
+          fi
+          if [ -z "$BASIC_AUTH_PASSWORD" ]; then
+            echo "::error::Missing GitHub secret: BASIC_AUTH_PASSWORD"
+            exit 1
+          fi
+          echo "Cloudflare deployment secrets are present."
+          echo "Guest Basic Auth deployment secret is present."
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Test
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build:cloudflare
+
+      - name: Validate workspace diff formatting
+        run: git diff --check
+
+      - name: Validate owner and guest Worker identity separation
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          owner = open('wrangler.toml', encoding='utf-8').read()
+          guest = open('wrangler.guest.toml', encoding='utf-8').read()
+          def read(pattern, text, label):
+              match = re.search(pattern, text, flags=re.MULTILINE)
+              if not match:
+                  print(f'::error::Missing {label}')
+                  sys.exit(1)
+              return match.group(1)
+          owner_name = read(r'^name\s*=\s*"([^"]+)"', owner, 'owner name')
+          guest_name = read(r'^name\s*=\s*"([^"]+)"', guest, 'guest name')
+          owner_route = read(r'^pattern\s*=\s*"([^"]+)"', owner, 'owner route pattern')
+          guest_route = read(r'^pattern\s*=\s*"([^"]+)"', guest, 'guest route pattern')
+          guest_required = read(r'^BASIC_AUTH_REQUIRED\s*=\s*"([^"]+)"', guest, 'guest BASIC_AUTH_REQUIRED')
+          if owner_name == guest_name:
+              print('::error::Owner and guest Worker names must be different.')
+              sys.exit(1)
+          if owner_route == guest_route:
+              print('::error::Owner and guest route patterns must be different.')
+              sys.exit(1)
+          if guest_required != 'true':
+              print('::error::Guest Worker must set BASIC_AUTH_REQUIRED = "true".')
+              sys.exit(1)
+          if re.search(r'^BASIC_AUTH_USERNAME\s*=', guest, flags=re.MULTILINE):
+              print('::error::Guest Worker must not hardcode BASIC_AUTH_USERNAME in [vars].')
+              sys.exit(1)
+          for secret_name in ('BASIC_AUTH_USERNAME', 'BASIC_AUTH_PASSWORD'):
+              if not re.search(r'^\[secrets\]\s*^required\s*=\s*\[[^\]]*"' + secret_name + r'"', guest, flags=re.MULTILINE):
+                  print(f'::error::Guest Worker must declare {secret_name} in [secrets].required.')
+                  sys.exit(1)
+          print(f'Owner Worker: {owner_name} ({owner_route})')
+          print(f'Guest Worker: {guest_name} ({guest_route})')
+          PY
+
+      - name: Secret scan for tracked files and build output
+        run: |
+          set -euo pipefail
+          if rg -n --hidden --glob '!node_modules/**' --glob '!.git/**' --glob '!dist/**/*.map' \
+            '(BASIC_AUTH_PASSWORD\s*=\s*".+"|APP_ACCESS_TOKEN\s*=\s*".+"|Authorization:\s*Basic\s+[A-Za-z0-9+/=]{16,})' \
+            wrangler*.toml workers src dist README.md DEPLOYMENT.md .github/workflows scripts; then
+            echo "::error::Potential credential material detected in repository files."
+            exit 1
+          fi
+          echo "No obvious credential literals in scanned files."
+
+      - name: Wrangler dry-run owner Worker config
+        run: npx wrangler deploy --dry-run --config wrangler.toml
+
+      - name: Wrangler dry-run guest Worker config
+        run: npx wrangler deploy --dry-run --config wrangler.guest.toml
+
+      - name: Deploy guest Worker and static assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BASIC_AUTH_USERNAME: ${{ secrets.BASIC_AUTH_USERNAME }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          secrets_file="$(mktemp)"
+          cleanup() {
+            rm -f "$secrets_file"
+            unset BASIC_AUTH_USERNAME BASIC_AUTH_PASSWORD
+          }
+          trap cleanup EXIT
+          chmod 600 "$secrets_file"
+          python3 - <<'PY' > "$secrets_file"
+          import json, os
+          print(json.dumps({
+            "BASIC_AUTH_USERNAME": os.environ["BASIC_AUTH_USERNAME"],
+            "BASIC_AUTH_PASSWORD": os.environ["BASIC_AUTH_PASSWORD"],
+          }))
+          PY
+          npx wrangler deploy --secrets-file "$secrets_file" --config wrangler.guest.toml

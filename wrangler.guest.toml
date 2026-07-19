@@ -1,0 +1,25 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "gps-checker-map-photo-guest"
+main = "workers/host-proxy/worker.js"
+compatibility_date = "2026-07-15"
+account_id = "977cf45e04d4066ca0b8288de1a337ed"
+workers_dev = false
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"
+
+[vars]
+BASIC_AUTH_REQUIRED = "true"
+
+[secrets]
+required = [
+  "BASIC_AUTH_USERNAME",
+  "BASIC_AUTH_PASSWORD"
+]
+
+[[routes]]
+pattern = "gps-guest.bruce-group.net"
+custom_domain = true

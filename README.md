@@ -55,6 +55,7 @@ npm run dev
 npm test
 npm run build
 npx wrangler deploy --dry-run --config wrangler.toml
+npx wrangler deploy --dry-run --config wrangler.guest.toml
 ```
 
 Live smoke-test уже развёрнутого Worker:
@@ -63,15 +64,28 @@ Live smoke-test уже развёрнутого Worker:
 WORKER_URL=https://gps.bruce-group.net/api/upload WORKER_ACCESS_TOKEN=<token> node scripts/test-worker-upload.mjs
 ```
 
+Guest Basic Auth smoke (без печати пароля в команду/логи):
+
+```bash
+read -r -s -p "Guest username: " GUEST_BASIC_AUTH_USERNAME; echo
+read -r -s -p "Guest password: " GUEST_BASIC_AUTH_PASSWORD; echo
+export GUEST_BASIC_AUTH_USERNAME GUEST_BASIC_AUTH_PASSWORD
+node scripts/test-worker-guest-auth.mjs
+unset GUEST_BASIC_AUTH_USERNAME GUEST_BASIC_AUTH_PASSWORD
+```
+
 ## Деплой
 
-- Production готовится как приватный Cloudflare Worker на `https://gps.bruce-group.net/`.
+- Owner production: приватный Cloudflare Worker на `https://gps.bruce-group.net/` (Google Cloudflare Access).
+- Guest production: отдельный Cloudflare Worker на `https://gps-guest.bruce-group.net/` (Worker Basic Auth).
+- Guest Worker работает в fail-closed режиме `BASIC_AUTH_REQUIRED=true`: без `BASIC_AUTH_USERNAME` или `BASIC_AUTH_PASSWORD` frontend и `/api/upload` отвечают `401`, а первый deploy передаёт оба значения через временный `wrangler deploy --secrets-file` файл с правами `600`.
 - Worker отдаёт frontend из `dist` и обслуживает upload API на `/api/upload`.
 - `.github/workflows/deploy-worker.yml` — production Cloudflare Worker + Static Assets, только `main` или manual.
+- `.github/workflows/deploy-worker-guest.yml` — ручной deploy guest Worker + проверки разделения owner/guest и атомарная публикация `BASIC_AUTH_USERNAME`/`BASIC_AUTH_PASSWORD` через `--secrets-file`.
 - `.github/workflows/deploy.yml` — legacy GitHub Pages, только manual.
 - `.github/workflows/test-worker-upload.yml` — manual smoke-test bundle upload.
 
-Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`. Для приватного доступа используйте Cloudflare Access или Worker secret `BASIC_AUTH_PASSWORD` / `APP_ACCESS_TOKEN`. Секреты фотохостингов не используются.
+Для CI нужны GitHub secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BASIC_AUTH_USERNAME` и `BASIC_AUTH_PASSWORD` для guest workflow. Guest вход использует только Worker secrets `BASIC_AUTH_USERNAME` и `BASIC_AUTH_PASSWORD` в `wrangler.guest.toml`; `APP_ACCESS_TOKEN` сохраняется как машинная/CI совместимость только через Bearer или `X-App-Access-Token` для owner flow, не как Basic Auth credential. Секреты фотохостингов не используются.
 
 Подробно: [DEPLOYMENT.md](DEPLOYMENT.md).
 
