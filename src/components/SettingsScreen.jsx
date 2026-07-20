@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { loadExportDescription, saveExportDescription } from '../features/export/exportPreferences.js';
 import BuildInfo from './BuildInfo.jsx';
 import Icon from './Icon.jsx';
 import PageHeader from './PageHeader.jsx';
@@ -15,10 +17,17 @@ export default function SettingsScreen({
   isBusy,
   onRequestClearSession,
 }) {
+  const [exportDescription, setExportDescription] = useState(() => loadExportDescription());
+
+  const handleExportDescriptionChange = (value) => {
+    const saved = saveExportDescription(value);
+    setExportDescription(saved);
+  };
+
   return (
     <>
       <PageHeader eyebrow="Настройки" title="Параметры проверки">
-        Все настройки применяются к текущей локальной сессии. Provider secrets и приватные headers не выводятся в интерфейс.
+        Настройки обработки применяются к текущей локальной сессии. Общее описание экспорта хранится отдельно и не удаляется при очистке сессии.
       </PageHeader>
 
       <section className="settings-grid">
@@ -85,9 +94,25 @@ export default function SettingsScreen({
           <StatusChip tone="neutral">системный стек шрифтов</StatusChip>
         </article>
 
+        <article className="settings-group settings-group-wide export-description-setting">
+          <h3>Общее описание результата</h3>
+          <p>Этот текст добавляется в начало блока каждой фотографии и сохраняется в браузере между сессиями.</p>
+          <label className="setting-field">
+            Текст описания
+            <textarea
+              rows="5"
+              maxLength="4000"
+              value={exportDescription}
+              onChange={(event) => handleExportDescriptionChange(event.target.value)}
+              placeholder="Например: Опоры линии электропередачи, участок № 4"
+            />
+          </label>
+          <p className="setting-helper">Сохранено автоматически · {exportDescription.length} из 4000 символов</p>
+        </article>
+
         <article className="settings-group danger-zone">
           <h3>Данные сессии</h3>
-          <p>Очистка удалит текущий результат и последнюю локально сохранённую сессию из браузера.</p>
+          <p>Очистка удалит текущий результат и последнюю локально сохранённую сессию из браузера. Общее описание сохранится.</p>
           <button type="button" className="danger-button" onClick={onRequestClearSession} disabled={isBusy}>
             <Icon name="trash" size={18} />
             Очистить сессию
