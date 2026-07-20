@@ -1,9 +1,10 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
 const SITE_URL = 'https://rulook.cc/';
+const ARTIFACT_PATH = path.resolve('artifacts/rulook-lab/result.json');
 const pngBytes = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZVb0AAAAASUVORK5CYII=',
   'base64',
@@ -161,5 +162,7 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
+await mkdir(path.dirname(ARTIFACT_PATH), { recursive: true });
+await writeFile(ARTIFACT_PATH, `${JSON.stringify(report, null, 2)}\n`);
 console.log(`RULOOK_LAB_RESULT ${JSON.stringify(report)}`);
 if (report.verdict === 'FAIL') process.exitCode = 2;
