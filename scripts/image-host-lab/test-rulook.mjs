@@ -10,9 +10,21 @@ const pngBytes = Buffer.from(
   'base64',
 );
 
+const addUrlCandidate = (value, output) => {
+  const text = String(value || '').trim();
+  if (!text || /[`${}]/.test(text)) return;
+  try {
+    if (/^https?:\/\//i.test(text)) output.add(new URL(text).toString());
+    else if (/^\/[a-z0-9]/i.test(text)) output.add(new URL(text, SITE_URL).toString());
+  } catch {
+    // Not a URL candidate.
+  }
+};
+
 const urlsFromValue = (value, output = new Set()) => {
   if (typeof value === 'string') {
-    for (const match of value.matchAll(/https?:\/\/[^\s"'<>]+/g)) output.add(match[0]);
+    addUrlCandidate(value, output);
+    for (const match of value.matchAll(/https?:\/\/[^\s"'<>]+/g)) addUrlCandidate(match[0], output);
     return output;
   }
   if (Array.isArray(value)) {
@@ -26,12 +38,14 @@ const urlsFromValue = (value, output = new Set()) => {
 };
 
 const isCandidateShareUrl = (value) => {
+  if (/[`${}]/.test(String(value || ''))) return false;
   try {
     const url = new URL(value);
     if (!/(^|\.)rulook\.cc$/i.test(url.hostname)) return false;
     if (url.pathname === '/' && !url.hash) return false;
-    if (/\.(?:js|css|svg|woff2?|png|jpe?g|webp|ico)$/i.test(url.pathname) && !url.hash) return false;
-    if (/\/(?:api|assets?|static|favicon)(?:\/|$)/i.test(url.pathname)) return false;
+    if (/^\/(?:ru|en)?\/?(?:files)?\/?$/i.test(url.pathname) && !url.hash) return false;
+    if (/\/(?:api|assets?|static|favicon|updates|poll)(?:\/|$)/i.test(url.pathname)) return false;
+    if (/\.(?:js|css|svg|woff2?|ico)$/i.test(url.pathname) && !url.hash) return false;
     return true;
   } catch {
     return false;
@@ -45,12 +59,14 @@ const verifyViewer = async (browser, url) => {
     const page = await context.newPage();
     try {
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      await page.waitForTimeout(2_500);
+      await page.waitForTimeout(3_000);
+      const bodyText = await page.locator('body').innerText().catch(() => '');
       attempts.push({
         status: response?.status() || null,
         finalUrl: page.url(),
         title: await page.title(),
-        bodyLength: (await page.locator('body').innerText().catch(() => '')).length,
+        bodyLength: bodyText.length,
+        imageCount: await page.locator('img').count(),
       });
     } catch (error) {
       attempts.push({ error: error.message });
@@ -81,6 +97,9 @@ const report = {
   fileInputFound: false,
   uploadControlClicked: '',
   networkPosts: [],
+  apiResponses: [],
+  finalPageUrl: '',
+  domSnapshot: null,
   candidateUrls: [],
   verification: null,
   verdict: 'FAIL',
@@ -96,6 +115,14 @@ page.on('response', async (response) => {
   if (!/json|text|javascript|html/i.test(contentType)) return;
   try {
     const text = await response.text();
+    if (/rulook\.cc\/api\//i.test(response.url())) {
+      report.apiResponses.push({
+        url: response.url(),
+        status: response.status(),
+        contentType,
+        body: text.slice(0, 4_000),
+      });
+    }
     urlsFromValue(text, discoveredUrls);
     try { urlsFromValue(JSON.parse(text), discoveredUrls); } catch { /* not JSON */ }
   } catch {
@@ -117,7 +144,7 @@ try {
     await fileInput.setInputFiles(fixturePath);
     await page.waitForTimeout(1_500);
 
-    const controls = page.getByRole('button', { name: /upload|загруз|share|подел/i });
+    const controls = page.getByRole('button', { name: /upload|загруз|share|подел|закончить/i });
     const controlCount = await controls.count();
     for (let index = 0; index < controlCount; index += 1) {
       const control = controls.nth(index);
@@ -137,14 +164,32 @@ try {
         node.textContent || '',
       ]));
       domValues.forEach((value) => urlsFromValue(value, discoveredUrls));
-      const candidates = [...discoveredUrls].filter(isCandidateShareUrl);
-      if (candidates.length > 0) break;
+      if ([...discoveredUrls].some(isCandidateShareUrl)) break;
       await page.waitForTimeout(1_000);
     }
 
+    report.finalPageUrl = page.url();
+    const snapshot = await page.evaluate(() => ({
+      bodyText: document.body?.innerText?.slice(0, 4_000) || '',
+      anchors: [...document.querySelectorAll('a[href]')].slice(0, 30).map((node) => ({
+        text: node.textContent?.trim() || '',
+        href: node.href || '',
+      })),
+      inputs: [...document.querySelectorAll('input, textarea')].slice(0, 30).map((node) => ({
+        type: node.type || node.tagName.toLowerCase(),
+        name: node.name || '',
+        value: node.value || '',
+        placeholder: node.placeholder || '',
+      })),
+    }));
+    report.domSnapshot = snapshot;
+    urlsFromValue(report.finalPageUrl, discoveredUrls);
+    urlsFromValue(snapshot, discoveredUrls);
+    report.apiResponses.forEach((item) => urlsFromValue(item.body, discoveredUrls));
+
     report.candidateUrls = [...discoveredUrls].filter(isCandidateShareUrl).slice(0, 10);
     if (report.candidateUrls.length === 0) {
-      report.reason = 'No reusable rulook.cc share URL was found after the synthetic upload attempt.';
+      report.reason = 'Upload API calls completed, but no reusable share URL was exposed to the page or API response.';
     } else {
       report.verification = await verifyViewer(browser, report.candidateUrls[0]);
       if (report.verification.repeatOpen) {
