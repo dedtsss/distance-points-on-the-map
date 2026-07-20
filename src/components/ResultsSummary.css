@@ -11,6 +11,108 @@
   font-weight: 750;
 }
 
+.result-export-settings {
+  display: grid;
+  grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.result-color-field,
+.export-description-preview {
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-medium);
+  padding: 12px;
+  background: var(--color-surface-container);
+}
+
+.export-description-preview span {
+  display: block;
+  color: var(--text-muted);
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+.export-description-preview p {
+  margin: 7px 0 0;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.result-blocks-output {
+  min-height: 260px;
+}
+
+.photo-result-block-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.photo-result-block {
+  min-width: 0;
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-medium);
+  padding: 12px;
+  background: var(--color-surface-container);
+  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+
+.photo-result-block.is-copied {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success-container), var(--color-surface-container) 35%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success), transparent 55%);
+}
+
+.photo-result-block-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.photo-result-block-heading strong {
+  color: var(--text-primary);
+}
+
+.copy-photo-block-button {
+  min-height: 36px;
+  padding: 0 11px;
+}
+
+.copy-photo-block-button.is-copied {
+  border-color: var(--color-success);
+  background: var(--color-success-container);
+  color: #ceffe4;
+}
+
+.photo-result-block pre {
+  max-height: 280px;
+  margin: 12px 0 0;
+  overflow: auto;
+  border-radius: var(--radius-small);
+  padding: 11px;
+  background: #090d14;
+  color: var(--text-primary);
+  font: .78rem/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.setting-helper {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+
+@media (max-width: 800px) {
+  .result-export-settings,
+  .photo-result-block-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   .results-summary .all-links-actions {
     grid-template-columns: 1fr;
@@ -18,5 +120,18 @@
 
   .results-summary .all-links-output {
     min-height: 190px;
+  }
+
+  .result-blocks-output {
+    min-height: 300px;
+  }
+
+  .photo-result-block-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .copy-photo-block-button {
+    width: 100%;
   }
 }
