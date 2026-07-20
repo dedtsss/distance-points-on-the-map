@@ -45,7 +45,7 @@ const isCandidateShareUrl = (value) => {
     if (url.pathname === '/' && !url.hash) return false;
     if (/^\/(?:ru|en)?\/?(?:files)?\/?$/i.test(url.pathname) && !url.hash) return false;
     if (/\/(?:api|assets?|static|favicon|updates|poll)(?:\/|$)/i.test(url.pathname)) return false;
-    if (/\.(?:js|css|svg|woff2?|ico)$/i.test(url.pathname) && !url.hash) return false;
+    if (/\.(?:js|css|svg|woff2?|ico|png|jpe?g|webp)$/i.test(url.pathname) && !url.hash) return false;
     return true;
   } catch {
     return false;
@@ -106,6 +106,7 @@ const report = {
   reason: '',
 };
 const discoveredUrls = new Set();
+let finishSeenAt = 0;
 
 page.on('request', (request) => {
   if (request.method() === 'POST') report.networkPosts.push(request.url());
@@ -122,6 +123,7 @@ page.on('response', async (response) => {
         contentType,
         body: text.slice(0, 4_000),
       });
+      if (/\/api\/finish-upload\//i.test(response.url()) && response.ok()) finishSeenAt = Date.now();
     }
     urlsFromValue(text, discoveredUrls);
     try { urlsFromValue(JSON.parse(text), discoveredUrls); } catch { /* not JSON */ }
@@ -155,7 +157,7 @@ try {
       }
     }
 
-    const deadline = Date.now() + 45_000;
+    const deadline = Date.now() + 55_000;
     while (Date.now() < deadline) {
       discoveredUrls.add(page.url());
       const domValues = await page.locator('a[href], input[value], textarea').evaluateAll((nodes) => nodes.flatMap((node) => [
@@ -164,7 +166,7 @@ try {
         node.textContent || '',
       ]));
       domValues.forEach((value) => urlsFromValue(value, discoveredUrls));
-      if ([...discoveredUrls].some(isCandidateShareUrl)) break;
+      if (finishSeenAt > 0 && Date.now() - finishSeenAt >= 7_000) break;
       await page.waitForTimeout(1_000);
     }
 
@@ -174,6 +176,11 @@ try {
       anchors: [...document.querySelectorAll('a[href]')].slice(0, 30).map((node) => ({
         text: node.textContent?.trim() || '',
         href: node.href || '',
+      })),
+      buttons: [...document.querySelectorAll('button')].slice(0, 30).map((node) => ({
+        text: node.textContent?.trim() || '',
+        title: node.title || '',
+        ariaLabel: node.getAttribute('aria-label') || '',
       })),
       inputs: [...document.querySelectorAll('input, textarea')].slice(0, 30).map((node) => ({
         type: node.type || node.tagName.toLowerCase(),
@@ -189,7 +196,7 @@ try {
 
     report.candidateUrls = [...discoveredUrls].filter(isCandidateShareUrl).slice(0, 10);
     if (report.candidateUrls.length === 0) {
-      report.reason = 'Upload API calls completed, but no reusable share URL was exposed to the page or API response.';
+      report.reason = 'Upload API calls completed, but no reusable share URL was exposed to the final page or API response.';
     } else {
       report.verification = await verifyViewer(browser, report.candidateUrls[0]);
       if (report.verification.repeatOpen) {
