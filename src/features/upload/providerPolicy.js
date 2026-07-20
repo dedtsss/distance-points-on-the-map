@@ -19,7 +19,7 @@ export function normalizeProviderSettings(settings = {}) {
     ? settings.fallbackFreeimage !== false
     : settings.freeimage !== false;
   return {
-    ninjabox: settings.ninjabox !== false,
+    ninjabox: true,
     fallbackFreeimage,
     fallbackX0: settings.fallbackX0 !== false,
   };
@@ -28,17 +28,15 @@ export function normalizeProviderSettings(settings = {}) {
 export function validateProviderSettings(settings) {
   const normalized = normalizeProviderSettings(settings);
   return {
-    valid: normalized.ninjabox,
-    selectedProviders: normalized.ninjabox ? [PRIMARY_PROVIDER] : [],
-    providerOrder: normalized.ninjabox
-      ? [
-        PRIMARY_PROVIDER,
-        ...(normalized.fallbackFreeimage ? ['freeimage'] : []),
-        ...(normalized.fallbackX0 ? ['x0'] : []),
-      ]
-      : [],
+    valid: true,
+    selectedProviders: [PRIMARY_PROVIDER],
+    providerOrder: [
+      PRIMARY_PROVIDER,
+      ...(normalized.fallbackFreeimage ? ['freeimage'] : []),
+      ...(normalized.fallbackX0 ? ['x0'] : []),
+    ],
     settings: normalized,
-    error: normalized.ninjabox ? '' : 'NinjaBox должен оставаться основным сервисом загрузки.',
+    error: '',
   };
 }
 
