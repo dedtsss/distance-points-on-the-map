@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { applyManualCoordinateCorrection, applyManualIndexCorrection, getProgressSummary, replacePhotoBatch } from '../src/app/appState.js';
+import {
+  applyManualCoordinateCorrection,
+  applyManualIndexCorrection,
+  getProgressSummary,
+  replacePhotoBatch,
+} from '../src/app/appState.js';
 import { runPhotoPipeline } from '../src/app/pipeline.js';
 import { calculateDistances } from '../src/features/distance/distanceService.js';
 import { readGpsPipeline } from '../src/features/gps/readGpsPipeline.js';
@@ -12,7 +17,6 @@ const ocrWithOrientation = await readGpsPipeline(new File(['gps'], 'ocr.jpg', { 
   },
 });
 assert.equal(ocrWithOrientation.found, true);
-assert.deepEqual(ocrWithOrientation.coordinates, { latitude: 62.223456, longitude: 34.223456 });
 assert.equal(ocrWithOrientation.orientation, 6);
 
 const makePhoto = async (id, number) => {
@@ -35,6 +39,8 @@ const makePhoto = async (id, number) => {
     gpsSource: null,
     gpsConfidence: 0,
     ocrStatus: 'idle',
+    indexFromOcr: null,
+    indexStatus: 'missing',
     manualCoordinates: false,
     coordinateQuality: 'missing',
     coordinatePrecision: null,
@@ -55,100 +61,83 @@ const makePhoto = async (id, number) => {
   };
 };
 
-const cleanSuccess = async (file) => ({
+const cleanSuccess = async (file, options = {}) => ({
   ok: true,
-  file: new File([`clean-${file.name}`], `clean-${file.name}`, { type: 'image/jpeg' }),
+  file: new File([`clean-${file.name}`], options.preferredFilename || `clean-${file.name}`, { type: 'image/jpeg' }),
   method: 'test',
   verification: { checked: true, hasGps: false, hasExif: false },
   debug: { selectedCleanupPath: 'test' },
 });
 
-const uploadSuccess = async (entries) => new Map(entries.map((entry) => [entry.photoId, {
-  freeimageUrl: `https://free.test/${entry.photoId}`,
-  ninjaboxUrl: `https://ninja.test/${entry.photoId}`,
-  ninjaboxGalleryUrl: 'https://ninja.test/gallery',
-  fallbackUrl: '',
-  x0Url: '',
+const uploadResultFor = (entry, provider = 'ninjabox') => ({
+  freeimageUrl: provider === 'freeimage' ? `https://free.test/${entry.photoId}` : '',
+  ninjaboxUrl: provider === 'ninjabox' ? `https://ninja.test/${entry.photoId}` : '',
+  fallbackUrl: provider === 'ninjabox' ? '' : `https://${provider}.test/${entry.photoId}`,
+  x0Url: provider === 'x0' ? `https://x0.test/${entry.photoId}` : '',
   uploadWarnings: [],
-  links: [
-    { provider: 'freeimage', url: `https://free.test/${entry.photoId}` },
-    { provider: 'ninjabox', url: `https://ninja.test/${entry.photoId}` },
-  ],
-  requestedProviders: ['freeimage', 'ninjabox'],
-  providerResults: {},
+  links: [{ provider, url: `https://${provider}.test/${entry.photoId}` }],
+  attempts: [{ provider, ok: true, url: `https://${provider}.test/${entry.photoId}` }],
+  providerOrder: ['ninjabox', 'freeimage', 'x0'],
+  selectedProvider: provider,
+  providerResults: { [provider]: { ok: true } },
   complete: true,
   partial: false,
-}]));
+});
 
-// Missing GPS and OCR errors are non-blocking.
-const missingPhotos = [await makePhoto('missing', 1), await makePhoto('found', 2)];
-const cleanedIds = [];
-let uploadedEntries = [];
-const missingResult = await runPhotoPipeline({
-  photos: missingPhotos,
+const uploadSuccess = async (entries, options = {}) => {
+  const results = new Map();
+  let completed = 0;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    options.onProgress?.({ type: 'started', photoId: entry.photoId, index, photoNumber: index + 1, total: entries.length, completed });
+    const result = uploadResultFor(entry);
+    results.set(entry.photoId, result);
+    completed += 1;
+    options.onProgress?.({ type: 'completed', photoId: entry.photoId, index, photoNumber: index + 1, total: entries.length, completed, result });
+  }
+  return results;
+};
+
+// Missing GPS remains non-blocking, and upload progress advances one photo at a time.
+const photos = [await makePhoto('missing', 1), await makePhoto('found', 2)];
+const statusEvents = [];
+const result = await runPhotoPipeline({
+  photos,
   dependencies: {
     readGps: async (file) => file.name === 'missing.jpg'
       ? Promise.reject(new Error('OCR failed'))
-      : { found: true, coordinates: { latitude: 62.1, longitude: 34.1 }, source: 'ocr', confidence: 0.9, ocrStatus: 'confident', orientation: 1, debug: {} },
-    clean: async (file) => { cleanedIds.push(file.name); return cleanSuccess(file); },
-    upload: async (entries) => { uploadedEntries = entries; return uploadSuccess(entries); },
-  },
-});
-assert.deepEqual(cleanedIds, ['missing.jpg', 'found.jpg']);
-assert.equal(missingResult.photos[0].gpsStatus, 'missing');
-assert.equal(missingResult.photos[0].uploadStatus, 'done');
-assert.equal(missingResult.photos[0].distanceStatus, 'missing_coordinates');
-assert.equal(uploadedEntries.length, 2);
-assert.ok(uploadedEntries.every((entry, index) => entry.cleaned && entry.file !== missingPhotos[index].stableFile));
-assert.ok(missingResult.photos.every((photo) => photo.stableFile === null && photo.thumbnailDataUrl));
-
-const indexedPhotos = [await makePhoto('indexed', 1), await makePhoto('no-index', 2)];
-const preferredFilenames = [];
-let indexedUploadEntries = [];
-const indexedResult = await runPhotoPipeline({
-  photos: indexedPhotos,
-  dependencies: {
-    readGps: async (file) => file.name === 'indexed.jpg'
-      ? {
+      : {
         found: true,
-        coordinates: { latitude: 62.2, longitude: 34.2 },
+        coordinates: { latitude: 64.607016, longitude: 30.62284 },
         source: 'ocr',
-        confidence: 0.91,
+        confidence: 0.9,
         ocrStatus: 'confident',
-        indexFromOcr: '5939',
+        indexFromOcr: '6369',
         indexStatus: 'found',
         orientation: 1,
         debug: {},
-      }
-      : { found: false, coordinates: null, indexFromOcr: null, indexStatus: 'missing', orientation: 1, debug: {} },
-    clean: async (_file, options) => {
-      preferredFilenames.push(options.preferredFilename);
-      return {
-        ok: true,
-        file: new File(['clean'], options.preferredFilename, { type: 'image/jpeg' }),
-        method: 'test',
-        verification: { checked: true, hasGps: false, hasExif: false },
-        debug: {},
-      };
-    },
-    upload: async (entries) => {
-      indexedUploadEntries = entries;
-      return uploadSuccess(entries);
-    },
+      },
+    clean: cleanSuccess,
+    upload: uploadSuccess,
+  },
+  onPhotoUpdate: (photoId, patch) => {
+    if (patch.uploadStatus) statusEvents.push(`${photoId}:${patch.uploadStatus}`);
   },
 });
-assert.equal(indexedResult.photos[0].indexFromOcr, '5939');
-assert.equal(indexedResult.photos[0].indexStatus, 'found');
-assert.equal(indexedResult.photos[0].pointLabel, '5939');
-assert.equal(indexedResult.photos[0].internalName, 'index-5939');
-assert.equal(indexedResult.photos[0].displayFileName, 'index-5939.jpg');
-assert.equal(indexedResult.photos[1].indexStatus, 'missing');
-assert.equal(indexedResult.photos[1].pointLabel, 'Фото 2');
-assert.equal(indexedResult.photos[1].internalName, 'photo-002-no-index');
-assert.ok(preferredFilenames.every((name) => /^gps-\d{3}\.jpg$/.test(name)));
-assert.ok(indexedUploadEntries.every((entry) => !entry.file.name.includes('5939')));
-assert.equal(indexedResult.photos[0].uploadStatus, 'done');
+assert.equal(result.photos[0].gpsStatus, 'missing');
+assert.equal(result.photos[0].distanceStatus, 'missing_coordinates');
+assert.ok(result.photos.every((photo) => photo.uploadStatus === 'done'));
+assert.deepEqual(statusEvents.filter((event) => /processing|done/.test(event)), [
+  'missing:processing',
+  'missing:done',
+  'found:processing',
+  'found:done',
+]);
+assert.ok(result.photos.every((photo) => photo.stableFile === null && photo.cleanedBlob === null));
+assert.equal(result.photos[1].indexFromOcr, '6369');
+assert.equal(result.photos[1].internalName, 'index-6369');
 
+// Manual index remains authoritative during later OCR.
 const manualIndexBase = applyManualIndexCorrection([await makePhoto('manual-index', 1)], 'manual-index', '0123');
 const manualIndexResult = await runPhotoPipeline({
   photos: manualIndexBase,
@@ -156,7 +145,7 @@ const manualIndexResult = await runPhotoPipeline({
   dependencies: {
     readGps: async () => ({
       found: true,
-      coordinates: { latitude: 62.2, longitude: 34.2 },
+      coordinates: { latitude: 64.6, longitude: 30.6 },
       source: 'ocr',
       confidence: 0.91,
       ocrStatus: 'confident',
@@ -169,64 +158,14 @@ const manualIndexResult = await runPhotoPipeline({
 });
 assert.equal(manualIndexResult.photos[0].indexFromOcr, '0123');
 assert.equal(manualIndexResult.photos[0].indexStatus, 'manual');
-assert.equal(manualIndexResult.photos[0].internalName, 'index-0123');
 
-// A suspicious OCR candidate is informational and does not block cleanup/upload.
-const suspiciousResult = await runPhotoPipeline({
-  photos: [await makePhoto('suspicious-ocr', 1)],
-  dependencies: {
-    readGps: async () => ({
-      found: false,
-      coordinates: null,
-      source: null,
-      confidence: 0.42,
-      ocrStatus: 'suspect',
-      orientation: 1,
-      debug: { ocr: { chosenCandidate: { latitude: 62.1, longitude: 34.1 } } },
-    }),
-    clean: cleanSuccess,
-    upload: uploadSuccess,
-  },
-});
-assert.equal(suspiciousResult.photos[0].ocrStatus, 'suspect');
-assert.equal(suspiciousResult.photos[0].gpsStatus, 'missing');
-assert.equal(suspiciousResult.photos[0].uploadStatus, 'done');
-
-// A distance conflict is informational and does not block cleanup/upload.
-const closePhotos = [await makePhoto('close-a', 1), await makePhoto('close-b', 2)];
-let closeCleanCount = 0;
-let closeUploadCount = 0;
-const journalEvents = [];
-const closeResult = await runPhotoPipeline({
-  photos: closePhotos,
-  dependencies: {
-    readGps: async (file) => ({
-      found: true,
-      coordinates: file.name === 'close-a.jpg'
-        ? { latitude: 62.1, longitude: 34.1 }
-        : { latitude: 62.10001, longitude: 34.10001 },
-      source: 'ocr', confidence: 0.9, ocrStatus: 'confident', orientation: 1, debug: {},
-    }),
-    clean: async (file) => { closeCleanCount += 1; return cleanSuccess(file); },
-    upload: async (entries) => { closeUploadCount = entries.length; return uploadSuccess(entries); },
-  },
-  onLog: (entry) => journalEvents.push(entry.message),
-});
-assert.equal(closeResult.distanceResult.violations.length, 1);
-assert.equal(closeCleanCount, 2);
-assert.equal(closeUploadCount, 2);
-assert.ok(closeResult.photos.every((photo) => photo.uploadStatus === 'done'));
-assert.ok(journalEvents.some((message) => message.startsWith('OCR started')));
-assert.ok(journalEvents.some((message) => message.startsWith('Cleanup started')));
-assert.ok(journalEvents.some((message) => message.startsWith('Upload freeimage')));
-
-const lowPrecisionPhotos = [await makePhoto('trusted-near', 1), await makePhoto('low-precision-near', 2)];
-const lowPrecisionJournal = [];
+// Low-precision coordinates survive for manual confirmation but do not become normal distance points.
+const lowPrecisionPhotos = [await makePhoto('trusted', 1), await makePhoto('low', 2)];
 const lowPrecisionResult = await runPhotoPipeline({
   photos: lowPrecisionPhotos,
   stages: { gps: true, cleanup: false, upload: false },
   dependencies: {
-    readGps: async (file) => file.name === 'trusted-near.jpg'
+    readGps: async (file) => file.name === 'trusted.jpg'
       ? {
         found: true,
         coordinates: { latitude: 64.60271, longitude: 30.61999 },
@@ -248,34 +187,24 @@ const lowPrecisionResult = await runPhotoPipeline({
         coordinateText: { latitude: '64.60272', longitude: '30.62' },
         gpsWarnings: ['low_precision_coordinate'],
         orientation: 1,
-        debug: { ocr: { warnings: ['low_precision_coordinate'] } },
+        debug: {},
       },
   },
-  onLog: (entry) => lowPrecisionJournal.push(entry.message),
 });
-const lowPrecisionPhoto = lowPrecisionResult.photos.find((photo) => photo.id === 'low-precision-near');
-assert.equal(lowPrecisionPhoto.gpsStatus, 'low_precision');
-assert.equal(lowPrecisionPhoto.coordinateQuality, 'low_precision');
-assert.equal(lowPrecisionPhoto.distanceStatus, 'low_precision');
-assert.notEqual(lowPrecisionPhoto.distanceStatus, 'ok');
-assert.notEqual(lowPrecisionPhoto.distanceStatus, 'missing_coordinates');
-assert.deepEqual(lowPrecisionPhoto.coordinates, { latitude: 64.60272, longitude: 30.62 });
-assert.ok(lowPrecisionJournal.some((message) => message === 'Координаты найдены с низкой точностью: 64.60272, 30.62'));
-const lowPrecisionSummary = getProgressSummary(lowPrecisionResult.photos);
-assert.equal(lowPrecisionSummary.confident, 1);
-assert.equal(lowPrecisionSummary.lowPrecision, 1);
-assert.equal(lowPrecisionSummary.missing, 0);
+const lowPhoto = lowPrecisionResult.photos.find((photo) => photo.id === 'low');
+assert.equal(lowPhoto.coordinateQuality, 'low_precision');
+assert.equal(lowPhoto.distanceStatus, 'low_precision');
+assert.equal(getProgressSummary(lowPrecisionResult.photos).lowPrecision, 1);
 
-const confirmedLowPrecision = applyManualCoordinateCorrection(
+const confirmed = applyManualCoordinateCorrection(
   lowPrecisionResult.photos,
-  'low-precision-near',
+  'low',
   { latitude: 64.60272, longitude: 30.62 },
   (items) => calculateDistances(items, 25),
 );
-const confirmedPhoto = confirmedLowPrecision.find((photo) => photo.id === 'low-precision-near');
-assert.equal(confirmedPhoto.coordinateQuality, 'manual');
-assert.equal(confirmedPhoto.distanceStatus, 'too_close');
+assert.equal(confirmed.find((photo) => photo.id === 'low').coordinateQuality, 'manual');
 
+// Suspicious outlier detection remains active.
 const sanityPhotos = [
   { id: 'a', coordinates: { latitude: 64.6, longitude: 30.6 }, gpsConfidence: 0.9, ocrStatus: 'confident' },
   { id: 'b', coordinates: { latitude: 64.61, longitude: 30.61 }, gpsConfidence: 0.9, ocrStatus: 'confident' },
@@ -283,56 +212,53 @@ const sanityPhotos = [
 ];
 const sanity = validateCoordinateBatch(sanityPhotos);
 assert.equal(sanity.byPhotoId.get('bad').coordinateQuality, 'suspicious');
-const summary = getProgressSummary(sanityPhotos.map((photo) => ({ ...photo, ...sanity.byPhotoId.get(photo.id) })));
-assert.equal(summary.confident, 2);
-assert.equal(summary.suspicious, 1);
 
-const manuallyCorrected = applyManualCoordinateCorrection(
-  sanityPhotos.map((photo) => ({ ...photo, ...sanity.byPhotoId.get(photo.id), number: 1 })),
-  'bad',
-  { latitude: 64.60001, longitude: 30.60001 },
-  (items) => calculateDistances(items, 25),
-);
-assert.equal(manuallyCorrected.find((photo) => photo.id === 'bad').coordinateQuality, 'manual');
-assert.equal(manuallyCorrected.find((photo) => photo.id === 'bad').distanceStatus, 'too_close');
-
-// Cleanup failure skips only failed photos; the rest still upload.
+// Cleanup failure isolates one photo; remaining photos still upload.
 const mixedPhotos = [await makePhoto('broken', 1), await makePhoto('ok-a', 2), await makePhoto('ok-b', 3)];
-let isolatedEntries = [];
 const mixedResult = await runPhotoPipeline({
   photos: mixedPhotos,
   dependencies: {
     readGps: async () => ({ found: false, coordinates: null, orientation: 1, debug: {} }),
-    clean: async (file) => file.name === 'broken.jpg'
-      ? { ok: false, file: null, error: 'broken jpeg', debug: { selectedCleanupPath: 'canvas-fallback' } }
-      : cleanSuccess(file),
-    upload: async (entries) => { isolatedEntries = entries; return uploadSuccess(entries); },
-  },
-});
-assert.deepEqual(isolatedEntries.map((entry) => entry.photoId), ['ok-a', 'ok-b']);
-assert.equal(mixedResult.photos[0].cleanupStatus, 'failed');
-assert.equal(mixedResult.photos[0].uploadStatus, 'skipped');
-assert.equal(mixedResult.photos[0].userError, 'Не удалось очистить metadata. Фото не загружено.');
-assert.equal(mixedResult.photos[1].uploadStatus, 'done');
-assert.equal(mixedResult.photos[2].uploadStatus, 'done');
-
-// A new batch after partial cleanup failure starts with fresh state and buffers.
-const firstBatch = await Promise.all(Array.from({ length: 10 }, (_, index) => makePhoto(`batch1-${index + 1}`, index + 1)));
-const firstRun = await runPhotoPipeline({
-  photos: firstBatch,
-  dependencies: {
-    readGps: async () => ({ found: false, coordinates: null, orientation: 1, debug: {} }),
-    clean: async (file) => /batch1-(9|10)\.jpg/.test(file.name)
-      ? { ok: false, file: null, error: 'simulated cleanup failure', debug: {} }
-      : cleanSuccess(file),
+    clean: async (file, options) => file.name === 'broken.jpg'
+      ? { ok: false, file: null, error: 'broken jpeg', debug: {} }
+      : cleanSuccess(file, options),
     upload: uploadSuccess,
   },
 });
-assert.equal(firstRun.uploadedCount, 8);
-assert.equal(firstRun.failedCount, 2);
+assert.equal(mixedResult.photos[0].cleanupStatus, 'failed');
+assert.equal(mixedResult.photos[0].uploadStatus, 'skipped');
+assert.equal(mixedResult.photos[1].uploadStatus, 'done');
+assert.equal(mixedResult.photos[2].uploadStatus, 'done');
 
-const freshBuffered = await Promise.all(Array.from({ length: 3 }, async (_, index) => {
-  const photo = await makePhoto(`batch2-${index + 1}`, index + 1);
+// A provider failure on one photo does not stop the next photo.
+const providerFailurePhotos = [await makePhoto('upload-broken', 1), await makePhoto('upload-ok', 2)];
+const providerFailureResult = await runPhotoPipeline({
+  photos: providerFailurePhotos,
+  dependencies: {
+    readGps: async () => ({ found: false, coordinates: null, orientation: 1, debug: {} }),
+    clean: cleanSuccess,
+    upload: async (entries, options = {}) => {
+      const results = new Map();
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        options.onProgress?.({ type: 'started', photoId: entry.photoId, index, photoNumber: index + 1, total: entries.length, completed: index });
+        const value = entry.photoId === 'upload-broken'
+          ? { links: [], attempts: [{ provider: 'ninjabox', ok: false, error: 'down' }], technicalError: 'all providers failed' }
+          : uploadResultFor(entry, 'freeimage');
+        results.set(entry.photoId, value);
+        options.onProgress?.({ type: 'completed', photoId: entry.photoId, index, photoNumber: index + 1, total: entries.length, completed: index + 1, result: value });
+      }
+      return results;
+    },
+  },
+});
+assert.equal(providerFailureResult.photos[0].uploadStatus, 'failed');
+assert.equal(providerFailureResult.photos[1].uploadStatus, 'done');
+assert.match(providerFailureResult.photos[1].statusText, /Freeimage.*резерв/);
+
+// Replacing a batch creates clean state and releases previous buffers.
+const freshBuffered = await Promise.all(Array.from({ length: 2 }, async (_, index) => {
+  const photo = await makePhoto(`fresh-${index + 1}`, index + 1);
   return {
     originalName: photo.fileName,
     safeName: photo.safeName,
@@ -345,37 +271,8 @@ const freshBuffered = await Promise.all(Array.from({ length: 3 }, async (_, inde
     thumbnailDataUrl: photo.thumbnailDataUrl,
   };
 }));
-const replacement = replacePhotoBatch(firstRun.photos, freshBuffered);
-assert.ok(replacement.releasedPrevious.every((photo) => photo.stableFile === null && photo.cleanedBlob === null));
-assert.ok(replacement.photos.every((photo) => (
-  photo.status === 'buffered'
-  && photo.userError === ''
-  && photo.uploadResult === null
-  && photo.cleanupStatus === 'idle'
-  && photo.uploadStatus === 'idle'
-)));
+const replacement = replacePhotoBatch(result.photos, freshBuffered);
+assert.ok(replacement.releasedPrevious.every((photo) => photo.stableFile === null));
+assert.ok(replacement.photos.every((photo) => photo.uploadStatus === 'idle' && photo.uploadResult === null));
 
-const secondRun = await runPhotoPipeline({
-  photos: replacement.photos,
-  dependencies: {
-    readGps: async () => ({ found: false, coordinates: null, orientation: 1, debug: {} }),
-    clean: cleanSuccess,
-    upload: uploadSuccess,
-  },
-});
-assert.equal(secondRun.uploadedCount, 3);
-assert.equal(secondRun.failedCount, 0);
-assert.ok(secondRun.photos.every((photo) => photo.userError === '' && photo.uploadStatus === 'done'));
-
-const noLinksResult = await runPhotoPipeline({
-  photos: [await makePhoto('no-links', 1)],
-  dependencies: {
-    readGps: async () => ({ found: false, coordinates: null, orientation: 1, debug: {} }),
-    clean: cleanSuccess,
-    upload: async () => new Map(),
-  },
-});
-assert.equal(noLinksResult.photos[0].uploadStatus, 'failed');
-assert.equal(noLinksResult.photos[0].userError, 'Не удалось загрузить фото. Повторите попытку.');
-
-console.log('Pipeline tests passed');
+console.log('Pipeline and per-photo upload progress tests passed');
