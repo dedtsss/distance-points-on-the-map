@@ -40,6 +40,10 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Rulook compatibility lab
+        continue-on-error: true
+        run: npm run test:image-hosts:rulook
+
       - name: Build Cloudflare frontend
         run: npm run build:cloudflare
 
