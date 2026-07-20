@@ -1,7 +1,7 @@
 {
   "name": "gps-photo-distance-checker",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -38,7 +38,8 @@
     "test:image-hosts:round3": "node scripts/image-host-lab/test-hosts.mjs --providers=freeimage,postimages,usapic,imgbox,pixsafe,filesfm",
     "test:image-hosts:finalists": "node scripts/image-host-lab/test-finalists.mjs",
     "test:image-hosts:cloudflare": "node scripts/image-host-lab/test-cloudflare-egress.mjs",
-    "test:image-hosts:ninjabox": "node scripts/image-host-lab/test-ninjabox.mjs"
+    "test:image-hosts:ninjabox": "node scripts/image-host-lab/test-ninjabox.mjs",
+    "test:image-hosts:rulook": "node scripts/image-host-lab/test-rulook.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "4.3.1",
