@@ -1,37 +1,25 @@
-import { normalizeProviderSettings } from '../upload/providerPolicy.js';
+const DEFAULT_ORDER = ['ninjabox', 'freeimage', 'x0'];
 
-const directLink = (result, provider) => result?.links?.find((link) => link.provider === provider)?.url || '';
-
-export function photoLinksInRequestedOrder(photo, providerSettings) {
+export function photoLinksInRequestedOrder(photo) {
   const result = photo?.uploadResult;
-  if (!result) return [];
-  const settings = normalizeProviderSettings(providerSettings || {
-    freeimage: result.requestedProviders?.includes('freeimage'),
-    ninjabox: result.requestedProviders?.includes('ninjabox'),
-    includeX0: result.includeX0,
-    fallbackX0: result.fallback !== 'none',
-  });
-  const fallback = result.links?.find((link) => link.provider === 'x0') || null;
-  const replaces = fallback?.replaces || [];
-  const urls = [];
-
-  for (const provider of ['freeimage', 'ninjabox']) {
-    if (!settings[provider]) continue;
-    const url = directLink(result, provider) || (replaces.includes(provider) ? fallback?.url : '');
-    if (url) urls.push(url);
-  }
-
-  if (settings.includeX0) {
-    const x0Url = directLink(result, 'x0');
-    if (x0Url) urls.push(x0Url);
-  }
-
-  return urls;
+  if (!result || !Array.isArray(result.links)) return [];
+  const order = Array.isArray(result.providerOrder) && result.providerOrder.length > 0
+    ? result.providerOrder
+    : Array.isArray(result.requestedProviders) && result.requestedProviders.length > 0
+      ? [...result.requestedProviders, 'x0']
+      : DEFAULT_ORDER;
+  const priority = new Map(order.map((provider, index) => [provider, index]));
+  return [...result.links]
+    .filter((link) => String(link?.url || '').trim())
+    .sort((left, right) => (
+      (priority.get(left.provider) ?? order.length) - (priority.get(right.provider) ?? order.length)
+    ))
+    .map((link) => String(link.url).trim());
 }
 
-export function formatAllLinks(photos, providerSettings) {
+export function formatAllLinks(photos) {
   return (photos || [])
-    .map((photo) => photoLinksInRequestedOrder(photo, providerSettings).join('\n'))
+    .map((photo) => photoLinksInRequestedOrder(photo).join('\n'))
     .filter(Boolean)
     .join('\n\n');
 }

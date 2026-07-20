@@ -14,6 +14,12 @@ const progressText = ({ status, progress }) => {
   return 'Подготовка OCR';
 };
 
+const providerLabel = (provider) => ({
+  ninjabox: 'NinjaBox',
+  freeimage: 'Freeimage',
+  x0: 'x0.at',
+}[provider] || provider || 'хостинг');
+
 const isLowPrecisionGps = (gps) => (
   gps?.coordinateQuality === 'low_precision'
   || gps?.ocrStatus === 'low_precision'
@@ -153,19 +159,19 @@ export async function runPhotoPipeline(options) {
     const gpsReadyPhotos = [...jobs.values()];
     distanceResult = calculate(gpsReadyPhotos, options.thresholdMeters);
     gpsReadyPhotos.forEach((photo) => {
-    const result = distanceResult.byPhotoId.get(photo.id) || {
-      distanceStatus: 'missing_coordinates',
-      distanceConflicts: [],
-    };
-    patchPhoto(photo.id, {
-      status: PHOTO_STATUS.DISTANCE_READY,
-      statusText: photo.coordinateQuality === 'low_precision'
-        ? 'Координаты найдены, но точность низкая — проверь вручную'
-        : photo.coordinateQuality === 'suspicious'
-          ? 'Координаты подозрительные — нужна проверка'
-          : photo.coordinates ? 'Расстояния рассчитаны' : 'Без расчёта расстояний',
-      ...result,
-    });
+      const result = distanceResult.byPhotoId.get(photo.id) || {
+        distanceStatus: 'missing_coordinates',
+        distanceConflicts: [],
+      };
+      patchPhoto(photo.id, {
+        status: PHOTO_STATUS.DISTANCE_READY,
+        statusText: photo.coordinateQuality === 'low_precision'
+          ? 'Координаты найдены, но точность низкая — проверь вручную'
+          : photo.coordinateQuality === 'suspicious'
+            ? 'Координаты подозрительные — нужна проверка'
+            : photo.coordinates ? 'Расстояния рассчитаны' : 'Без расчёта расстояний',
+        ...result,
+      });
     });
   }
 
@@ -247,76 +253,96 @@ export async function runPhotoPipeline(options) {
   }
 
   if (stages.upload && cleanedEntries.length > 0) {
-    const selectedProviders = ['freeimage', 'ninjabox'].filter((provider) => options.providerSettings?.[provider] !== false);
-    cleanedEntries.forEach((entry) => selectedProviders.forEach((provider) => log(`Upload ${provider}: started`, entry.photoId)));
-    cleanedEntries.forEach((entry) => patchPhoto(entry.photoId, {
-      status: PHOTO_STATUS.UPLOADING,
-      statusText: 'Загрузка фотографий',
-      uploadStatus: 'processing',
-    }));
+    const appliedResults = new Set();
+    const applyUploadResult = (entry, result) => {
+      if (appliedResults.has(entry.photoId)) return;
+      appliedResults.add(entry.photoId);
+
+      for (const attempt of result?.attempts || []) {
+        log(
+          `Upload ${providerLabel(attempt.provider)}: ${attempt.ok ? 'done' : 'error'}`,
+          entry.photoId,
+          attempt.ok ? 'success' : 'warning',
+        );
+      }
+
+      if (!result || result.links.length === 0) {
+        patchPhoto(entry.photoId, {
+          status: PHOTO_STATUS.FAILED,
+          statusText: 'Фото не загружено ни на один хостинг',
+          uploadStatus: 'failed',
+          userError: USER_ERRORS.UPLOAD_FAILED,
+          uploadResult: result || null,
+          debug: {
+            ...jobs.get(entry.photoId).debug,
+            uploadError: result?.technicalError || 'No upload links returned',
+            providerResponses: result?.providerResults || null,
+          },
+        });
+        return;
+      }
+
+      const selectedProvider = result.selectedProvider || result.links[0]?.provider;
+      const fallbackUsed = selectedProvider && selectedProvider !== 'ninjabox';
+      patchPhoto(entry.photoId, {
+        status: PHOTO_STATUS.UPLOADED,
+        statusText: `Загружено: ${providerLabel(selectedProvider)}${fallbackUsed ? ' (резерв)' : ''}`,
+        uploadStatus: 'done',
+        uploadResult: result,
+        userError: '',
+        debug: {
+          ...jobs.get(entry.photoId).debug,
+          uploadError: result.technicalError || '',
+          providerResponses: result.providerResults,
+        },
+      });
+      const released = releasePhotoBuffers(jobs.get(entry.photoId));
+      jobs.set(entry.photoId, released);
+      options.onPhotoUpdate?.(entry.photoId, {
+        sourceBuffer: null,
+        stableBlob: null,
+        stableFile: null,
+        cleanedBlob: null,
+        previewObjectUrl: null,
+      });
+    };
 
     try {
       const uploadResults = await upload(cleanedEntries, {
         proxyUrl: options.proxyUrl,
         signal: options.signal,
         providerSettings: options.providerSettings,
+        onProgress: (progress) => {
+          const entry = cleanedEntries[progress.index] || cleanedEntries.find((item) => item.photoId === progress.photoId);
+          if (!entry) return;
+          if (progress.type === 'started') {
+            patchPhoto(entry.photoId, {
+              status: PHOTO_STATUS.UPLOADING,
+              statusText: `Загрузка на NinjaBox · фото ${progress.photoNumber} из ${progress.total}`,
+              uploadStatus: 'processing',
+              userError: '',
+            });
+            log(`Upload chain started: фото ${progress.photoNumber} из ${progress.total}`, entry.photoId);
+          }
+          if (progress.type === 'completed') applyUploadResult(entry, progress.result);
+        },
       });
 
+      cleanedEntries.forEach((entry) => applyUploadResult(entry, uploadResults.get(entry.photoId)));
+    } catch (error) {
       cleanedEntries.forEach((entry) => {
-        const result = uploadResults.get(entry.photoId);
-        if (!result || result.links.length === 0) {
-          patchPhoto(entry.photoId, {
-            status: PHOTO_STATUS.FAILED,
-            statusText: 'Фото не загружено',
-            uploadStatus: 'failed',
-            userError: USER_ERRORS.UPLOAD_FAILED,
-            uploadResult: result || null,
-            debug: {
-              ...jobs.get(entry.photoId).debug,
-              uploadError: result?.technicalError || 'No upload links returned',
-              providerResponses: result?.providerResults || null,
-            },
-          });
-          return;
-        }
-
+        if (appliedResults.has(entry.photoId)) return;
         patchPhoto(entry.photoId, {
-          status: PHOTO_STATUS.UPLOADED,
-          statusText: result.complete ? `Загружено: ${result.links.length} ссылок` : `Загружено частично: ${result.links.length}`,
-          uploadStatus: result.complete ? 'done' : 'partial',
-          uploadResult: result,
-          userError: '',
+          status: PHOTO_STATUS.FAILED,
+          statusText: 'Фото не загружено',
+          uploadStatus: 'failed',
+          userError: USER_ERRORS.UPLOAD_FAILED,
           debug: {
             ...jobs.get(entry.photoId).debug,
-            uploadError: result.technicalError || '',
-            providerResponses: result.providerResults,
+            uploadError: technicalErrorMessage(error),
           },
         });
-        for (const provider of selectedProviders) {
-          log(`Upload ${provider}: ${result.links.some((link) => link.provider === provider) ? 'done' : 'error'}`, entry.photoId, result.links.some((link) => link.provider === provider) ? 'success' : 'error');
-        }
-        if (result.links.some((link) => link.provider === 'x0')) log('Upload x0 fallback: done', entry.photoId, 'success');
-        const released = releasePhotoBuffers(jobs.get(entry.photoId));
-        jobs.set(entry.photoId, released);
-        options.onPhotoUpdate?.(entry.photoId, {
-          sourceBuffer: null,
-          stableBlob: null,
-          stableFile: null,
-          cleanedBlob: null,
-          previewObjectUrl: null,
-        });
       });
-    } catch (error) {
-      cleanedEntries.forEach((entry) => patchPhoto(entry.photoId, {
-        status: PHOTO_STATUS.FAILED,
-        statusText: 'Фото не загружено',
-        uploadStatus: 'failed',
-        userError: USER_ERRORS.UPLOAD_FAILED,
-        debug: {
-          ...jobs.get(entry.photoId).debug,
-          uploadError: technicalErrorMessage(error),
-        },
-      }));
     }
   }
 
