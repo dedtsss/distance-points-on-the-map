@@ -3,8 +3,9 @@ import { uploadNinjabox } from './ninjabox.js';
 import { uploadX0 } from './x0.js';
 
 const MAX_FILES = 20;
-const PROVIDER_CONCURRENCY = 2;
-const DEFAULT_SELECTED_PROVIDERS = ['freeimage', 'ninjabox'];
+const FILE_CONCURRENCY = 2;
+const DEFAULT_PROVIDER_ORDER = Object.freeze(['ninjabox', 'freeimage', 'x0']);
+const ALLOWED_PROVIDERS = new Set(DEFAULT_PROVIDER_ORDER);
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -20,7 +21,6 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload, nul
 });
 
 const errorMessage = (error) => (error instanceof Error ? error.message : String(error || 'Unknown upload error'));
-
 const textEncoder = new TextEncoder();
 
 const safeEqual = (left, right) => {
@@ -49,10 +49,7 @@ const decodeBasicCredentials = (authorization) => {
     const decoded = atob(match[1]);
     const separator = decoded.indexOf(':');
     if (separator < 0) return null;
-    return {
-      username: decoded.slice(0, separator),
-      password: decoded.slice(separator + 1),
-    };
+    return { username: decoded.slice(0, separator), password: decoded.slice(separator + 1) };
   } catch {
     return null;
   }
@@ -71,15 +68,11 @@ export function isAuthorizedRequest(request, env = {}) {
   if (basicUsername && basicPassword && basic && safeEqual(basic.username, basicUsername) && safeEqual(basic.password, basicPassword)) {
     return true;
   }
-
   if (basicRequired) return false;
 
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] || '';
   const headerToken = request.headers.get('X-App-Access-Token') || '';
-  if (bearerToken && (safeEqual(bearer, bearerToken) || safeEqual(headerToken, bearerToken))) {
-    return true;
-  }
-
+  if (bearerToken && (safeEqual(bearer, bearerToken) || safeEqual(headerToken, bearerToken))) return true;
   return !basicPassword && !bearerToken;
 }
 
@@ -125,141 +118,154 @@ async function mapWithConcurrency(items, limit, callback) {
   return results;
 }
 
-const uploadIndividually = (files, provider, upload) => mapWithConcurrency(
-  files,
-  PROVIDER_CONCURRENCY,
-  async (file) => {
-    try { return await upload(file); } catch (error) { return failedProvider(provider, error); }
-  },
-);
+const normalizeOrder = (order) => [...new Set((order || [])
+  .map((provider) => String(provider || '').trim().toLowerCase())
+  .filter((provider) => ALLOWED_PROVIDERS.has(provider)))];
 
 export function normalizeWorkerPolicy(policy = {}) {
-  const selectedProviders = Array.isArray(policy.selectedProviders)
-    ? [...new Set(policy.selectedProviders.filter((provider) => DEFAULT_SELECTED_PROVIDERS.includes(provider)))]
-    : DEFAULT_SELECTED_PROVIDERS;
-  if (selectedProviders.length === 0) throw new Error('Select at least one primary provider.');
+  let providerOrder = normalizeOrder(policy.providerOrder);
+  if (providerOrder.length === 0 && Array.isArray(policy.selectedProviders)) {
+    providerOrder = normalizeOrder([
+      ...(policy.selectedProviders.includes('ninjabox') ? ['ninjabox'] : []),
+      ...(policy.selectedProviders.includes('freeimage') ? ['freeimage'] : []),
+      ...(policy.includeX0 === true || policy.fallback === 'x0' ? ['x0'] : []),
+    ]);
+  }
+  if (providerOrder.length === 0) providerOrder = [...DEFAULT_PROVIDER_ORDER];
   return {
-    selectedProviders,
-    includeX0: policy.includeX0 === true,
-    fallback: policy.fallback === 'none' ? 'none' : 'x0',
+    mode: 'chain',
+    providerOrder,
+    selectedProviders: providerOrder.filter((provider) => provider !== 'x0'),
+    includeX0: false,
+    fallback: 'chain',
   };
 }
 
 export function parseWorkerPolicy(formData) {
+  const rawOrder = formData.get('providerOrder');
   const rawProviders = formData.get('providers');
-  const selectedProviders = rawProviders === null
-    ? DEFAULT_SELECTED_PROVIDERS
-    : String(rawProviders).split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
-  return normalizeWorkerPolicy({
-    selectedProviders,
-    includeX0: String(formData.get('includeX0') || 'false').toLowerCase() === 'true',
-    fallback: formData.get('fallback') === null ? 'x0' : String(formData.get('fallback')).toLowerCase(),
-  });
+  if (rawOrder !== null) {
+    return normalizeWorkerPolicy({
+      providerOrder: String(rawOrder).split(',').map((item) => item.trim()).filter(Boolean),
+    });
+  }
+  if (rawProviders !== null) {
+    const selectedProviders = String(rawProviders).split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+    return normalizeWorkerPolicy({
+      selectedProviders,
+      includeX0: String(formData.get('includeX0') || 'false').toLowerCase() === 'true',
+      fallback: formData.get('fallback') === null ? 'x0' : String(formData.get('fallback')).toLowerCase(),
+    });
+  }
+  return normalizeWorkerPolicy();
+}
+
+const normalizeNinjaboxItem = async (file, upload) => {
+  const batch = await upload([file]);
+  const item = batch?.items?.[0];
+  if (!batch?.ok || !item?.url) {
+    throw new Error(batch?.error || 'NinjaBox returned no link for the photo.');
+  }
+  return {
+    provider: 'ninjabox',
+    ok: true,
+    url: item.url,
+    directUrl: item.directUrl || null,
+    galleryUrl: batch.galleryUrl || null,
+    status: batch.status || 200,
+    responseTimeMs: batch.responseTimeMs || null,
+    error: null,
+  };
+};
+
+async function runProvider(provider, file, providerOverrides = {}) {
+  try {
+    if (provider === 'ninjabox') {
+      return await normalizeNinjaboxItem(file, providerOverrides.ninjabox || uploadNinjabox);
+    }
+    if (provider === 'freeimage') {
+      return await (providerOverrides.freeimage || uploadFreeimage)(file);
+    }
+    if (provider === 'x0') {
+      return await (providerOverrides.x0 || uploadX0)(file);
+    }
+    return failedProvider(provider, 'Unsupported provider.');
+  } catch (error) {
+    return failedProvider(provider, error);
+  }
 }
 
 export function composeBundleItem({
   index,
   photoId,
   fileName,
-  freeimage = null,
-  ninjabox = null,
-  fallback = null,
-  selectedProviders = DEFAULT_SELECTED_PROVIDERS,
-  includeX0 = false,
-  fallbackPolicy = 'x0',
+  attempts = [],
+  providerOrder = DEFAULT_PROVIDER_ORDER,
 }) {
-  const links = [];
-  if (freeimage?.ok) links.push({ provider: 'freeimage', role: 'primary', url: freeimage.url, directUrl: freeimage.directUrl });
-  if (ninjabox?.ok) links.push({ provider: 'ninjabox', role: 'secondary', url: ninjabox.url, directUrl: ninjabox.directUrl });
-  const replaces = selectedProviders.filter((provider) => (
-    provider === 'freeimage' ? !freeimage?.ok : !ninjabox?.ok
-  ));
-  if (fallback?.ok) {
-    links.push({
-      provider: 'x0',
-      role: includeX0 ? 'required' : 'fallback',
-      url: fallback.url,
-      directUrl: fallback.directUrl,
-      replaces,
-    });
-  }
-  const expectedLinkCount = selectedProviders.length + (includeX0 ? 1 : 0);
+  const selected = attempts.find((attempt) => attempt?.ok && attempt?.url) || null;
+  const attemptedProviders = attempts.map((attempt) => attempt.provider);
+  const replaced = attempts.filter((attempt) => !attempt?.ok).map((attempt) => attempt.provider);
+  const links = selected ? [{
+    provider: selected.provider,
+    role: selected.provider === providerOrder[0] ? 'primary' : 'fallback',
+    url: selected.url,
+    directUrl: selected.directUrl || null,
+    replaces: selected.provider === providerOrder[0] ? [] : replaced,
+  }] : [];
+  const providers = Object.fromEntries(DEFAULT_PROVIDER_ORDER.map((provider) => [
+    provider,
+    attempts.find((attempt) => attempt.provider === provider) || null,
+  ]));
+
   return {
     index,
     photoId,
     fileName,
-    ok: links.length >= expectedLinkCount,
-    partial: links.length > 0 && links.length < expectedLinkCount,
+    ok: links.length === 1,
+    partial: false,
     links,
-    providers: {
-      freeimage: selectedProviders.includes('freeimage') ? freeimage : null,
-      ninjabox: selectedProviders.includes('ninjabox') ? ninjabox : null,
-      x0: fallback,
-    },
-    selectedProviders,
-    includeX0,
-    fallback: fallbackPolicy,
+    providers,
+    attempts,
+    attemptedProviders,
+    providerOrder,
+    selectedProvider: selected?.provider || null,
+    galleryUrl: selected?.provider === 'ninjabox' ? selected.galleryUrl || null : null,
   };
+}
+
+async function uploadOneWithChain(file, index, photoId, providerOverrides, policy) {
+  const attempts = [];
+  for (const provider of policy.providerOrder) {
+    const result = await runProvider(provider, file, providerOverrides);
+    attempts.push(result);
+    if (result.ok && result.url) break;
+  }
+  return composeBundleItem({
+    index,
+    photoId,
+    fileName: file.name,
+    attempts,
+    providerOrder: policy.providerOrder,
+  });
 }
 
 export async function uploadBundle(files, photoIds, providerOverrides = {}, requestedPolicy = {}) {
   const policy = normalizeWorkerPolicy(requestedPolicy);
-  const freeimageUpload = providerOverrides.freeimage || uploadFreeimage;
-  const ninjaboxUpload = providerOverrides.ninjabox || uploadNinjabox;
-  const x0Upload = providerOverrides.x0 || uploadX0;
-
-  const freeimagePromise = policy.selectedProviders.includes('freeimage')
-    ? uploadIndividually(files, 'freeimage', freeimageUpload)
-    : Promise.resolve(files.map(() => null));
-  const ninjaPromise = policy.selectedProviders.includes('ninjabox')
-    ? ninjaboxUpload(files).catch((error) => ({ ok: false, galleryUrl: null, items: [], error: errorMessage(error) }))
-    : Promise.resolve({ ok: false, galleryUrl: null, items: [], error: null });
-  const [ninjabox, freeimage] = await Promise.all([ninjaPromise, freeimagePromise]);
-
-  const primaryResults = files.map((file, index) => ({
-    file,
-    index,
-    photoId: photoIds[index] || String(index),
-    freeimage: policy.selectedProviders.includes('freeimage') ? freeimage[index] : null,
-    ninjabox: policy.selectedProviders.includes('ninjabox')
-      ? (ninjabox.ok && ninjabox.items[index]
-        ? { provider: 'ninjabox', ok: true, ...ninjabox.items[index], error: null }
-        : failedProvider('ninjabox', ninjabox.error || `Ninjabox returned no link for file ${index + 1}`))
-      : null,
-  }));
-
-  const needsFallback = (item) => policy.selectedProviders.some((provider) => (
-    provider === 'freeimage' ? !item.freeimage?.ok : !item.ninjabox?.ok
+  const items = await mapWithConcurrency(files, FILE_CONCURRENCY, (file, index) => (
+    uploadOneWithChain(file, index, photoIds[index] || String(index), providerOverrides, policy)
   ));
-  const x0Indexes = primaryResults
-    .filter((item) => policy.includeX0 || (policy.fallback === 'x0' && needsFallback(item)))
-    .map((item) => item.index);
-  const x0Uploads = await uploadIndividually(x0Indexes.map((index) => files[index]), 'x0', x0Upload);
-  const x0ByIndex = new Map(x0Indexes.map((index, offset) => [index, x0Uploads[offset]]));
-
-  const items = primaryResults.map((item) => composeBundleItem({
-    index: item.index,
-    photoId: item.photoId,
-    fileName: item.file.name,
-    freeimage: item.freeimage,
-    ninjabox: item.ninjabox,
-    fallback: x0ByIndex.get(item.index) || null,
-    selectedProviders: policy.selectedProviders,
-    includeX0: policy.includeX0,
-    fallbackPolicy: policy.fallback,
-  }));
-
   return {
     ok: items.every((item) => item.ok),
     target: 'bundle',
-    providerOrder: [...policy.selectedProviders, ...(policy.includeX0 || policy.fallback === 'x0' ? ['x0'] : [])],
+    mode: 'chain',
+    providerOrder: policy.providerOrder,
     selectedProviders: policy.selectedProviders,
-    includeX0: policy.includeX0,
-    fallback: policy.fallback,
-    ninjaboxGalleryUrl: policy.selectedProviders.includes('ninjabox') ? ninjabox.galleryUrl || null : null,
+    includeX0: false,
+    fallback: 'chain',
+    ninjaboxGalleryUrl: items.find((item) => item.selectedProvider === 'ninjabox')?.galleryUrl || null,
     completeCount: items.filter((item) => item.ok).length,
-    partialCount: items.filter((item) => item.partial).length,
-    failedCount: items.filter((item) => item.links.length === 0).length,
+    partialCount: 0,
+    failedCount: items.filter((item) => !item.ok).length,
     items,
   };
 }
@@ -283,8 +289,7 @@ export async function handleUploadRequest(request, providerOverrides = {}) {
     if (files.length > MAX_FILES) return json({ ok: false, error: `Maximum ${MAX_FILES} files per request.` }, 400);
 
     if (target === 'bundle') {
-      let policy;
-      try { policy = parseWorkerPolicy(formData); } catch (error) { return json({ ok: false, error: errorMessage(error) }, 400); }
+      const policy = parseWorkerPolicy(formData);
       return json(await uploadBundle(files, formData.getAll('photoId').map(String), providerOverrides, policy));
     }
     if (target === 'freeimage') return json(await (providerOverrides.freeimage || uploadFreeimage)(files[0]));
@@ -298,10 +303,8 @@ export async function handleUploadRequest(request, providerOverrides = {}) {
 
 async function serveStaticAsset(request, env = {}) {
   if (!env.ASSETS) return json({ ok: false, error: 'Static assets binding is not configured.' }, 404);
-
   const response = await env.ASSETS.fetch(request);
   if (response.status !== 404 || !wantsHtml(request)) return response;
-
   const url = new URL(request.url);
   url.pathname = '/index.html';
   url.search = '';
@@ -310,7 +313,6 @@ async function serveStaticAsset(request, env = {}) {
 
 export async function handleWorkerRequest(request, env = {}, providerOverrides = {}) {
   if (!isAuthorizedRequest(request, env)) return unauthorized();
-
   const url = new URL(request.url);
   if (isUploadPath(request)) return handleUploadRequest(request, providerOverrides);
   if (url.pathname.startsWith('/api/')) return json({ ok: false, error: 'Unknown API route.' }, 404);
