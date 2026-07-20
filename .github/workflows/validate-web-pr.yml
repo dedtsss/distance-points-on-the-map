@@ -44,6 +44,15 @@ jobs:
         continue-on-error: true
         run: npm run test:image-hosts:rulook
 
+      - name: Upload Rulook lab report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rulook-lab-report
+          path: artifacts/rulook-lab/result.json
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Build Cloudflare frontend
         run: npm run build:cloudflare
 
