@@ -1,5 +1,4 @@
-import { normalizeBundleResult } from './providerPolicy.js';
-import { providerRequestPolicy } from './providerPolicy.js';
+import { normalizeBundleResult, normalizeProviderResult, providerRequestPolicy } from './providerPolicy.js';
 
 const viteEnv = import.meta.env || {};
 export const DEFAULT_PROXY_URL = viteEnv.VITE_UPLOAD_PROXY_URL || '/api/upload';
@@ -7,9 +6,8 @@ export const DEFAULT_PROXY_URL = viteEnv.VITE_UPLOAD_PROXY_URL || '/api/upload';
 export async function requestUploadBundle(entries, proxyUrl, signal, policy) {
   const formData = new FormData();
   formData.append('target', 'bundle');
-  formData.append('providers', policy.providers);
-  formData.append('includeX0', String(policy.includeX0));
-  formData.append('fallback', policy.fallback);
+  formData.append('mode', policy.mode || 'chain');
+  formData.append('providerOrder', (policy.providerOrder || []).join(','));
   entries.forEach((entry) => {
     formData.append('photoId', entry.photoId);
     formData.append('files', entry.file, entry.file.name);
@@ -26,6 +24,11 @@ export async function requestUploadBundle(entries, proxyUrl, signal, policy) {
   return data;
 }
 
+const failedResult = (error, policy) => ({
+  ...normalizeProviderResult(null, '', { providerOrder: policy.providerOrder }),
+  technicalError: error instanceof Error ? error.message : String(error || 'Upload failed'),
+});
+
 export async function uploadCleanedPhotos(entries, options = {}) {
   if (!Array.isArray(entries) || entries.length === 0) return new Map();
   const proxyUrl = String(options.proxyUrl || DEFAULT_PROXY_URL).trim();
@@ -40,13 +43,51 @@ export async function uploadCleanedPhotos(entries, options = {}) {
   });
 
   const request = options.dependencies?.requestBundle || requestUploadBundle;
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), options.timeoutMs || 180_000);
+  const results = new Map();
+  let completed = 0;
 
-  try {
-    const bundle = await request(entries, proxyUrl, options.signal || controller.signal, policy);
-    return normalizeBundleResult(bundle, entries);
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    options.onProgress?.({
+      type: 'started',
+      photoId: entry.photoId,
+      index,
+      photoNumber: index + 1,
+      total: entries.length,
+      completed,
+      providerOrder: policy.providerOrder,
+    });
+
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener?.('abort', abortFromParent, { once: true });
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), options.timeoutMsPerPhoto || 180_000);
+
+    let result;
+    try {
+      const bundle = await request([entry], proxyUrl, controller.signal, policy);
+      result = normalizeBundleResult(bundle, [entry]).get(entry.photoId)
+        || failedResult('Worker did not return this photo.', policy);
+    } catch (error) {
+      result = failedResult(error, policy);
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+      options.signal?.removeEventListener?.('abort', abortFromParent);
+    }
+
+    results.set(entry.photoId, result);
+    completed += 1;
+    options.onProgress?.({
+      type: 'completed',
+      photoId: entry.photoId,
+      index,
+      photoNumber: index + 1,
+      total: entries.length,
+      completed,
+      result,
+      providerOrder: policy.providerOrder,
+    });
   }
+
+  return results;
 }
