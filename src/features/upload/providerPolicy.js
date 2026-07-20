@@ -1,30 +1,44 @@
-export const PRIMARY_PROVIDERS = Object.freeze(['freeimage', 'ninjabox']);
-export const FALLBACK_PROVIDER = 'x0';
+export const PRIMARY_PROVIDER = 'ninjabox';
+export const FALLBACK_PROVIDERS = Object.freeze(['freeimage', 'x0']);
+export const PROVIDER_CHAIN = Object.freeze([PRIMARY_PROVIDER, ...FALLBACK_PROVIDERS]);
 
 export const DEFAULT_PROVIDER_SETTINGS = Object.freeze({
-  freeimage: true,
   ninjabox: true,
-  includeX0: false,
+  fallbackFreeimage: true,
   fallbackX0: true,
 });
 
+const providerLabel = (provider) => ({
+  ninjabox: 'NinjaBox',
+  freeimage: 'Freeimage',
+  x0: 'x0.at',
+}[provider] || provider);
+
 export function normalizeProviderSettings(settings = {}) {
+  const fallbackFreeimage = settings.fallbackFreeimage !== undefined
+    ? settings.fallbackFreeimage !== false
+    : settings.freeimage !== false;
   return {
-    freeimage: settings.freeimage !== false,
     ninjabox: settings.ninjabox !== false,
-    includeX0: settings.includeX0 === true,
+    fallbackFreeimage,
     fallbackX0: settings.fallbackX0 !== false,
   };
 }
 
 export function validateProviderSettings(settings) {
   const normalized = normalizeProviderSettings(settings);
-  const selectedProviders = PRIMARY_PROVIDERS.filter((provider) => normalized[provider]);
   return {
-    valid: selectedProviders.length > 0,
-    selectedProviders,
+    valid: normalized.ninjabox,
+    selectedProviders: normalized.ninjabox ? [PRIMARY_PROVIDER] : [],
+    providerOrder: normalized.ninjabox
+      ? [
+        PRIMARY_PROVIDER,
+        ...(normalized.fallbackFreeimage ? ['freeimage'] : []),
+        ...(normalized.fallbackX0 ? ['x0'] : []),
+      ]
+      : [],
     settings: normalized,
-    error: selectedProviders.length > 0 ? '' : 'Выберите хотя бы один основной сервис загрузки.',
+    error: normalized.ninjabox ? '' : 'NinjaBox должен оставаться основным сервисом загрузки.',
   };
 }
 
@@ -32,9 +46,9 @@ export function providerRequestPolicy(settings) {
   const validation = validateProviderSettings(settings);
   return {
     ...validation,
-    providers: validation.selectedProviders.join(','),
-    includeX0: validation.settings.includeX0,
-    fallback: validation.settings.fallbackX0 ? 'x0' : 'none',
+    mode: 'chain',
+    providers: validation.providerOrder.join(','),
+    providerOrder: validation.providerOrder,
   };
 }
 
@@ -42,40 +56,36 @@ const linkFor = (links, provider) => links.find((link) => link.provider === prov
 
 export function normalizeProviderResult(item, galleryUrl = '', bundlePolicy = {}) {
   const links = Array.isArray(item?.links) ? item.links : [];
-  const fallback = links.find((link) => link.provider === FALLBACK_PROVIDER) || null;
-  const replaced = fallback?.replaces || [];
-  const warnings = [];
-  const requestedProviders = Array.isArray(bundlePolicy.providers)
-    ? bundlePolicy.providers
-    : PRIMARY_PROVIDERS;
+  const providerOrder = Array.isArray(item?.providerOrder)
+    ? item.providerOrder
+    : Array.isArray(bundlePolicy.providerOrder)
+      ? bundlePolicy.providerOrder
+      : PROVIDER_CHAIN;
+  const attempts = Array.isArray(item?.attempts) ? item.attempts : [];
+  const selectedProvider = item?.selectedProvider || links[0]?.provider || '';
+  const warnings = attempts
+    .filter((attempt) => attempt?.ok === false)
+    .map((attempt) => `${providerLabel(attempt.provider)} не загрузился${attempt.error ? `: ${attempt.error}` : ''}.`);
 
-  replaced.forEach((provider) => {
-    const label = provider === 'freeimage' ? 'Freeimage' : 'Ninjabox';
-    warnings.push(`${label} не загрузился, использован x0.at.`);
-  });
+  if (selectedProvider && selectedProvider !== providerOrder[0]) {
+    warnings.push(`Использован резервный хостинг ${providerLabel(selectedProvider)}.`);
+  }
 
-  requestedProviders.forEach((provider) => {
-    if (item?.providers?.[provider]?.ok === false && !replaced.includes(provider)) {
-      warnings.push(`${provider === 'freeimage' ? 'Freeimage' : 'Ninjabox'} не загрузился.`);
-    }
-  });
-
-  const expectedLinkCount = requestedProviders.length + (bundlePolicy.includeX0 ? 1 : 0);
   return {
     freeimageUrl: linkFor(links, 'freeimage'),
     ninjaboxUrl: linkFor(links, 'ninjabox'),
-    ninjaboxGalleryUrl: galleryUrl || '',
-    fallbackUrl: fallback?.url || '',
+    ninjaboxGalleryUrl: selectedProvider === 'ninjabox' ? galleryUrl || item?.galleryUrl || '' : '',
+    fallbackUrl: selectedProvider && selectedProvider !== PRIMARY_PROVIDER ? links[0]?.url || '' : '',
     x0Url: linkFor(links, 'x0'),
     uploadWarnings: warnings,
     links,
     providerResults: item?.providers || null,
-    requestedProviders,
-    includeX0: bundlePolicy.includeX0 === true,
-    fallback: bundlePolicy.fallback || 'x0',
-    expectedLinkCount,
-    complete: expectedLinkCount > 0 && links.length >= expectedLinkCount,
-    partial: links.length > 0 && links.length < expectedLinkCount,
+    attempts,
+    providerOrder,
+    selectedProvider,
+    expectedLinkCount: 1,
+    complete: links.length === 1,
+    partial: false,
   };
 }
 
@@ -84,9 +94,7 @@ export function normalizeBundleResult(bundle, entries) {
   const itemByPhotoId = new Map(items.map((item) => [String(item.photoId), item]));
   const results = new Map();
   const bundlePolicy = {
-    providers: Array.isArray(bundle?.selectedProviders) ? bundle.selectedProviders : PRIMARY_PROVIDERS,
-    includeX0: bundle?.includeX0 === true,
-    fallback: bundle?.fallback || 'x0',
+    providerOrder: Array.isArray(bundle?.providerOrder) ? bundle.providerOrder : PROVIDER_CHAIN,
   };
 
   entries.forEach((entry, index) => {
