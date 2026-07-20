@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PHOTO_PROGRESS_EVENT } from '../features/ui/mobileProcessingProgress.js';
 import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates, formatFileSize } from '../utils/format.js';
@@ -46,6 +46,7 @@ export default function PhotoCard({
   const [coordinateError, setCoordinateError] = useState('');
   const [indexError, setIndexError] = useState('');
   const viewerAvailable = Boolean(photo.stableFile || photo.stableBlob || photo.thumbnailDataUrl);
+  const closeViewer = useCallback(() => setViewerOpen(false), []);
 
   useEffect(() => {
     setLatitude(photo.coordinates?.latitude ?? '');
@@ -224,7 +225,7 @@ export default function PhotoCard({
           )}
         </div>
       </article>
-      <PhotoViewerModal open={viewerOpen} photo={photo} onClose={() => setViewerOpen(false)} />
+      <PhotoViewerModal open={viewerOpen} photo={photo} onClose={closeViewer} />
     </>
   );
 }
