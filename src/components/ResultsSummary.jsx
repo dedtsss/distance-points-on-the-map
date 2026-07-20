@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { formatAllLinks } from '../features/links/linkFormatter.js';
 import { formatIndexCoordinateRows } from '../features/points/indexCoordinateFormatter.js';
 import Icon from './Icon.jsx';
+import './ResultsSummary.css';
 
 const copyText = async (value) => {
   if (navigator.clipboard?.writeText) {
