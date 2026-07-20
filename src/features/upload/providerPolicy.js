@@ -26,17 +26,21 @@ export function normalizeProviderSettings(settings = {}) {
 }
 
 export function validateProviderSettings(settings) {
+  const explicitlyDisabled = settings?.ninjabox === false;
   const normalized = normalizeProviderSettings(settings);
-  return {
-    valid: true,
-    selectedProviders: [PRIMARY_PROVIDER],
-    providerOrder: [
+  const providerOrder = explicitlyDisabled
+    ? []
+    : [
       PRIMARY_PROVIDER,
       ...(normalized.fallbackFreeimage ? ['freeimage'] : []),
       ...(normalized.fallbackX0 ? ['x0'] : []),
-    ],
+    ];
+  return {
+    valid: !explicitlyDisabled,
+    selectedProviders: explicitlyDisabled ? [] : [PRIMARY_PROVIDER],
+    providerOrder,
     settings: normalized,
-    error: '',
+    error: explicitlyDisabled ? 'NinjaBox должен оставаться основным сервисом загрузки.' : '',
   };
 }
 
