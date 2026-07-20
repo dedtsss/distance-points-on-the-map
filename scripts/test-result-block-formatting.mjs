@@ -48,6 +48,8 @@ const signature = photoSessionSignature(photos);
 assert.equal(signature, 'photo-a|photo-b');
 assert.equal(saveSessionColor(signature, '  Красный  ', storage), 'Красный');
 assert.equal(loadSessionColor(signature, storage), 'Красный');
+assert.equal(loadSessionColor('photo-b|photo-a', storage), 'Красный');
+assert.equal(loadSessionColor('photo-b', storage), 'Красный');
 assert.equal(loadSessionColor('another-session', storage), '');
 assert.equal(values.has(SESSION_COLOR_KEY), true);
 
