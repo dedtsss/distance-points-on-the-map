@@ -29,6 +29,16 @@ export const photoSessionSignature = (photos = []) => (photos || [])
   .map((photo, index) => String(photo?.id || photo?.photoId || `${photo?.number || index + 1}:${photo?.fileName || ''}`))
   .join('|');
 
+const signatureIds = (signature) => String(signature || '').split('|').filter(Boolean);
+const isSameOrReducedSession = (currentSignature, savedSignature) => {
+  if (currentSignature === savedSignature) return true;
+  const currentIds = signatureIds(currentSignature);
+  const savedIds = signatureIds(savedSignature);
+  if (currentIds.length === 0 || savedIds.length === 0) return false;
+  return currentIds.every((id) => savedIds.includes(id))
+    || savedIds.every((id) => currentIds.includes(id));
+};
+
 export function loadExportDescription(storage = globalThis.localStorage) {
   try {
     return normalizeExportDescription(storage?.getItem(EXPORT_DESCRIPTION_KEY) || '');
@@ -52,7 +62,9 @@ export function loadSessionColor(signature, storage = globalThis.localStorage) {
   if (!signature) return '';
   try {
     const saved = JSON.parse(storage?.getItem(SESSION_COLOR_KEY) || 'null');
-    return saved?.signature === signature ? normalizeSessionColor(saved.color) : '';
+    return isSameOrReducedSession(signature, saved?.signature)
+      ? normalizeSessionColor(saved.color)
+      : '';
   } catch {
     return '';
   }
