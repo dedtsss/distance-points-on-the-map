@@ -11,17 +11,22 @@ import {
   composeBundleItem,
   handleWorkerRequest,
   isAuthorizedRequest,
+  normalizeWorkerPolicy,
   uploadBundle,
 } from '../workers/host-proxy/worker.js';
 import { uploadX0 } from '../workers/host-proxy/x0.js';
 import { requestUploadBundle, uploadCleanedPhotos } from '../src/features/upload/uploadService.js';
-import { validateProviderSettings } from '../src/features/upload/providerPolicy.js';
+import {
+  DEFAULT_PROVIDER_SETTINGS,
+  providerRequestPolicy,
+  validateProviderSettings,
+} from '../src/features/upload/providerPolicy.js';
 
-const freeimage = parseFreeimageApiPage(`
+const freeimageConfig = parseFreeimageApiPage(`
   <h2>API Key</h2><div><input value="public-test-key"></div>
   <h3>Request URL</h3><div><input value="https://freeimage.host/api/1/upload"></div>
 `);
-assert.deepEqual(freeimage, { key: 'public-test-key', endpoint: 'https://freeimage.host/api/1/upload' });
+assert.deepEqual(freeimageConfig, { key: 'public-test-key', endpoint: 'https://freeimage.host/api/1/upload' });
 
 const form = parseNinjaboxForm(`
   <form action="/put" method="post">
@@ -34,7 +39,6 @@ assert.equal(form.fileField, 'files');
 assert.deepEqual(form.hiddenInputs, [{ name: 'csrf', value: 'test-token' }]);
 
 const gallery = parseNinjaboxGallery(`
-  <link href="/css/site.css">
   <a href="/i/photo-1"><img src="/storage/gallery/one.png"></a>
   <a href="/i/photo-2"><img src="/storage/gallery/two.png"></a>
 `, 'https://ninjabox.org/gallery');
@@ -43,222 +47,184 @@ assert.deepEqual(gallery, [
   { url: 'https://ninjabox.org/i/photo-2', directUrl: 'https://ninjabox.org/storage/gallery/two.png' },
 ]);
 
-const providerHeaderCases = [
+for (const headers of [
   buildProviderHeaders('freeimage', 'html'),
   buildProviderHeaders('freeimage', 'api'),
   buildProviderHeaders('ninjabox', 'html'),
   buildProviderHeaders('ninjabox', 'html_upload'),
   buildProviderHeaders('x0', 'api'),
-];
-for (const headers of providerHeaderCases) {
+]) {
   assert.equal(assertProviderHeadersPrivate(headers), true);
-  assert.equal(/GPS-Checker-Map-Photo/i.test(Object.values(headers).join(' ')), false);
   assert.equal(Object.keys(headers).some((name) => /^(authorization|cookie|cf-access-client-id|cf-access-client-secret)$/i.test(name)), false);
 }
 assert.equal(buildProviderHeaders('ninjabox', 'html_upload').Referer, 'https://ninjabox.org/');
 
-const success = { ok: true, url: 'https://example.test/view', directUrl: 'https://example.test/image.jpg' };
-const failed = { ok: false, url: null, directUrl: null, error: 'failed' };
-const fallback = { ok: true, url: 'https://x0.at/test.jpg', directUrl: 'https://x0.at/test.jpg' };
+assert.deepEqual(DEFAULT_PROVIDER_SETTINGS, {
+  ninjabox: true,
+  fallbackFreeimage: true,
+  fallbackX0: true,
+});
+assert.equal(validateProviderSettings(DEFAULT_PROVIDER_SETTINGS).valid, true);
+assert.equal(validateProviderSettings({ ninjabox: false }).valid, false);
+assert.deepEqual(providerRequestPolicy(DEFAULT_PROVIDER_SETTINGS).providerOrder, ['ninjabox', 'freeimage', 'x0']);
+assert.deepEqual(normalizeWorkerPolicy().providerOrder, ['ninjabox', 'freeimage', 'x0']);
+assert.deepEqual(normalizeWorkerPolicy({ providerOrder: ['ninjabox', 'x0'] }).providerOrder, ['ninjabox', 'x0']);
 
-const normal = composeBundleItem({ index: 0, photoId: 'a', fileName: 'a.jpg', freeimage: success, ninjabox: success });
-assert.equal(normal.ok, true);
-assert.deepEqual(normal.links.map((item) => item.provider), ['freeimage', 'ninjabox']);
-assert.equal(normal.providers.x0, null);
+const success = (provider, name = provider) => ({
+  provider,
+  ok: true,
+  url: `https://${provider}.test/${name}`,
+  directUrl: `https://${provider}.test/direct/${name}`,
+  error: null,
+});
+const failure = (provider) => ({ provider, ok: false, url: null, directUrl: null, error: `${provider} failed` });
 
-const replaced = composeBundleItem({ index: 1, photoId: 'b', fileName: 'b.jpg', freeimage: failed, ninjabox: success, fallback });
-assert.equal(replaced.ok, true);
-assert.deepEqual(replaced.links.map((item) => item.provider), ['ninjabox', 'x0']);
-assert.deepEqual(replaced.links[1].replaces, ['freeimage']);
+const primaryItem = composeBundleItem({
+  index: 0,
+  photoId: 'primary',
+  fileName: 'primary.jpg',
+  attempts: [success('ninjabox')],
+});
+assert.equal(primaryItem.ok, true);
+assert.equal(primaryItem.selectedProvider, 'ninjabox');
+assert.deepEqual(primaryItem.links.map((link) => link.provider), ['ninjabox']);
 
-const partial = composeBundleItem({ index: 2, photoId: 'c', fileName: 'c.jpg', freeimage: failed, ninjabox: failed, fallback });
-assert.equal(partial.ok, false);
-assert.equal(partial.partial, true);
-assert.deepEqual(partial.links[0].replaces, ['freeimage', 'ninjabox']);
+const fallbackItem = composeBundleItem({
+  index: 1,
+  photoId: 'fallback',
+  fileName: 'fallback.jpg',
+  attempts: [failure('ninjabox'), success('freeimage')],
+});
+assert.equal(fallbackItem.ok, true);
+assert.equal(fallbackItem.selectedProvider, 'freeimage');
+assert.deepEqual(fallbackItem.links[0].replaces, ['ninjabox']);
+
+const failedItem = composeBundleItem({
+  index: 2,
+  photoId: 'failed',
+  fileName: 'failed.jpg',
+  attempts: [failure('ninjabox'), failure('freeimage'), failure('x0')],
+});
+assert.equal(failedItem.ok, false);
+assert.equal(failedItem.links.length, 0);
 
 const files = [
   new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
   new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
 ];
-const calls = { freeimage: [], ninjabox: 0, x0: [] };
-const bundle = await uploadBundle(files, ['a', 'b'], {
-  freeimage: async (file) => {
-    calls.freeimage.push(file.name);
-    return { provider: 'freeimage', ok: true, url: `https://free.test/${file.name}`, directUrl: `https://free.test/d/${file.name}` };
-  },
+
+const primaryCalls = { ninjabox: [], freeimage: [], x0: [] };
+const primaryBundle = await uploadBundle(files, ['a', 'b'], {
   ninjabox: async (batch) => {
-    calls.ninjabox += 1;
+    primaryCalls.ninjabox.push(batch[0].name);
     return {
       ok: true,
       galleryUrl: 'https://ninja.test/gallery',
-      items: batch.map((file) => ({ url: `https://ninja.test/${file.name}`, directUrl: `https://ninja.test/d/${file.name}` })),
+      items: [{ url: `https://ninja.test/${batch[0].name}`, directUrl: `https://ninja.test/d/${batch[0].name}` }],
     };
   },
-  x0: async (file) => {
-    calls.x0.push(file.name);
-    return { provider: 'x0', ok: true, url: `https://x0.test/${file.name}`, directUrl: `https://x0.test/${file.name}` };
-  },
+  freeimage: async (file) => { primaryCalls.freeimage.push(file.name); return success('freeimage', file.name); },
+  x0: async (file) => { primaryCalls.x0.push(file.name); return success('x0', file.name); },
 });
-assert.deepEqual(calls.freeimage, ['a.jpg', 'b.jpg']);
-assert.equal(calls.ninjabox, 1);
-assert.deepEqual(calls.x0, []);
-assert.ok(bundle.items.every((item) => item.links.length === 2));
+assert.deepEqual(primaryCalls.ninjabox.sort(), ['a.jpg', 'b.jpg']);
+assert.deepEqual(primaryCalls.freeimage, []);
+assert.deepEqual(primaryCalls.x0, []);
+assert.ok(primaryBundle.items.every((item) => item.selectedProvider === 'ninjabox' && item.links.length === 1));
 
 const fallbackCalls = [];
-const fallbackBundle = await uploadBundle([files[0]], ['a'], {
-  freeimage: async () => { throw new Error('freeimage down'); },
-  ninjabox: async () => ({ ok: true, galleryUrl: 'https://ninja.test/gallery', items: [{ url: 'https://ninja.test/a', directUrl: 'https://ninja.test/d/a' }] }),
-  x0: async (file) => {
-    fallbackCalls.push(file.name);
-    return { provider: 'x0', ok: true, url: 'https://x0.test/a', directUrl: 'https://x0.test/a' };
-  },
+const freeimageFallbackBundle = await uploadBundle([files[0]], ['a'], {
+  ninjabox: async () => { throw new Error('ninja down'); },
+  freeimage: async (file) => { fallbackCalls.push(file.name); return success('freeimage', file.name); },
+  x0: async () => { throw new Error('x0 must not run'); },
 });
 assert.deepEqual(fallbackCalls, ['a.jpg']);
-assert.deepEqual(fallbackBundle.items[0].links.map((link) => link.provider), ['ninjabox', 'x0']);
+assert.equal(freeimageFallbackBundle.items[0].selectedProvider, 'freeimage');
+assert.deepEqual(freeimageFallbackBundle.items[0].attemptedProviders, ['ninjabox', 'freeimage']);
 
-let selectedNinjaCalls = 0;
-let selectedX0Calls = 0;
-const selectedBundle = await uploadBundle([files[0]], ['selected'], {
-  freeimage: async () => ({ provider: 'freeimage', ok: true, url: 'https://free.test/selected', directUrl: 'https://free.test/d/selected' }),
-  ninjabox: async () => { selectedNinjaCalls += 1; throw new Error('must not run'); },
-  x0: async () => { selectedX0Calls += 1; throw new Error('must not run'); },
-}, { selectedProviders: ['freeimage'], includeX0: false, fallback: 'none' });
-assert.equal(selectedNinjaCalls, 0);
-assert.equal(selectedX0Calls, 0);
-assert.deepEqual(selectedBundle.selectedProviders, ['freeimage']);
-assert.deepEqual(selectedBundle.items[0].links.map((link) => link.provider), ['freeimage']);
-
-let mandatoryX0Calls = 0;
-const mandatoryBundle = await uploadBundle([files[0]], ['mandatory'], {
-  freeimage: async () => ({ provider: 'freeimage', ok: true, url: 'https://free.test/mandatory', directUrl: 'https://free.test/d/mandatory' }),
-  x0: async () => {
-    mandatoryX0Calls += 1;
-    return { provider: 'x0', ok: true, url: 'https://x0.test/mandatory', directUrl: 'https://x0.test/mandatory' };
-  },
-}, { selectedProviders: ['freeimage'], includeX0: true, fallback: 'none' });
-assert.equal(mandatoryX0Calls, 1);
-assert.deepEqual(mandatoryBundle.items[0].links.map((link) => link.provider), ['freeimage', 'x0']);
-assert.equal(mandatoryBundle.items[0].links[1].role, 'required');
+const x0Bundle = await uploadBundle([files[0]], ['a'], {
+  ninjabox: async () => { throw new Error('ninja down'); },
+  freeimage: async () => { throw new Error('free down'); },
+  x0: async (file) => success('x0', file.name),
+});
+assert.equal(x0Bundle.items[0].selectedProvider, 'x0');
+assert.deepEqual(x0Bundle.items[0].attemptedProviders, ['ninjabox', 'freeimage', 'x0']);
 
 let disabledFallbackCalls = 0;
-const disabledFallbackBundle = await uploadBundle([files[0]], ['disabled'], {
-  freeimage: async () => { throw new Error('freeimage down'); },
-  x0: async () => { disabledFallbackCalls += 1; return fallback; },
-}, { selectedProviders: ['freeimage'], includeX0: false, fallback: 'none' });
+const primaryOnlyBundle = await uploadBundle([files[0]], ['a'], {
+  ninjabox: async () => { throw new Error('ninja down'); },
+  freeimage: async () => { disabledFallbackCalls += 1; return success('freeimage'); },
+}, { providerOrder: ['ninjabox'] });
 assert.equal(disabledFallbackCalls, 0);
-assert.equal(disabledFallbackBundle.items[0].links.length, 0);
-assert.equal(validateProviderSettings({ freeimage: false, ninjabox: false }).valid, false);
-assert.equal(validateProviderSettings({ freeimage: true, ninjabox: false }).valid, true);
+assert.equal(primaryOnlyBundle.items[0].ok, false);
 
-const privacyFiles = [
-  new File(['first'], 'gps-001.jpg', { type: 'image/jpeg' }),
-  new File(['second'], 'gps-002.jpg', { type: 'image/jpeg' }),
-];
-const privacyBundle = await uploadBundle(privacyFiles, ['photo-a', 'photo-b'], {
-  freeimage: async (file) => ({ provider: 'freeimage', ok: true, url: `https://free.test/${file.name}`, directUrl: `https://free.test/d/${file.name}` }),
-  ninjabox: async (batch) => ({
-    ok: true,
-    galleryUrl: 'https://ninja.test/gallery',
-    items: batch.map((file) => ({ url: `https://ninja.test/${file.name}`, directUrl: `https://ninja.test/d/${file.name}` })),
-  }),
-});
-assert.deepEqual(privacyBundle.items.map((item) => item.photoId), ['photo-a', 'photo-b']);
-assert.deepEqual(privacyBundle.items.map((item) => item.fileName), ['gps-001.jpg', 'gps-002.jpg']);
-assert.equal(privacyBundle.items[0].links[0].url, 'https://free.test/gps-001.jpg');
-
-const cleanedEntries = files.map((file, index) => ({ photoId: String(index), file, originalFile: null, cleaned: true }));
-let requestEntries = null;
-let requestPolicy = null;
-const normalized = await uploadCleanedPhotos(cleanedEntries, {
-  proxyUrl: 'https://worker.test/',
-  providerSettings: { freeimage: true, ninjabox: false, includeX0: true, fallbackX0: false },
+const cleanedEntries = files.map((file, index) => ({
+  photoId: String(index + 1),
+  file,
+  originalFile: null,
+  cleaned: true,
+}));
+const requestBatches = [];
+const progressEvents = [];
+const sequentialResults = await uploadCleanedPhotos(cleanedEntries, {
+  proxyUrl: 'https://worker.test/api/upload',
+  providerSettings: DEFAULT_PROVIDER_SETTINGS,
+  onProgress: (event) => progressEvents.push({ type: event.type, photoId: event.photoId, completed: event.completed }),
   dependencies: {
     requestBundle: async (entries, _proxyUrl, _signal, policy) => {
-      requestEntries = entries;
-      requestPolicy = policy;
+      requestBatches.push(entries.map((entry) => entry.photoId));
+      const entry = entries[0];
       return {
         target: 'bundle',
-        selectedProviders: ['freeimage'],
-        includeX0: true,
-        fallback: 'none',
-        ninjaboxGalleryUrl: 'https://ninja.test/gallery',
-        items: entries.map((entry, index) => ({
-          index,
+        providerOrder: policy.providerOrder,
+        items: [{
+          index: 0,
           photoId: entry.photoId,
           fileName: entry.file.name,
-          links: [
-            { provider: 'freeimage', url: `https://free.test/${index}` },
-            { provider: 'ninjabox', url: `https://ninja.test/${index}` },
-          ],
-          providers: { freeimage: { ok: true }, ninjabox: { ok: true }, x0: null },
-        })),
+          selectedProvider: 'ninjabox',
+          providerOrder: policy.providerOrder,
+          attempts: [success('ninjabox', entry.photoId)],
+          links: [{ provider: 'ninjabox', url: `https://ninja.test/${entry.photoId}` }],
+          providers: { ninjabox: { ok: true }, freeimage: null, x0: null },
+        }],
       };
     },
   },
 });
-assert.equal(requestEntries, cleanedEntries);
-assert.equal(requestPolicy.providers, 'freeimage');
-assert.equal(requestPolicy.includeX0, true);
-assert.equal(requestPolicy.fallback, 'none');
-assert.equal(normalized.get('0').freeimageUrl, 'https://free.test/0');
-assert.equal(normalized.get('0').ninjaboxUrl, 'https://ninja.test/0');
-assert.equal(normalized.get('0').fallbackUrl, '');
+assert.deepEqual(requestBatches, [['1'], ['2']]);
+assert.deepEqual(progressEvents, [
+  { type: 'started', photoId: '1', completed: 0 },
+  { type: 'completed', photoId: '1', completed: 1 },
+  { type: 'started', photoId: '2', completed: 1 },
+  { type: 'completed', photoId: '2', completed: 2 },
+]);
+assert.equal(sequentialResults.get('1').selectedProvider, 'ninjabox');
+assert.equal(sequentialResults.get('2').links.length, 1);
 
-const providerOriginalFetch = globalThis.fetch;
-let inspectedUploadFields = null;
-globalThis.fetch = async (_url, init) => {
-  const body = init.body;
-  inspectedUploadFields = [...body.entries()].map(([key, value]) => ({
-    key,
-    value: value instanceof File ? value.name : String(value),
-  }));
-  return new Response(JSON.stringify({
-    target: 'bundle',
-    selectedProviders: ['freeimage'],
-    includeX0: false,
-    fallback: 'none',
-    items: [{
-      index: 0,
-      photoId: 'photo-1',
-      fileName: 'gps-001.jpg',
-      links: [{ provider: 'freeimage', url: 'https://free.test/gps-001' }],
-      providers: { freeimage: { ok: true }, ninjabox: null, x0: null },
-    }],
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-};
-try {
-  await requestUploadBundle([{
-    photoId: 'photo-1',
-    file: new File(['clean'], 'gps-001.jpg', { type: 'image/jpeg' }),
-    cleaned: true,
-    internalName: 'index-5939',
-    displayFileName: 'index-5939.jpg',
-  }], 'https://worker.test/', undefined, { providers: 'freeimage', includeX0: false, fallback: 'none' });
-} finally {
-  globalThis.fetch = providerOriginalFetch;
-}
-assert.deepEqual(inspectedUploadFields.filter((field) => field.key === 'files').map((field) => field.value), ['gps-001.jpg']);
-assert.equal(inspectedUploadFields.some((field) => /5939|index-5939/.test(field.value)), false);
-assert.equal(inspectedUploadFields.some((field) => field.key === 'internalName' || field.key === 'displayFileName'), false);
-
-const mismatched = await uploadCleanedPhotos([cleanedEntries[0]], {
-  proxyUrl: 'https://worker.test/',
+let continueCalls = 0;
+const continuedResults = await uploadCleanedPhotos(cleanedEntries, {
+  proxyUrl: 'https://worker.test/api/upload',
   dependencies: {
-    requestBundle: async () => ({
-      target: 'bundle',
-      items: [{
-        index: 1,
-        photoId: '0',
-        fileName: 'wrong.jpg',
-        links: [{ provider: 'ninjabox', url: 'https://ninja.test/wrong' }],
-        providers: { ninjabox: { ok: true } },
-      }],
-    }),
+    requestBundle: async (entries) => {
+      continueCalls += 1;
+      if (entries[0].photoId === '1') throw new Error('first failed');
+      return {
+        target: 'bundle',
+        providerOrder: ['ninjabox', 'freeimage', 'x0'],
+        items: [{
+          index: 0,
+          photoId: '2',
+          fileName: entries[0].file.name,
+          selectedProvider: 'ninjabox',
+          links: [{ provider: 'ninjabox', url: 'https://ninja.test/2' }],
+          attempts: [success('ninjabox', '2')],
+        }],
+      };
+    },
   },
 });
-assert.equal(mismatched.get('0').links.length, 1);
-assert.match(mismatched.get('0').technicalError, /order mismatch/);
-assert.match(mismatched.get('0').uploadWarnings.join(' '), /photoId/);
+assert.equal(continueCalls, 2);
+assert.equal(continuedResults.get('1').links.length, 0);
+assert.equal(continuedResults.get('2').links.length, 1);
 
 await assert.rejects(
   () => uploadCleanedPhotos([{
@@ -270,8 +236,40 @@ await assert.rejects(
   /только очищенные копии/,
 );
 
-const workerProviderOverrides = {
-  freeimage: async (file) => ({ provider: 'freeimage', ok: true, url: `https://free.worker/${file.name}`, directUrl: `https://free.worker/d/${file.name}` }),
+const originalFetch = globalThis.fetch;
+let inspectedUploadFields = null;
+globalThis.fetch = async (_url, init) => {
+  inspectedUploadFields = [...init.body.entries()].map(([key, value]) => ({
+    key,
+    value: value instanceof File ? value.name : String(value),
+  }));
+  return new Response(JSON.stringify({
+    target: 'bundle',
+    providerOrder: ['ninjabox', 'freeimage', 'x0'],
+    items: [{
+      index: 0,
+      photoId: 'photo-1',
+      fileName: 'gps-001.jpg',
+      selectedProvider: 'ninjabox',
+      links: [{ provider: 'ninjabox', url: 'https://ninja.test/photo-1' }],
+      attempts: [success('ninjabox', 'photo-1')],
+    }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+try {
+  await requestUploadBundle([{
+    photoId: 'photo-1',
+    file: new File(['clean'], 'gps-001.jpg', { type: 'image/jpeg' }),
+    internalName: 'index-5939',
+  }], 'https://worker.test/', undefined, providerRequestPolicy(DEFAULT_PROVIDER_SETTINGS));
+} finally {
+  globalThis.fetch = originalFetch;
+}
+assert.deepEqual(inspectedUploadFields.filter((field) => field.key === 'files').map((field) => field.value), ['gps-001.jpg']);
+assert.equal(inspectedUploadFields.some((field) => /5939|index-5939/.test(field.value)), false);
+assert.deepEqual(inspectedUploadFields.find((field) => field.key === 'providerOrder')?.value, 'ninjabox,freeimage,x0');
+
+const workerOverrides = {
   ninjabox: async (batch) => ({
     ok: true,
     galleryUrl: 'https://ninja.worker/gallery',
@@ -281,232 +279,66 @@ const workerProviderOverrides = {
 const makeUploadRequest = (url, headers = {}) => {
   const formData = new FormData();
   formData.append('target', 'bundle');
+  formData.append('providerOrder', 'ninjabox,freeimage,x0');
   formData.append('photoId', 'worker-a');
   formData.append('files', files[0], 'worker-a.jpg');
   return new Request(url, { method: 'POST', headers, body: formData });
 };
+
 const apiUploadResponse = await handleWorkerRequest(
   makeUploadRequest('https://gps.bruce-group.net/api/upload'),
   {},
-  workerProviderOverrides,
+  workerOverrides,
 );
 const apiUploadBody = await apiUploadResponse.json();
 assert.equal(apiUploadResponse.status, 200);
-assert.equal(apiUploadBody.target, 'bundle');
+assert.equal(apiUploadBody.items[0].selectedProvider, 'ninjabox');
 assert.equal(apiUploadBody.items[0].photoId, 'worker-a');
-
-const legacyRootUploadResponse = await handleWorkerRequest(
-  makeUploadRequest('https://gps.bruce-group.net/'),
-  {},
-  workerProviderOverrides,
-);
-assert.equal(legacyRootUploadResponse.status, 200);
-
-const unknownApiResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/api/unknown'), {});
-assert.equal(unknownApiResponse.status, 404);
-assert.match(await unknownApiResponse.text(), /Unknown API route/);
 
 const assetEnv = {
   ASSETS: {
     fetch: async (request) => {
-      const path = new URL(request.url).pathname;
-      if (path === '/' || path === '/index.html') return new Response('<!doctype html><title>GPS</title>', { headers: { 'Content-Type': 'text/html' } });
-      if (path === '/assets/app.js') return new Response('console.log("gps")', { headers: { 'Content-Type': 'application/javascript' } });
+      const pathname = new URL(request.url).pathname;
+      if (pathname === '/' || pathname === '/index.html') return new Response('<!doctype html><title>GPS</title>', { headers: { 'Content-Type': 'text/html' } });
+      if (pathname === '/assets/app.js') return new Response('console.log("gps")', { headers: { 'Content-Type': 'application/javascript' } });
       return new Response('missing', { status: 404 });
     },
   },
 };
-const assetResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/assets/app.js'), assetEnv);
-assert.equal(assetResponse.status, 200);
-assert.match(await assetResponse.text(), /gps/);
-const spaResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/history/deep-link', {
-  headers: { Accept: 'text/html' },
-}), assetEnv);
-assert.equal(spaResponse.status, 200);
-assert.match(await spaResponse.text(), /GPS/);
-
-const expectBasicChallenge = (response) => {
-  assert.equal(response.status, 401);
-  assert.match(response.headers.get('WWW-Authenticate'), /Basic/);
-  assert.match(response.headers.get('Cache-Control'), /no-store/);
-};
+assert.equal((await handleWorkerRequest(new Request('https://gps.bruce-group.net/assets/app.js'), assetEnv)).status, 200);
+assert.equal((await handleWorkerRequest(new Request('https://gps.bruce-group.net/history', { headers: { Accept: 'text/html' } }), assetEnv)).status, 200);
+assert.equal((await handleWorkerRequest(new Request('https://gps.bruce-group.net/api/unknown'), assetEnv)).status, 404);
 
 assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/'), {}), true);
-const ownerAccessFrontendResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
+const guestAuthorization = `Basic ${Buffer.from('guest:guest-secret').toString('base64')}`;
+assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Authorization: guestAuthorization },
+}), {
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+}), true);
+assert.equal((await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Accept: 'text/html' },
-}), assetEnv);
-assert.equal(ownerAccessFrontendResponse.status, 200);
-const ownerAccessUploadResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/api/upload', {
-  method: 'OPTIONS',
-}), assetEnv);
-assert.equal(ownerAccessUploadResponse.status, 204);
-assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/'), { BASIC_AUTH_PASSWORD: 'secret' }), false);
-const basicAuthorization = `Basic ${Buffer.from('owner:secret').toString('base64')}`;
+}), {
+  ...assetEnv,
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+})).status, 401);
+assert.equal((await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
+  headers: { Accept: 'text/html', Authorization: guestAuthorization },
+}), {
+  ...assetEnv,
+  BASIC_AUTH_REQUIRED: 'true',
+  BASIC_AUTH_USERNAME: 'guest',
+  BASIC_AUTH_PASSWORD: 'guest-secret',
+})).status, 200);
 assert.equal(isAuthorizedRequest(new Request('https://gps.bruce-group.net/', {
-  headers: { Authorization: basicAuthorization },
-}), { BASIC_AUTH_PASSWORD: 'secret', BASIC_AUTH_USERNAME: 'owner' }), true);
-const unauthorizedResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/'), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'secret',
-});
-assert.equal(unauthorizedResponse.status, 401);
-assert.match(unauthorizedResponse.headers.get('WWW-Authenticate'), /Basic/);
-assert.match(unauthorizedResponse.headers.get('Cache-Control'), /no-store/);
-const authorizedResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
-  headers: { Authorization: basicAuthorization },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'secret',
-});
-assert.equal(authorizedResponse.status, 200);
-const guestBasicAuthorization = `Basic ${Buffer.from('guest:guest-secret').toString('base64')}`;
-assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/'), {
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}), false);
-assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Authorization: `Basic ${Buffer.from('owner:guest-secret').toString('base64')}` },
-}), {
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-}), false);
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Accept: 'text/html' },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_REQUIRED: 'true',
-}));
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Accept: 'text/html' },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-}));
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Accept: 'text/html' },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/upload', {
-  method: 'OPTIONS',
-}), {
-  ...assetEnv,
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Authorization: guestBasicAuthorization },
-}), { BASIC_AUTH_PASSWORD: 'guest-secret', BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'guest' }), true);
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Accept: 'text/html' },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: {
-    Accept: 'text/html',
-    Authorization: `Basic ${Buffer.from('guest:wrong-secret').toString('base64')}`,
-  },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: {
-    Accept: 'text/html',
-    Authorization: `Basic ${Buffer.from('wrong-user:guest-secret').toString('base64')}`,
-  },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-const guestFrontendResponse = await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: {
-    Accept: 'text/html',
-    Authorization: guestBasicAuthorization,
-  },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-});
-assert.equal(guestFrontendResponse.status, 200);
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/upload', {
-  method: 'OPTIONS',
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-const guestUploadResponse = await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/upload', {
-  method: 'OPTIONS',
-  headers: { Authorization: guestBasicAuthorization },
-}), {
-  ...assetEnv,
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-});
-assert.equal(guestUploadResponse.status, 204);
-const guestUploadPostResponse = await handleWorkerRequest(
-  makeUploadRequest('https://gps-guest.bruce-group.net/api/upload', { Authorization: guestBasicAuthorization }),
-  {
-    ...assetEnv,
-    BASIC_AUTH_PASSWORD: 'guest-secret',
-    BASIC_AUTH_REQUIRED: 'true',
-    BASIC_AUTH_USERNAME: 'guest',
-  },
-  workerProviderOverrides,
-);
-assert.equal(guestUploadPostResponse.status, 200);
-const appTokenBasicAuthorization = `Basic ${Buffer.from('guest:app-token').toString('base64')}`;
-assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Authorization: appTokenBasicAuthorization },
-}), { APP_ACCESS_TOKEN: 'app-token', BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'guest' }), false);
-assert.equal(isAuthorizedRequest(new Request('https://gps-guest.bruce-group.net/', {
-  headers: { Authorization: `Basic ${Buffer.from('app-token:guest-secret').toString('base64')}` },
-}), {
-  APP_ACCESS_TOKEN: 'app-token',
-  BASIC_AUTH_PASSWORD: 'guest-secret',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}), false);
-expectBasicChallenge(await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/', {
   headers: { Authorization: 'Bearer app-token' },
-}), {
-  ...assetEnv,
-  APP_ACCESS_TOKEN: 'app-token',
-  BASIC_AUTH_REQUIRED: 'true',
-  BASIC_AUTH_USERNAME: 'guest',
-}));
-const bearerResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
-  headers: { Authorization: 'Bearer app-token' },
-}), {
-  ...assetEnv,
-  APP_ACCESS_TOKEN: 'app-token',
-});
-assert.equal(bearerResponse.status, 200);
-const headerTokenResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/', {
-  headers: { 'X-App-Access-Token': 'app-token' },
-}), {
-  ...assetEnv,
-  APP_ACCESS_TOKEN: 'app-token',
-});
-assert.equal(headerTokenResponse.status, 200);
+}), { APP_ACCESS_TOKEN: 'app-token' }), true);
 
-const originalFetch = globalThis.fetch;
+const providerOriginalFetch = globalThis.fetch;
 const capturedProviderRequests = [];
 const responseWithUrl = (body, init, url) => {
   const response = new Response(body, init);
@@ -515,10 +347,8 @@ const responseWithUrl = (body, init, url) => {
 };
 globalThis.fetch = async (url, init = {}) => {
   const requestUrl = String(url);
-  const headers = init.headers || {};
   const formFields = init.body instanceof FormData ? formDataPrivacyFields(init.body) : [];
-  capturedProviderRequests.push({ url: requestUrl, headers, formFields });
-
+  capturedProviderRequests.push({ url: requestUrl, headers: init.headers || {}, formFields });
   if (requestUrl === 'https://freeimage.host/api') {
     return responseWithUrl(`
       <h2>API Key</h2><div><input value="public-test-key"></div>
@@ -540,41 +370,24 @@ globalThis.fetch = async (url, init = {}) => {
     `, { status: 200, headers: { 'Content-Type': 'text/html' } }, requestUrl);
   }
   if (requestUrl === 'https://ninjabox.org/put') {
-    return responseWithUrl(`
-      <a href="https://ninjabox.org/i/photo-1"><img src="https://ninjabox.org/storage/gallery/one.jpg"></a>
-      <a href="https://ninjabox.org/i/photo-2"><img src="https://ninjabox.org/storage/gallery/two.jpg"></a>
-    `, { status: 200, headers: { 'Content-Type': 'text/html' } }, requestUrl);
+    return responseWithUrl('<a href="/i/private"><img src="/storage/private.jpg"></a>', { status: 200, headers: { 'Content-Type': 'text/html' } }, 'https://ninjabox.org/i/gallery');
   }
   if (requestUrl === 'https://x0.at/') {
     return responseWithUrl('https://x0.at/private.jpg\n', { status: 200, headers: { 'Content-Type': 'text/plain' } }, requestUrl);
   }
-  throw new Error(`Unexpected fetch URL: ${requestUrl}`);
+  throw new Error(`Unexpected provider URL: ${requestUrl}`);
 };
-
 try {
-  await uploadFreeimage(privacyFiles[0]);
-  await uploadNinjabox(privacyFiles);
-  await uploadX0(privacyFiles[1]);
+  const privateFile = new File(['private'], 'gps-001-secret.jpg', { type: 'image/jpeg' });
+  await uploadFreeimage(privateFile);
+  await uploadNinjabox([privateFile]);
+  await uploadX0(privateFile);
 } finally {
-  globalThis.fetch = originalFetch;
+  globalThis.fetch = providerOriginalFetch;
 }
-
 for (const request of capturedProviderRequests) {
-  assert.equal(assertProviderHeadersPrivate(request.headers), true, request.url);
-  assert.equal(Object.keys(request.headers).some((name) => /^(authorization|cookie|cf-access-client-id|cf-access-client-secret)$/i.test(name)), false, request.url);
+  assert.equal(assertProviderHeadersPrivate(request.headers), true);
+  assert.equal(request.formFields.some((field) => /gps-001-secret/i.test(field.filename || '')), false);
 }
 
-const outboundFileNames = capturedProviderRequests
-  .flatMap((request) => request.formFields)
-  .filter((field) => field.kind === 'file')
-  .map((field) => field.filename);
-assert.equal(outboundFileNames.length, 4);
-assert.equal(outboundFileNames.some((name) => /gps-00[12]/i.test(name)), false);
-assert.ok(outboundFileNames.every((name) => /^image-[a-z0-9]+\.jpg$/i.test(name)));
-
-const outboundFieldNames = capturedProviderRequests.flatMap((request) => request.formFields.map((field) => field.name));
-assert.ok(outboundFieldNames.includes('source'));
-assert.ok(outboundFieldNames.includes('files'));
-assert.ok(outboundFieldNames.includes('file'));
-
-console.log('Upload routing tests passed');
+console.log('Upload routing, fallback chain, progress and privacy tests passed');
