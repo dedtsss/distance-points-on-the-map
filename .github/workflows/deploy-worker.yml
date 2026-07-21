@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   deploy-production-worker:
@@ -74,3 +75,32 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.toml
+
+      - name: Publish successful production deploy status
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='deploy/production' \
+            -f description="Production v${APP_VERSION} ${SHORT_SHA} deployed" \
+            -f target_url='https://gps.bruce-group.net/'
+
+      - name: Publish failed production deploy status
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=failure \
+            -f context='deploy/production' \
+            -f description="Production deploy failed for ${SHORT_SHA}" \
+            -f target_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
