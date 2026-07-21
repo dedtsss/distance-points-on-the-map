@@ -11,7 +11,7 @@ on:
       - 'package-lock.json'
       - 'index.html'
       - 'vite.config.js'
-      - '.github/workflows/validate-web-pr.yml'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
