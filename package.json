@@ -1,7 +1,7 @@
 {
   "name": "gps-photo-distance-checker",
   "private": true,
-  "version": "0.3.4",
+  "version": "0.3.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "build:cloudflare": "VITE_BASE_PATH=/ VITE_UPLOAD_PROXY_URL=/api/upload vite build",
     "build:github-pages": "VITE_BASE_PATH=/distance-points-on-the-map/ vite build",
     "preview": "vite preview",
-    "test": "npm run test:ocr && npm run test:ocr-diagnostics && npm run test:fixed-overlay-ocr && npm run test:index-ocr-fixtures && npm run test:overlay-fixtures && npm run test:files && npm run test:folder && npm run test:geo && npm run test:image-cleaner && npm run test:upload-routing && npm run test:pipeline && npm run test:links && npm run test:result-blocks && npm run test:session && npm run test:map && npm run test:map-viewport && npm run test:ui && npm run test:mobile-ui && npm run test:mobile-viewer-browser && npm run test:folder-browser",
+    "test": "npm run test:ocr && npm run test:ocr-diagnostics && npm run test:fixed-overlay-ocr && npm run test:index-ocr-fixtures && npm run test:overlay-fixtures && npm run test:files && npm run test:folder && npm run test:geo && npm run test:image-cleaner && npm run test:upload-routing && npm run test:pipeline && npm run test:links && npm run test:result-blocks && npm run test:session && npm run test:map && npm run test:map-layers && npm run test:map-viewport && npm run test:ui && npm run test:mobile-ui && npm run test:mobile-viewer-browser && npm run test:folder-browser",
     "test:ocr": "node scripts/test-ocr-parser.mjs",
     "test:ocr-diagnostics": "node scripts/test-ocr-diagnostics.mjs",
     "test:fixed-overlay-ocr": "node scripts/test-fixed-overlay-ocr.mjs",
@@ -25,6 +25,7 @@
     "test:result-blocks": "node scripts/test-result-block-formatting.mjs",
     "test:session": "node scripts/test-session-store.mjs",
     "test:map": "node scripts/test-map-model.mjs",
+    "test:map-layers": "node scripts/test-map-layers.mjs",
     "test:map-viewport": "node scripts/test-map-viewport.mjs",
     "test:ui": "node scripts/test-ui-render.mjs",
     "test:mobile-ui": "node scripts/test-mobile-photo-ui.mjs",
