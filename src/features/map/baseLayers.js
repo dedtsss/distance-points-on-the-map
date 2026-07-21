@@ -2,15 +2,17 @@ export const MAP_LAYER_STORAGE_KEY = 'gps-checker-map-layer-v1';
 export const DEFAULT_MAP_LAYER_ID = 'hybrid';
 
 const EOX_SATELLITE_ATTRIBUTION = [
-  '<a href="https://cloudless.eox.at" target="_blank" rel="noreferrer">EOxCloudless 2016</a>',
-  '© EOX IT Services GmbH',
-  'Contains modified Copernicus Sentinel data 2016',
+  '<a href="https://cloudless.eox.at" target="_blank" rel="noreferrer">EOxCloudless</a>',
+  'by EOX IT Services GmbH',
+  'Contains modified Copernicus Sentinel data 2025',
 ].join(' · ');
 
 const EOX_OVERLAY_ATTRIBUTION = [
   'Labels © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
   'rendering © EOX and MapServer',
 ].join(' · ');
+
+const EOX_SATELLITE_2025_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2025_3857/default/g/{z}/{y}/{x}.jpg';
 
 export const MAP_LAYER_DEFINITIONS = Object.freeze({
   osm: Object.freeze({
@@ -29,11 +31,11 @@ export const MAP_LAYER_DEFINITIONS = Object.freeze({
   }),
   satellite: Object.freeze({
     id: 'satellite',
-    label: 'Спутник',
-    description: 'Открытая облачно-свободная мозаика Sentinel-2 за 2016 год.',
+    label: 'Спутник 2025',
+    description: 'Облачно-свободная мозаика Sentinel-2 за 2025 год, разрешение 10 м.',
     layers: Object.freeze([
       Object.freeze({
-        url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg',
+        url: EOX_SATELLITE_2025_URL,
         options: Object.freeze({
           maxNativeZoom: 14,
           maxZoom: 19,
@@ -44,11 +46,11 @@ export const MAP_LAYER_DEFINITIONS = Object.freeze({
   }),
   hybrid: Object.freeze({
     id: 'hybrid',
-    label: 'Гибрид',
-    description: 'Спутниковая мозаика с границами, дорогами и подписями.',
+    label: 'Гибрид 2025',
+    description: 'Спутниковая мозаика 2025 года с границами, дорогами и подписями.',
     layers: Object.freeze([
       Object.freeze({
-        url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg',
+        url: EOX_SATELLITE_2025_URL,
         options: Object.freeze({
           maxNativeZoom: 14,
           maxZoom: 19,

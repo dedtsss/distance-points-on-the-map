@@ -15,9 +15,12 @@ assert.deepEqual(MAP_LAYER_OPTIONS.map((item) => item.id), ['osm', 'satellite', 
 assert.equal(MAP_LAYER_DEFINITIONS.osm.layers.length, 1);
 assert.equal(MAP_LAYER_DEFINITIONS.satellite.layers.length, 1);
 assert.equal(MAP_LAYER_DEFINITIONS.hybrid.layers.length, 2);
-assert.match(MAP_LAYER_DEFINITIONS.satellite.layers[0].url, /s2cloudless_3857/);
+assert.match(MAP_LAYER_DEFINITIONS.satellite.layers[0].url, /s2cloudless-2025_3857/);
+assert.match(MAP_LAYER_DEFINITIONS.hybrid.layers[0].url, /s2cloudless-2025_3857/);
 assert.match(MAP_LAYER_DEFINITIONS.hybrid.layers[1].url, /overlay_bright_3857/);
-assert.match(MAP_LAYER_DEFINITIONS.satellite.layers[0].options.attribution, /Copernicus Sentinel data 2016/);
+assert.match(MAP_LAYER_DEFINITIONS.satellite.layers[0].options.attribution, /Copernicus Sentinel data 2025/);
+assert.equal(MAP_LAYER_DEFINITIONS.satellite.label, 'Спутник 2025');
+assert.equal(MAP_LAYER_DEFINITIONS.hybrid.label, 'Гибрид 2025');
 assert.equal(normalizeMapLayerId('SATELLITE'), 'satellite');
 assert.equal(normalizeMapLayerId('unknown'), 'hybrid');
 assert.equal(getMapLayerDefinition('osm').label, 'Схема');
