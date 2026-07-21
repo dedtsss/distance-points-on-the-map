@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
 const LAST_SESSION_KEY = 'gps-checker-last-session-v1';
+const MAP_LAYER_STORAGE_KEY = 'gps-checker-map-layer-v1';
 
 const session = {
   version: 1,
@@ -110,11 +111,13 @@ page.on('console', (message) => {
   if (message.type() === 'error') consoleErrors.push(message.text());
 });
 page.on('pageerror', (error) => pageErrors.push(error.message));
-await page.route('https://*.tile.openstreetmap.org/**', (route) => route.fulfill({
+const fulfillTile = (route) => route.fulfill({
   status: 200,
   contentType: 'image/png',
   body: blankTile,
-}));
+});
+await page.route('https://*.tile.openstreetmap.org/**', fulfillTile);
+await page.route('https://tiles.maps.eox.at/**', fulfillTile);
 await page.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), {
   key: LAST_SESSION_KEY,
   value: session,
@@ -126,6 +129,15 @@ try {
   await page.waitForFunction(() => window.__gpsCheckerMap);
   await page.waitForSelector('.leaflet-container .map-marker');
   await page.waitForTimeout(300);
+
+  assert.equal(await page.evaluate(() => window.__gpsCheckerMapLayer), 'hybrid');
+  const mapLayerSelect = page.getByRole('combobox', { name: 'Слой карты' });
+  await mapLayerSelect.selectOption('satellite');
+  await page.waitForFunction(() => window.__gpsCheckerMapLayer === 'satellite');
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), MAP_LAYER_STORAGE_KEY), 'satellite');
+  await mapLayerSelect.selectOption('osm');
+  await page.waitForFunction(() => window.__gpsCheckerMapLayer === 'osm');
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), MAP_LAYER_STORAGE_KEY), 'osm');
 
   const lineState = await page.evaluate(() => ({
     paths: [...document.querySelectorAll('.leaflet-overlay-pane path')].map((path) => ({
