@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildMapModel } from '../features/map/mapModel.js';
 import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
+import {
+  MAP_LAYER_OPTIONS,
+  getMapLayerDefinition,
+  loadMapLayerId,
+  saveMapLayerId,
+} from '../features/map/baseLayers.js';
+import { buildMapModel } from '../features/map/mapModel.js';
 import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates } from '../utils/format.js';
 import { formatDistanceMeters } from '../utils/geoDistance.js';
@@ -8,6 +14,7 @@ import EmptyState from './EmptyState.jsx';
 import FilterBar from './FilterBar.jsx';
 import Icon from './Icon.jsx';
 import StatusChip from './StatusChip.jsx';
+import './MapPanel.css';
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -78,18 +85,22 @@ export default function MapPanel({
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const leafletRef = useRef(null);
+  const baseLayerGroupRef = useRef(null);
   const layerGroupRef = useRef(null);
   const markersRef = useRef(new Map());
   const selectedPointRef = useRef(null);
   const fittedPointsKeyRef = useRef('');
   const lastFocusPhotoIdRef = useRef(null);
   const [leafletReady, setLeafletReady] = useState(false);
+  const [mapLayerId, setMapLayerId] = useState(() => loadMapLayerId());
+  const [mapLayerError, setMapLayerError] = useState('');
   const [panelOpen, setPanelOpen] = useState(() => (
     typeof window === 'undefined' ? true : !window.matchMedia('(max-width: 860px)').matches
   ));
   const [filter, setFilter] = useState('all');
   const [selectedPointId, setSelectedPointId] = useState(focusPhotoId || null);
   const model = useMemo(() => buildMapModel(photos, thresholdMeters), [photos, thresholdMeters]);
+  const activeMapLayer = useMemo(() => getMapLayerDefinition(mapLayerId), [mapLayerId]);
   const filteredPoints = useMemo(() => (
     model.points.filter((point) => matchesFilter(point, filter))
   ), [filter, model.points]);
@@ -138,6 +149,12 @@ export default function MapPanel({
 
   const fitVisiblePoints = () => fitToPoints(filteredPoints.length > 0 ? filteredPoints : model.points);
 
+  const handleMapLayerChange = (value) => {
+    const next = saveMapLayerId(value);
+    setMapLayerId(next);
+    setMapLayerError('');
+  };
+
   useEffect(() => {
     if (focusPhotoId) setSelectedPointId(focusPhotoId);
   }, [focusPhotoId]);
@@ -169,10 +186,6 @@ export default function MapPanel({
         zoomControl: true,
         attributionControl: true,
       });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors',
-      }).addTo(mapRef.current);
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1') {
         window.__gpsCheckerMap = mapRef.current;
       }
@@ -184,6 +197,50 @@ export default function MapPanel({
       cancelled = true;
     };
   }, [model.points.length]);
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!leafletReady || !L || !map) return undefined;
+
+    if (baseLayerGroupRef.current) map.removeLayer(baseLayerGroupRef.current);
+    const group = L.layerGroup();
+    let tileErrors = 0;
+    let tileLoads = 0;
+
+    activeMapLayer.layers.forEach((layerConfig) => {
+      const tileLayer = L.tileLayer(layerConfig.url, {
+        ...layerConfig.options,
+        crossOrigin: true,
+      });
+      tileLayer.on('tileload', () => {
+        tileLoads += 1;
+        if (tileLoads > 0) setMapLayerError('');
+      });
+      tileLayer.on('tileerror', () => {
+        tileErrors += 1;
+        if (tileErrors >= 4 && tileLoads === 0) {
+          setMapLayerError(`Слой «${activeMapLayer.label}» сейчас не загружается. Переключитесь на «Схема».`);
+        }
+      });
+      tileLayer.addTo(group);
+    });
+
+    group.addTo(map);
+    baseLayerGroupRef.current = group;
+    saveMapLayerId(activeMapLayer.id);
+
+    if (typeof window !== 'undefined' && window.__gpsCheckerMap === map) {
+      window.__gpsCheckerMapLayer = activeMapLayer.id;
+    }
+
+    return () => {
+      if (mapRef.current && baseLayerGroupRef.current === group) {
+        mapRef.current.removeLayer(group);
+        baseLayerGroupRef.current = null;
+      }
+    };
+  }, [activeMapLayer, leafletReady]);
 
   useEffect(() => {
     const L = leafletRef.current;
@@ -284,6 +341,7 @@ export default function MapPanel({
   useEffect(() => () => {
     if (typeof window !== 'undefined' && window.__gpsCheckerMap === mapRef.current) {
       delete window.__gpsCheckerMap;
+      delete window.__gpsCheckerMapLayer;
     }
     if (mapRef.current) {
       mapRef.current.remove();
@@ -304,6 +362,18 @@ export default function MapPanel({
           <StatusChip tone="info">выбранная точка</StatusChip>
         </div>
         <div className="map-toolbar-actions">
+          <label className="map-layer-field">
+            <span>Слой карты</span>
+            <select
+              value={mapLayerId}
+              onChange={(event) => handleMapLayerChange(event.target.value)}
+              aria-label="Слой карты"
+            >
+              {MAP_LAYER_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
           <button type="button" className="button-secondary compact-button" onClick={fitVisiblePoints}>
             <Icon name="target" size={16} />
             Показать все точки
@@ -314,8 +384,10 @@ export default function MapPanel({
           </button>
         </div>
       </div>
+      <p className="map-layer-description">{activeMapLayer.description}</p>
+      {mapLayerError && <p className="map-layer-error" role="status">{mapLayerError}</p>}
       <div className="map-workspace">
-        <div className="map-canvas" ref={containerRef} aria-label="Карта точек" />
+        <div className="map-canvas" ref={containerRef} aria-label={`Карта точек: ${activeMapLayer.label}`} />
         <aside className="map-side-panel" aria-label="Точки на карте">
           <div className="map-panel-head">
             <div>
