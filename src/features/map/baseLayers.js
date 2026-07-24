@@ -12,7 +12,13 @@ const EOX_OVERLAY_ATTRIBUTION = [
   'rendering © EOX and MapServer',
 ].join(' · ');
 
+const ARCGIS_WORLD_IMAGERY_ATTRIBUTION = [
+  'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noreferrer">Esri</a>',
+  'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community',
+].join(' · ');
+
 const EOX_SATELLITE_2025_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2025_3857/default/g/{z}/{y}/{x}.jpg';
+const ARCGIS_WORLD_IMAGERY_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 export const MAP_LAYER_DEFINITIONS = Object.freeze({
   osm: Object.freeze({
@@ -63,6 +69,20 @@ export const MAP_LAYER_DEFINITIONS = Object.freeze({
           maxNativeZoom: 18,
           maxZoom: 19,
           attribution: EOX_OVERLAY_ATTRIBUTION,
+        }),
+      }),
+    ]),
+  }),
+  arcgis: Object.freeze({
+    id: 'arcgis',
+    label: 'ArcGIS Спутник (тест)',
+    description: 'Высокодетальные снимки Esri World Imagery без API-ключа для сравнения качества.',
+    layers: Object.freeze([
+      Object.freeze({
+        url: ARCGIS_WORLD_IMAGERY_URL,
+        options: Object.freeze({
+          maxZoom: 20,
+          attribution: ARCGIS_WORLD_IMAGERY_ATTRIBUTION,
         }),
       }),
     ]),
