@@ -48,10 +48,11 @@ assert.equal(deriveMobileProcessingProgress(entries.map((entry) => ({
   gpsStatus: 'done',
 })), 10), null);
 
-const [viewerSource, viewerCss, photoCardSource, topBarSource] = await Promise.all([
+const [viewerSource, viewerCss, photoCardSource, resultsSummarySource, topBarSource] = await Promise.all([
   readFile(new URL('../src/components/PhotoViewerModal.jsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/PhotoViewerModal.css', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/PhotoCard.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/ResultsSummary.jsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/TopBar.jsx', import.meta.url), 'utf8'),
 ]);
 
@@ -61,7 +62,11 @@ assert.match(viewerSource, /translate3d/);
 assert.match(viewerCss, /touch-action:\s*none/);
 assert.match(photoCardSource, /PhotoViewerModal/);
 assert.match(photoCardSource, /data-photo-progress="true"/);
+assert.match(photoCardSource, /Поделиться точкой/);
+assert.match(photoCardSource, /shareCoordinateExport/);
+assert.match(resultsSummarySource, /Поделиться сессией/);
+assert.match(resultsSummarySource, /downloadCoordinateFile\('geojson'\)/);
 assert.match(topBarSource, /role="progressbar"/);
 assert.match(topBarSource, /MutationObserver/);
 
-console.log('Mobile photo viewer and sticky progress tests passed.');
+console.log('Mobile photo viewer, coordinate sharing, and sticky progress tests passed.');

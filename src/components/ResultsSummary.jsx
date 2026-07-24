@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  buildCoordinateExport,
+  downloadCoordinateExport,
+  getExportablePoints,
+  shareCoordinateExport,
+} from '../features/export/coordinateExport.js';
+import {
   SESSION_COLOR_SUGGESTIONS,
   loadExportDescription,
   loadSessionColor,
@@ -32,14 +38,18 @@ const copyText = async (value) => {
   if (!copied) throw new Error('Clipboard API недоступен');
 };
 
+const exportFormatLabel = (format) => ({ gpx: 'GPX', kml: 'KML', geojson: 'GeoJSON' }[format] || format);
+
 export default function ResultsSummary({ photos, onClear }) {
   const [copyStatus, setCopyStatus] = useState('');
+  const [geoExportStatus, setGeoExportStatus] = useState('');
   const [copiedPhotoId, setCopiedPhotoId] = useState('');
   const copiedTimerRef = useRef(null);
   const sessionSignature = useMemo(() => photoSessionSignature(photos), [photos]);
   const [exportDescription] = useState(() => loadExportDescription());
   const [sessionColor, setSessionColor] = useState(() => loadSessionColor(sessionSignature));
   const uploaded = photos.filter((photo) => photo.uploadResult?.links?.length > 0);
+  const exportablePointCount = useMemo(() => getExportablePoints(photos).length, [photos]);
   const indexCoordinateRows = useMemo(() => formatIndexCoordinateRows(photos), [photos]);
   const resultOptions = useMemo(() => ({ description: exportDescription, color: sessionColor }), [exportDescription, sessionColor]);
   const resultBlocks = useMemo(() => buildPhotoResultBlocks(photos, resultOptions), [photos, resultOptions]);
@@ -49,6 +59,7 @@ export default function ResultsSummary({ photos, onClear }) {
   useEffect(() => {
     setSessionColor(loadSessionColor(sessionSignature));
     setCopyStatus('');
+    setGeoExportStatus('');
     setCopiedPhotoId('');
   }, [sessionSignature]);
 
@@ -103,6 +114,38 @@ export default function ResultsSummary({ photos, onClear }) {
     }
   };
 
+  const downloadCoordinateFile = (format) => {
+    setGeoExportStatus('');
+    try {
+      const exportData = buildCoordinateExport(photos, format, {
+        title: 'GPS Map Photo — текущая сессия',
+        fileNameBase: 'gps-map-photo-session',
+      });
+      downloadCoordinateExport(exportData);
+      setGeoExportStatus(`${exportFormatLabel(format)} скачан: ${exportData.pointCount} точек.`);
+    } catch {
+      setGeoExportStatus('Не удалось создать файл координат.');
+    }
+  };
+
+  const shareSessionCoordinates = async () => {
+    setGeoExportStatus('');
+    try {
+      const result = await shareCoordinateExport(photos, {
+        format: 'gpx',
+        title: 'GPS Map Photo — текущая сессия',
+        fileNameBase: 'gps-map-photo-session',
+      });
+      if (result.mode === 'downloaded') {
+        setGeoExportStatus(`GPX скачан: ${result.exportData.pointCount} точек. Откройте файл в приложении карт.`);
+      } else {
+        setGeoExportStatus(`Передано точек: ${result.exportData.pointCount}.`);
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') setGeoExportStatus('Не удалось поделиться координатами сессии.');
+    }
+  };
+
   return (
     <section className="results-summary">
       <div className="results-summary-heading">
@@ -120,6 +163,32 @@ export default function ResultsSummary({ photos, onClear }) {
         readOnly
         aria-label="Все индексы и координаты"
       />
+
+      <div className="results-summary-heading results-summary-subheading">
+        <div><p className="section-kicker">Картография</p><h2>Экспорт точек</h2></div>
+      </div>
+      <p className="setting-helper">
+        Доступно точек: {exportablePointCount}. GPX подходит для быстрого открытия в Organic Maps и Guru Maps; KML и GeoJSON — для других картографических и GIS-приложений.
+      </p>
+      <div className="all-links-actions result-export-actions coordinate-export-actions">
+        <button type="button" onClick={shareSessionCoordinates} disabled={!exportablePointCount}>
+          <Icon name="share" size={18} />
+          Поделиться сессией
+        </button>
+        <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('gpx')} disabled={!exportablePointCount}>
+          <Icon name="download" size={18} />
+          GPX
+        </button>
+        <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('kml')} disabled={!exportablePointCount}>
+          <Icon name="download" size={18} />
+          KML
+        </button>
+        <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('geojson')} disabled={!exportablePointCount}>
+          <Icon name="download" size={18} />
+          GeoJSON
+        </button>
+      </div>
+      {geoExportStatus && <p className="copy-status" role="status">{geoExportStatus}</p>}
 
       <div className="results-summary-heading results-summary-subheading">
         <div><p className="section-kicker">Экспорт</p><h2>Готовый текст по фотографиям</h2></div>
