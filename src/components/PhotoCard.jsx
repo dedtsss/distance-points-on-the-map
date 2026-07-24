@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { shareCoordinateExport } from '../features/export/coordinateExport.js';
 import { PHOTO_PROGRESS_EVENT } from '../features/ui/mobileProcessingProgress.js';
 import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates, formatFileSize } from '../utils/format.js';
@@ -45,12 +46,14 @@ export default function PhotoCard({
   const [indexValue, setIndexValue] = useState(photo.indexFromOcr || '');
   const [coordinateError, setCoordinateError] = useState('');
   const [indexError, setIndexError] = useState('');
+  const [shareStatus, setShareStatus] = useState('');
   const viewerAvailable = Boolean(photo.stableFile || photo.stableBlob || photo.thumbnailDataUrl);
   const closeViewer = useCallback(() => setViewerOpen(false), []);
 
   useEffect(() => {
     setLatitude(photo.coordinates?.latitude ?? '');
     setLongitude(photo.coordinates?.longitude ?? '');
+    setShareStatus('');
   }, [photo.coordinates?.latitude, photo.coordinates?.longitude]);
 
   useEffect(() => setIndexValue(photo.indexFromOcr || ''), [photo.indexFromOcr]);
@@ -92,6 +95,23 @@ export default function PhotoCard({
     event.preventDefault();
     const applied = onApplyIndex?.(photo.id, indexValue) !== false;
     setIndexError(applied ? '' : 'Введите корректный номер индекса.');
+  };
+
+  const sharePoint = async () => {
+    setShareStatus('');
+    try {
+      const pointName = photo.pointLabel || photo.internalName || `Фото ${photo.number}`;
+      const result = await shareCoordinateExport([photo], {
+        format: 'gpx',
+        title: pointName,
+        fileNameBase: `gps-point-${pointName}`,
+      });
+      if (result.mode === 'copied') setShareStatus('Координаты и ссылка скопированы.');
+      else if (result.mode === 'downloaded') setShareStatus('GPX-файл точки скачан.');
+      else setShareStatus('Точка передана в выбранное приложение.');
+    } catch (error) {
+      if (error?.name !== 'AbortError') setShareStatus('Не удалось поделиться точкой.');
+    }
   };
 
   return (
@@ -164,11 +184,16 @@ export default function PhotoCard({
               <Icon name="map" size={16} />
               На карте
             </button>
+            <button type="button" className="button-secondary compact-button" onClick={sharePoint} disabled={!photo.coordinates}>
+              <Icon name="share" size={16} />
+              Поделиться точкой
+            </button>
             <button type="button" className="button-secondary compact-button danger-ghost-button" onClick={() => onRemove?.(photo.id)} disabled={editingDisabled}>
               <Icon name="trash" size={16} />
               Удалить
             </button>
           </div>
+          {shareStatus && <p className="photo-share-status" role="status">{shareStatus}</p>}
 
           {detailsOpen && (
             <div className="photo-card-details">
