@@ -3,6 +3,10 @@ import {
   FOLDER_HELP_TEXT,
   getFolderPickerCapabilities,
 } from '../features/files/folderPicker.js';
+import {
+  FOLDER_PICKER_STRATEGIES,
+  chooseFolderPickerStrategy,
+} from '../features/files/folderPickerStrategy.js';
 import { MAX_PHOTOS } from '../features/files/fileValidation.js';
 import { formatFileSize } from '../utils/format.js';
 import FolderImportSummary from './FolderImportSummary.jsx';
@@ -25,7 +29,8 @@ export default function UploadDropzone({
   const [dragActive, setDragActive] = useState(false);
   const [folderCapabilities, setFolderCapabilities] = useState(() => getFolderPickerCapabilities());
   const totalSize = photos.reduce((sum, photo) => sum + (Number(photo.size) || 0), 0);
-  const folderAvailable = folderCapabilities.showDirectoryPicker || folderCapabilities.webkitDirectory;
+  const folderPickerStrategy = chooseFolderPickerStrategy(folderCapabilities);
+  const folderAvailable = folderPickerStrategy !== FOLDER_PICKER_STRATEGIES.NONE;
 
   useEffect(() => {
     setFolderCapabilities(getFolderPickerCapabilities());
@@ -50,12 +55,16 @@ export default function UploadDropzone({
     onFolderFiles?.(selected);
   };
 
+  const pickFolderWithDirectoryInput = () => folderInputRef.current?.click();
+
   const pickFolder = () => {
-    if (folderCapabilities.showDirectoryPicker) {
-      onPickFolder?.();
+    if (folderPickerStrategy === FOLDER_PICKER_STRATEGIES.DIRECTORY_INPUT) {
+      pickFolderWithDirectoryInput();
       return;
     }
-    folderInputRef.current?.click();
+    if (folderPickerStrategy === FOLDER_PICKER_STRATEGIES.DIRECTORY_HANDLE) {
+      onPickFolder?.();
+    }
   };
 
   return (
@@ -136,6 +145,7 @@ export default function UploadDropzone({
         report={folderImport?.report}
         error={folderImport?.error}
         onCancel={onCancelFolderImport}
+        onCompatibilityPick={folderCapabilities.webkitDirectory ? pickFolderWithDirectoryInput : undefined}
       />
       <div className="dropzone-meta" aria-live="polite">
         <span>{photos.length} выбрано</span>
