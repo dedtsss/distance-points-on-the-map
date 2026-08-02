@@ -27,11 +27,3 @@ export function chooseFolderPickerStrategy(
   if (hasDirectoryInput) return FOLDER_PICKER_STRATEGIES.DIRECTORY_INPUT;
   return FOLDER_PICKER_STRATEGIES.NONE;
 }
-
-export function isMassFolderReadFailure(report = {}) {
-  const foundFiles = Number(report.foundFiles) || 0;
-  const addedPhotos = Number(report.addedPhotos) || 0;
-  const readErrors = Number(report.skippedByReason?.read_error) || 0;
-
-  return foundFiles > 0 && addedPhotos === 0 && readErrors >= foundFiles;
-}
