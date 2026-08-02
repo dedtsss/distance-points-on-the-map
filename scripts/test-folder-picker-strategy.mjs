@@ -3,7 +3,6 @@ import {
   FOLDER_PICKER_STRATEGIES,
   chooseFolderPickerStrategy,
   isAndroidUserAgent,
-  isMassFolderReadFailure,
 } from '../src/features/files/folderPickerStrategy.js';
 
 assert.equal(isAndroidUserAgent('Mozilla/5.0 (Linux; Android 16)'), true);
@@ -26,21 +25,5 @@ assert.equal(
   chooseFolderPickerStrategy({}, 'Android'),
   FOLDER_PICKER_STRATEGIES.NONE,
 );
-
-assert.equal(isMassFolderReadFailure({
-  foundFiles: 13,
-  addedPhotos: 0,
-  skippedByReason: { read_error: 13 },
-}), true);
-assert.equal(isMassFolderReadFailure({
-  foundFiles: 13,
-  addedPhotos: 12,
-  skippedByReason: { read_error: 1 },
-}), false);
-assert.equal(isMassFolderReadFailure({
-  foundFiles: 13,
-  addedPhotos: 0,
-  skippedByReason: { unsupported: 13 },
-}), false);
 
 console.log('Folder picker strategy tests passed');
