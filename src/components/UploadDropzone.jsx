@@ -145,7 +145,6 @@ export default function UploadDropzone({
         report={folderImport?.report}
         error={folderImport?.error}
         onCancel={onCancelFolderImport}
-        onCompatibilityPick={folderCapabilities.webkitDirectory ? pickFolderWithDirectoryInput : undefined}
       />
       <div className="dropzone-meta" aria-live="polite">
         <span>{photos.length} выбрано</span>
