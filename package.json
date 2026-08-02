@@ -1,7 +1,7 @@
 {
   "name": "gps-photo-distance-checker",
   "private": true,
-  "version": "0.3.8",
+  "version": "0.3.9",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "build:cloudflare": "VITE_BASE_PATH=/ VITE_UPLOAD_PROXY_URL=/api/upload vite build",
     "build:github-pages": "VITE_BASE_PATH=/distance-points-on-the-map/ vite build",
     "preview": "vite preview",
-    "test": "npm run test:ocr && npm run test:ocr-diagnostics && npm run test:fixed-overlay-ocr && npm run test:index-ocr-fixtures && npm run test:overlay-fixtures && npm run test:files && npm run test:folder && npm run test:geo && npm run test:coordinate-export && npm run test:image-cleaner && npm run test:upload-routing && npm run test:pipeline && npm run test:links && npm run test:result-blocks && npm run test:session && npm run test:map && npm run test:map-layers && npm run test:map-viewport && npm run test:ui && npm run test:mobile-ui && npm run test:mobile-viewer-browser && npm run test:folder-browser",
+    "test": "npm run test:ocr && npm run test:ocr-diagnostics && npm run test:fixed-overlay-ocr && npm run test:index-ocr-fixtures && npm run test:overlay-fixtures && npm run test:files && npm run test:folder && npm run test:folder-strategy && npm run test:geo && npm run test:coordinate-export && npm run test:image-cleaner && npm run test:upload-routing && npm run test:pipeline && npm run test:links && npm run test:result-blocks && npm run test:session && npm run test:map && npm run test:map-layers && npm run test:map-viewport && npm run test:ui && npm run test:mobile-ui && npm run test:mobile-viewer-browser && npm run test:folder-browser",
     "test:ocr": "node scripts/test-ocr-parser.mjs",
     "test:ocr-diagnostics": "node scripts/test-ocr-diagnostics.mjs",
     "test:fixed-overlay-ocr": "node scripts/test-fixed-overlay-ocr.mjs",
@@ -17,6 +17,7 @@
     "test:overlay-fixtures": "node scripts/test-overlay-fixtures.mjs",
     "test:files": "node scripts/test-stable-file-store.mjs",
     "test:folder": "node scripts/test-folder-picker.mjs",
+    "test:folder-strategy": "node scripts/test-folder-picker-strategy.mjs",
     "test:geo": "node scripts/test-geo-distance.mjs",
     "test:coordinate-export": "node scripts/test-coordinate-export.mjs",
     "test:image-cleaner": "node scripts/test-image-cleaner.mjs",
