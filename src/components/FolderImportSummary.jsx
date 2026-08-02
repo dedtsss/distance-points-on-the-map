@@ -2,6 +2,7 @@ import {
   FOLDER_IMPORT_STATUSES,
   folderReportReasonRows,
 } from '../features/files/folderPicker.js';
+import { isMassFolderReadFailure } from '../features/files/folderPickerStrategy.js';
 import Icon from './Icon.jsx';
 
 const STATUS_TEXT = {
@@ -13,9 +14,9 @@ const STATUS_TEXT = {
   [FOLDER_IMPORT_STATUSES.CANCELLED]: 'Отменено',
 };
 
-const statusTone = (status) => {
+const statusTone = (status, massReadFailure) => {
   if (status === FOLDER_IMPORT_STATUSES.ERROR) return 'error';
-  if (status === FOLDER_IMPORT_STATUSES.CANCELLED) return 'warning';
+  if (status === FOLDER_IMPORT_STATUSES.CANCELLED || massReadFailure) return 'warning';
   if (status === FOLDER_IMPORT_STATUSES.DONE) return 'success';
   return 'neutral';
 };
@@ -25,10 +26,12 @@ export default function FolderImportSummary({
   report,
   error,
   onCancel,
+  onCompatibilityPick,
 }) {
   if (!status || status === FOLDER_IMPORT_STATUSES.IDLE) return null;
 
   const reasonRows = folderReportReasonRows(report);
+  const massReadFailure = isMassFolderReadFailure(report);
   const canCancel = [
     FOLDER_IMPORT_STATUSES.SELECTING,
     FOLDER_IMPORT_STATUSES.SCANNING,
@@ -36,11 +39,11 @@ export default function FolderImportSummary({
   ].includes(status);
 
   return (
-    <aside className={`folder-import-summary folder-import-summary-${statusTone(status)}`} aria-live="polite">
+    <aside className={`folder-import-summary folder-import-summary-${statusTone(status, massReadFailure)}`} aria-live="polite">
       <div className="folder-import-summary-head">
         <div>
           <p className="section-kicker">Папка</p>
-          <h3>{STATUS_TEXT[status] || 'Импорт папки'}</h3>
+          <h3>{massReadFailure ? 'Нужен повторный выбор' : (STATUS_TEXT[status] || 'Импорт папки')}</h3>
         </div>
         {canCancel && (
           <button type="button" className="button-secondary compact-button" onClick={onCancel}>
@@ -77,6 +80,20 @@ export default function FolderImportSummary({
             <li key={`${item.reason}-${item.path}`}>{item.message}</li>
           ))}
         </ul>
+      )}
+
+      {massReadFailure && (
+        <div className="folder-import-compatibility-warning">
+          <p className="folder-import-error">
+            Браузер увидел файлы, но не смог прочитать их через системный доступ к папке. На Android и GrapheneOS повторите выбор совместимым способом.
+          </p>
+          {onCompatibilityPick && (
+            <button type="button" className="button-secondary" onClick={onCompatibilityPick}>
+              <Icon name="folder" size={17} />
+              Выбрать папку совместимым способом
+            </button>
+          )}
+        </div>
       )}
 
       {error && <p className="folder-import-error">{error}</p>}
