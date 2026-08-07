@@ -5,6 +5,8 @@ import {
   normalizeSessionPacking,
 } from './exportPreferences.js';
 
+export const RESULT_BLOCK_SEPARATOR = '==========';
+
 const formattedNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? String(number) : '';
@@ -52,5 +54,6 @@ export function formatAllPhotoResultBlocks(photos, options = {}) {
   return buildPhotoResultBlocks(photos, options)
     .map((block) => block.text)
     .filter(Boolean)
+    .map((text) => [RESULT_BLOCK_SEPARATOR, text, RESULT_BLOCK_SEPARATOR].join('\n'))
     .join('\n\n');
 }
