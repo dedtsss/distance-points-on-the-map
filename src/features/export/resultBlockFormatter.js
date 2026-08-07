@@ -1,5 +1,5 @@
 import { photoLinksInRequestedOrder } from '../links/linkFormatter.js';
-import { normalizeExportDescription, normalizeSessionColor } from './exportPreferences.js';
+import { normalizeExportDescription } from './exportPreferences.js';
 
 const formattedNumber = (value) => {
   const number = Number(value);
@@ -12,32 +12,24 @@ const coordinatesText = (photo) => {
   return latitude && longitude ? `${latitude}, ${longitude}` : 'не найдены';
 };
 
+const compactComment = (value) => normalizeExportDescription(value)
+  .split('\n')
+  .map((line) => line.trim())
+  .filter(Boolean)
+  .join('\n');
+
 export function formatPhotoResultBlock(photo, options = {}) {
-  const description = normalizeExportDescription(options.description).trim();
-  const color = normalizeSessionColor(options.color);
+  const description = compactComment(options.description);
   const index = String(photo?.indexFromOcr || '').trim() || 'не распознан';
   const links = photoLinksInRequestedOrder(photo);
-  const lines = [];
+  const photoText = links.length > 0 ? links.join(' ') : 'ссылка отсутствует';
 
-  if (description) {
-    lines.push(description, '');
-  }
-
-  lines.push(
-    `Цвет: ${color || 'не указан'}`,
-    `Индекс: ${index}`,
+  return [
+    `#${index}`,
     `Координаты: ${coordinatesText(photo)}`,
-  );
-
-  if (links.length === 0) {
-    lines.push('Фото: ссылка отсутствует');
-  } else {
-    links.forEach((url, indexPosition) => {
-      lines.push(indexPosition === 0 ? `Фото: ${url}` : `Фото ${indexPosition + 1}: ${url}`);
-    });
-  }
-
-  return lines.join('\n');
+    `Фото: ${photoText}`,
+    `Комментарий: ${description}`,
+  ].join('\n');
 }
 
 export function buildPhotoResultBlocks(photos, options = {}) {
