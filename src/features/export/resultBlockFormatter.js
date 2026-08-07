@@ -1,5 +1,9 @@
 import { photoLinksInRequestedOrder } from '../links/linkFormatter.js';
-import { normalizeExportDescription } from './exportPreferences.js';
+import {
+  normalizeExportDescription,
+  normalizeSessionColor,
+  normalizeSessionPacking,
+} from './exportPreferences.js';
 
 const formattedNumber = (value) => {
   const number = Number(value);
@@ -20,6 +24,8 @@ const compactComment = (value) => normalizeExportDescription(value)
 
 export function formatPhotoResultBlock(photo, options = {}) {
   const description = compactComment(options.description);
+  const color = normalizeSessionColor(options.color);
+  const packing = normalizeSessionPacking(options.packing);
   const index = String(photo?.indexFromOcr || '').trim() || 'не распознан';
   const links = photoLinksInRequestedOrder(photo);
   const photoText = links.length > 0 ? links.join(' ') : 'ссылка отсутствует';
@@ -27,6 +33,8 @@ export function formatPhotoResultBlock(photo, options = {}) {
   return [
     `#${index}`,
     `Координаты: ${coordinatesText(photo)}`,
+    `Цвет: ${color || 'не указан'}`,
+    `Фасовка: ${packing || 'не указана'}`,
     `Фото: ${photoText}`,
     `Комментарий: ${description}`,
   ].join('\n');
