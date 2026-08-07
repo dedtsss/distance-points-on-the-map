@@ -34,7 +34,10 @@ const photos = [{
   coordinates: { latitude: 64.607016, longitude: 30.62284 },
   uploadResult: {
     providerOrder: ['ninjabox', 'freeimage', 'x0'],
-    links: [{ provider: 'ninjabox', url: 'https://ninjabox.org/i/example' }],
+    links: [
+      { provider: 'ninjabox', url: 'https://ninjabox.org/i/example' },
+      { provider: 'freeimage', url: 'https://freeimage.host/i/example' },
+    ],
   },
 }, {
   id: 'photo-b',
@@ -54,32 +57,37 @@ assert.equal(loadSessionColor('another-session', storage), '');
 assert.equal(values.has(SESSION_COLOR_KEY), true);
 
 const first = formatPhotoResultBlock(photos[0], {
-  description: 'Опора линии\nУчасток 4',
+  description: 'Опора линии\n\nУчасток 4',
   color: 'Красный',
 });
 assert.equal(first, [
-  'Опора линии',
-  'Участок 4',
-  '',
-  'Цвет: Красный',
-  'Индекс: 6369',
+  '#6369',
   'Координаты: 64.607016, 30.62284',
-  'Фото: https://ninjabox.org/i/example',
+  'Фото: https://ninjabox.org/i/example https://freeimage.host/i/example',
+  'Комментарий: Опора линии',
+  'Участок 4',
 ].join('\n'));
+assert.equal(first.includes('\n\n'), false);
+assert.equal(first.includes('Цвет:'), false);
+assert.equal(first.includes('Индекс:'), false);
 
 const second = formatPhotoResultBlock(photos[1], { description: '', color: '' });
-assert.match(second, /^Цвет: не указан/m);
-assert.match(second, /^Индекс: не распознан/m);
-assert.match(second, /^Координаты: не найдены/m);
-assert.match(second, /^Фото: ссылка отсутствует/m);
+assert.equal(second, [
+  '#не распознан',
+  'Координаты: не найдены',
+  'Фото: ссылка отсутствует',
+  'Комментарий: ',
+].join('\n'));
 
 const blocks = buildPhotoResultBlocks(photos, { description: 'Тест', color: 'Синий' });
 assert.equal(blocks.length, 2);
 assert.equal(blocks[0].photoId, 'photo-a');
 assert.equal(blocks[1].photoNumber, 2);
 const all = formatAllPhotoResultBlocks(photos, { description: 'Тест', color: 'Синий' });
-assert.equal(all.split('\n\n').length >= 2, true);
-assert.equal((all.match(/Цвет: Синий/g) || []).length, 2);
-assert.equal((all.match(/Тест/g) || []).length, 2);
+assert.equal(all.split('\n\n').length, 2);
+assert.equal((all.match(/Комментарий: Тест/g) || []).length, 2);
+assert.equal((all.match(/^#/gm) || []).length, 2);
+assert.equal(all.includes('\n\n\n'), false);
+assert.equal(all.includes('Цвет:'), false);
 
 console.log('Result block formatting tests passed');
