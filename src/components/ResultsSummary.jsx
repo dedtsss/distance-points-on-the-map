@@ -9,8 +9,10 @@ import {
   SESSION_COLOR_SUGGESTIONS,
   loadExportDescription,
   loadSessionColor,
+  loadSessionPacking,
   photoSessionSignature,
   saveSessionColor,
+  saveSessionPacking,
 } from '../features/export/exportPreferences.js';
 import {
   buildPhotoResultBlocks,
@@ -48,16 +50,22 @@ export default function ResultsSummary({ photos, onClear }) {
   const sessionSignature = useMemo(() => photoSessionSignature(photos), [photos]);
   const [exportDescription] = useState(() => loadExportDescription());
   const [sessionColor, setSessionColor] = useState(() => loadSessionColor(sessionSignature));
+  const [sessionPacking, setSessionPacking] = useState(() => loadSessionPacking(sessionSignature));
   const uploaded = photos.filter((photo) => photo.uploadResult?.links?.length > 0);
   const exportablePointCount = useMemo(() => getExportablePoints(photos).length, [photos]);
   const indexCoordinateRows = useMemo(() => formatIndexCoordinateRows(photos), [photos]);
-  const resultOptions = useMemo(() => ({ description: exportDescription, color: sessionColor }), [exportDescription, sessionColor]);
+  const resultOptions = useMemo(() => ({
+    description: exportDescription,
+    color: sessionColor,
+    packing: sessionPacking,
+  }), [exportDescription, sessionColor, sessionPacking]);
   const resultBlocks = useMemo(() => buildPhotoResultBlocks(photos, resultOptions), [photos, resultOptions]);
   const allResultBlocks = useMemo(() => formatAllPhotoResultBlocks(photos, resultOptions), [photos, resultOptions]);
   const allLinks = useMemo(() => formatAllLinks(photos), [photos]);
 
   useEffect(() => {
     setSessionColor(loadSessionColor(sessionSignature));
+    setSessionPacking(loadSessionPacking(sessionSignature));
     setCopyStatus('');
     setGeoExportStatus('');
     setCopiedPhotoId('');
@@ -66,9 +74,13 @@ export default function ResultsSummary({ photos, onClear }) {
   useEffect(() => () => globalThis.clearTimeout(copiedTimerRef.current), []);
 
   const handleColorChange = (value) => {
-    const next = String(value || '').slice(0, 80);
+    const next = saveSessionColor(sessionSignature, value);
     setSessionColor(next);
-    saveSessionColor(sessionSignature, next);
+  };
+
+  const handlePackingChange = (value) => {
+    const next = saveSessionPacking(sessionSignature, value);
+    setSessionPacking(next);
   };
 
   const showCopiedPhoto = (photoId) => {
@@ -209,6 +221,17 @@ export default function ResultsSummary({ photos, onClear }) {
           <datalist id="session-color-options">
             {SESSION_COLOR_SUGGESTIONS.map((color) => <option key={color} value={color} />)}
           </datalist>
+        </label>
+        <label className="setting-field result-packing-field">
+          Фасовка текущей сессии
+          <input
+            type="text"
+            maxLength="120"
+            value={sessionPacking}
+            onChange={(event) => handlePackingChange(event.target.value)}
+            placeholder="Например: пачка 10 шт."
+            autoComplete="off"
+          />
         </label>
         <div className="export-description-preview">
           <span>Общее описание</span>

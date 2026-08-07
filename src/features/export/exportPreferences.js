@@ -1,5 +1,6 @@
 export const EXPORT_DESCRIPTION_KEY = 'gps-checker-export-description-v1';
 export const SESSION_COLOR_KEY = 'gps-checker-session-color-v1';
+export const SESSION_PACKING_KEY = 'gps-checker-session-packing-v1';
 
 export const SESSION_COLOR_SUGGESTIONS = Object.freeze([
   'Красный',
@@ -24,6 +25,11 @@ export const normalizeSessionColor = (value) => String(value || '')
   .trim()
   .replace(/\s+/g, ' ')
   .slice(0, 80);
+
+export const normalizeSessionPacking = (value) => String(value || '')
+  .trim()
+  .replace(/\s+/g, ' ')
+  .slice(0, 120);
 
 export const photoSessionSignature = (photos = []) => (photos || [])
   .map((photo, index) => String(photo?.id || photo?.photoId || `${photo?.number || index + 1}:${photo?.fileName || ''}`))
@@ -79,4 +85,27 @@ export function saveSessionColor(signature, value, storage = globalThis.localSto
     // Session color is optional and must not block export or OCR.
   }
   return color;
+}
+
+export function loadSessionPacking(signature, storage = globalThis.localStorage) {
+  if (!signature) return '';
+  try {
+    const saved = JSON.parse(storage?.getItem(SESSION_PACKING_KEY) || 'null');
+    return isSameOrReducedSession(signature, saved?.signature)
+      ? normalizeSessionPacking(saved.packing)
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveSessionPacking(signature, value, storage = globalThis.localStorage) {
+  const packing = normalizeSessionPacking(value);
+  try {
+    if (!signature) return packing;
+    storage?.setItem(SESSION_PACKING_KEY, JSON.stringify({ signature, packing }));
+  } catch {
+    // Session packing is optional and must not block export or OCR.
+  }
+  return packing;
 }

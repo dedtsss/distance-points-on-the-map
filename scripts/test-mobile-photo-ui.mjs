@@ -66,7 +66,9 @@ assert.match(photoCardSource, /Поделиться точкой/);
 assert.match(photoCardSource, /shareCoordinateExport/);
 assert.match(resultsSummarySource, /Поделиться сессией/);
 assert.match(resultsSummarySource, /downloadCoordinateFile\('geojson'\)/);
+assert.match(resultsSummarySource, /Цвет текущей сессии/);
+assert.match(resultsSummarySource, /Фасовка текущей сессии/);
 assert.match(topBarSource, /role="progressbar"/);
 assert.match(topBarSource, /MutationObserver/);
 
-console.log('Mobile photo viewer, coordinate sharing, and sticky progress tests passed.');
+console.log('Mobile photo viewer, coordinate sharing, session export fields, and sticky progress tests passed.');
