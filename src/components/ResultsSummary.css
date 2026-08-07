@@ -22,12 +22,13 @@
 
 .result-export-settings {
   display: grid;
-  grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr);
+  grid-template-columns: minmax(180px, .55fr) minmax(180px, .55fr) minmax(0, 1.3fr);
   gap: 12px;
   align-items: stretch;
 }
 
 .result-color-field,
+.result-packing-field,
 .export-description-preview {
   border: 1px solid var(--color-outline);
   border-radius: var(--radius-medium);
