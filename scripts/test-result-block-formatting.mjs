@@ -12,6 +12,7 @@ import {
   saveSessionPacking,
 } from '../src/features/export/exportPreferences.js';
 import {
+  RESULT_BLOCK_SEPARATOR,
   buildPhotoResultBlocks,
   formatAllPhotoResultBlocks,
   formatPhotoResultBlock,
@@ -80,6 +81,7 @@ assert.equal(first, [
 ].join('\n'));
 assert.equal(first.includes('\n\n'), false);
 assert.equal(first.includes('Индекс:'), false);
+assert.equal(first.includes(RESULT_BLOCK_SEPARATOR), false);
 
 const second = formatPhotoResultBlock(photos[1], { description: '', color: '', packing: '' });
 assert.equal(second, [
@@ -104,7 +106,13 @@ const all = formatAllPhotoResultBlocks(photos, {
   color: 'Синий',
   packing: 'коробка',
 });
+const expectedAll = blocks
+  .map((block) => [RESULT_BLOCK_SEPARATOR, block.text, RESULT_BLOCK_SEPARATOR].join('\n'))
+  .join('\n\n');
+assert.equal(all, expectedAll);
+assert.equal(RESULT_BLOCK_SEPARATOR, '==========');
 assert.equal(all.split('\n\n').length, 2);
+assert.equal((all.match(/^==========$/gm) || []).length, 4);
 assert.equal((all.match(/Цвет: Синий/g) || []).length, 2);
 assert.equal((all.match(/Фасовка: коробка/g) || []).length, 2);
 assert.equal((all.match(/Комментарий: Тест/g) || []).length, 2);
