@@ -37,13 +37,13 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_API_TOKEN'; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
-          npm exec --yes wrangler@4.120.0 d1 list --account-id "$CLOUDFLARE_ACCOUNT_ID" --json > d1-list.json
+          npm exec --yes wrangler@4.120.0 -- d1 list --account-id "$CLOUDFLARE_ACCOUNT_ID" --json > d1-list.json
           DATABASE_ID=$(node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((item)=>item.name===process.env.DATABASE_NAME); if(row) process.stdout.write(row.uuid||row.id||'');")
           if [ -n "$DATABASE_ID" ]; then
             echo "D1 database already exists: $DATABASE_NAME"
             echo "database_id=$DATABASE_ID" >> "$GITHUB_OUTPUT"
           else
-            npm exec --yes wrangler@4.120.0 d1 create "$DATABASE_NAME" --account-id "$CLOUDFLARE_ACCOUNT_ID" | tee d1-create.txt
+            npm exec --yes wrangler@4.120.0 -- d1 create "$DATABASE_NAME" --account-id "$CLOUDFLARE_ACCOUNT_ID" | tee d1-create.txt
             DATABASE_ID=$(sed -n 's/.*database_id[ =]*\([0-9a-f-]\{36\}\).*/\1/p' d1-create.txt | head -n 1)
             test -n "$DATABASE_ID" || { echo 'D1 create succeeded but database id could not be parsed.'; exit 1; }
             echo "database_id=$DATABASE_ID" >> "$GITHUB_OUTPUT"
