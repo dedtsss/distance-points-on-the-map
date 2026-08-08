@@ -1,16 +1,13 @@
 import StatusChip from './StatusChip.jsx';
+import { getSessionDisplayName, getSessionMetrics } from '../features/session/sessionDomain.js';
 
 const formatDate = (value) => {
   if (!value) return 'дата неизвестна';
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 };
 
-const sessionStatus = (session) => {
-  if (session.status) return session.status;
-  if (session.photos?.some((photo) => photo.uploadStatus === 'processing' || photo.gpsStatus === 'processing')) return 'обрабатывается';
-  if (session.photos?.length > 0) return 'локальная';
-  return 'пустая';
-};
+const statusTone = (status) => ({ processing: 'warning', attention: 'error', draft: 'neutral', in_progress: 'warning', complete: 'success' }[status] || 'neutral');
+const statusLabel = (status) => ({ processing: 'обрабатывается', attention: 'требует внимания', draft: 'черновик', in_progress: 'в работе', complete: 'готова' }[status] || status || 'черновик');
 
 export default function SessionList({ sessions, onOpen }) {
   if (!sessions.length) return null;
@@ -18,20 +15,18 @@ export default function SessionList({ sessions, onOpen }) {
   return (
     <div className="session-list">
       {sessions.map((session) => {
-        const lowPrecision = session.photos.filter((photo) => photo.coordinateQuality === 'low_precision').length;
-        const conflicts = session.photos.reduce((sum, photo) => (
-          photo.distanceStatus === 'too_close' ? sum + (photo.distanceConflicts?.length || 0) : sum
-        ), 0) / 2;
+        const metrics = getSessionMetrics(session.photos || []);
         return (
           <article className="session-row" key={session.sessionId}>
             <div>
-              <h3>{session.name || `Сессия ${String(session.sessionId).slice(0, 8)}`}</h3>
+              <p className="page-eyebrow">Сессия №{String(session.sessionNumber || 0).padStart(4, '0')}</p>
+              <h3>{getSessionDisplayName(session)}</h3>
               <p>{formatDate(session.updatedAt || session.createdAt)}</p>
             </div>
-            <span>{session.photos.length} фото</span>
-            <span>{lowPrecision} low_precision</span>
-            <span>{conflicts} конфликтов</span>
-            <StatusChip tone={sessionStatus(session) === 'обрабатывается' ? 'warning' : 'success'}>{sessionStatus(session)}</StatusChip>
+            <span>{metrics.totalPhotoCount} фото</span>
+            <span>{metrics.activeCount} ACTIVE · {metrics.reserveCount} RESERVE</span>
+            <span>{metrics.uploadedCount} загружено</span>
+            <StatusChip tone={statusTone(session.status)}>{statusLabel(session.status)}</StatusChip>
             {onOpen && (
               <button type="button" className="button-secondary compact-button" onClick={() => onOpen(session.sessionId)}>
                 Открыть

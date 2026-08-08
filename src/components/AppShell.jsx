@@ -3,6 +3,8 @@ import TopBar from './TopBar.jsx';
 import Navigation from './Navigation.jsx';
 import Icon from './Icon.jsx';
 
+const BUILD = typeof __BUILD_INFO__ === 'undefined' ? { version: 'unknown', commit: 'unknown' } : __BUILD_INFO__;
+
 export default function AppShell({
   activeScreen,
   onScreenChange,
@@ -31,8 +33,8 @@ export default function AppShell({
             <Icon name="target" size={24} />
           </span>
           <div className="sidebar-brand-text">
-            <strong>GPS Checker</strong>
-            <span>Map Photo</span>
+            <strong>Dark Cat CRM</strong>
+            <span>GPS Map Photo · v{BUILD.version}</span>
           </div>
         </div>
         <Navigation activeScreen={activeScreen} onScreenChange={onScreenChange} collapsed={sidebarCollapsed} />
@@ -66,8 +68,8 @@ export default function AppShell({
               <Icon name="target" size={24} />
             </span>
             <div className="sidebar-brand-text">
-              <strong>GPS Checker</strong>
-              <span>Map Photo</span>
+              <strong>Dark Cat CRM</strong>
+              <span>v{BUILD.version} · {BUILD.commit}</span>
             </div>
           </div>
           <button type="button" className="icon-button" onClick={() => setMobileMenuOpen(false)} aria-label="Закрыть меню">

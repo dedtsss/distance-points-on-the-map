@@ -7,6 +7,7 @@ import PhotoCard from './PhotoCard.jsx';
 import ResultsSummary from './ResultsSummary.jsx';
 import ResultsTable from './ResultsTable.jsx';
 import StatCard from './StatCard.jsx';
+import { isActivePhoto } from '../features/session/sessionDomain.js';
 
 const conflictCount = (photos) => photos.reduce((sum, photo) => (
   photo.distanceStatus === 'too_close' ? sum + (photo.distanceConflicts?.length || 0) : sum
@@ -24,6 +25,7 @@ const matchesFilter = (photo, filter) => {
 
 export default function ResultsScreen({
   photos,
+  session,
   providerSettings,
   isBusy,
   onClear,
@@ -34,26 +36,29 @@ export default function ResultsScreen({
   onOpenPhoto,
   onRemovePhoto,
   onNavigateUpload,
+  onSessionChange,
+  onToggleReserve,
 }) {
   const [filter, setFilter] = useState('all');
+  const activePhotos = useMemo(() => photos.filter(isActivePhoto), [photos]);
   const stats = useMemo(() => ({
-    processed: photos.filter((photo) => !['buffered', 'idle'].includes(photo.status)).length,
-    recognized: photos.filter((photo) => Boolean(photo.coordinates)).length,
-    lowPrecision: photos.filter((photo) => photo.coordinateQuality === 'low_precision').length,
-    missingCoordinates: photos.filter((photo) => !photo.coordinates || photo.coordinateQuality === 'missing').length,
-    indexes: photos.filter((photo) => Boolean(photo.indexFromOcr)).length,
-    conflicts: conflictCount(photos),
-  }), [photos]);
+    processed: activePhotos.filter((photo) => !['buffered', 'idle'].includes(photo.status)).length,
+    recognized: activePhotos.filter((photo) => Boolean(photo.coordinates)).length,
+    lowPrecision: activePhotos.filter((photo) => photo.coordinateQuality === 'low_precision').length,
+    missingCoordinates: activePhotos.filter((photo) => !photo.coordinates || photo.coordinateQuality === 'missing').length,
+    indexes: activePhotos.filter((photo) => Boolean(photo.indexFromOcr)).length,
+    conflicts: conflictCount(activePhotos),
+  }), [activePhotos]);
   const options = [
-    ['all', 'Все', photos.length],
-    ['success', 'Успешно', photos.filter((photo) => matchesFilter(photo, 'success')).length],
+    ['all', 'Все ACTIVE', activePhotos.length],
+    ['success', 'Успешно', activePhotos.filter((photo) => matchesFilter(photo, 'success')).length],
     ['low_precision', 'Низкая точность', stats.lowPrecision],
-    ['confirmation', 'Требует подтверждения', photos.filter((photo) => matchesFilter(photo, 'confirmation')).length],
+    ['confirmation', 'Требует подтверждения', activePhotos.filter((photo) => matchesFilter(photo, 'confirmation')).length],
     ['missing_coordinates', 'Координаты не найдены', stats.missingCoordinates],
-    ['missing_index', 'Индекс не найден', photos.filter((photo) => matchesFilter(photo, 'missing_index')).length],
+    ['missing_index', 'Индекс не найден', activePhotos.filter((photo) => matchesFilter(photo, 'missing_index')).length],
     ['conflicts', 'Конфликты', stats.conflicts],
   ].map(([value, label, count]) => ({ value, label, count }));
-  const filtered = photos.filter((photo) => matchesFilter(photo, filter));
+  const filtered = activePhotos.filter((photo) => matchesFilter(photo, filter));
 
   if (photos.length === 0) {
     return (
@@ -74,11 +79,11 @@ export default function ResultsScreen({
         title="Сводка текущей проверки"
         actions={<button type="button" className="button-secondary" onClick={onClear}><Icon name="trash" size={18} /> Очистить результат</button>}
       >
-        Таблица и карточки показывают реальные данные текущей сессии: координаты, индекс, internal name, качество OCR, upload и конфликты расстояний.
+        Только ACTIVE-данные текущей сессии: координаты, индекс, OCR, upload и конфликты. RESERVE остаётся в отдельном разделе.
       </PageHeader>
 
       <section className="results-stat-grid">
-        <StatCard label="Обработано" value={stats.processed} helper={`${photos.length} фото в сессии`} icon="image" tone="info" />
+        <StatCard label="Обработано" value={stats.processed} helper={`${activePhotos.length} ACTIVE из ${photos.length}`} icon="image" tone="info" />
         <StatCard label="Координаты найдены" value={stats.recognized} helper="OCR или EXIF" icon="target" tone="success" />
         <StatCard label="Low precision" value={stats.lowPrecision} helper="Нужна ручная проверка" icon="warning" tone={stats.lowPrecision ? 'warning' : 'success'} />
         <StatCard label="Без координат" value={stats.missingCoordinates} helper="Не участвуют в расстояниях" icon="error" tone={stats.missingCoordinates ? 'warning' : 'success'} />
@@ -86,7 +91,7 @@ export default function ResultsScreen({
         <StatCard label="Конфликты" value={stats.conflicts} helper="Пары ближе порога" icon="error" tone={stats.conflicts ? 'error' : 'success'} />
       </section>
 
-      <ResultsSummary photos={photos} providerSettings={providerSettings} onClear={onClear} />
+      <ResultsSummary photos={photos} session={session} providerSettings={providerSettings} onClear={onClear} onSessionChange={onSessionChange} />
 
       <section className="surface-panel">
         <FilterBar label="Фильтр результатов" options={options} value={filter} onChange={setFilter} />
@@ -115,6 +120,7 @@ export default function ResultsScreen({
                   onApplyIndex={onApplyIndex}
                   onSwapCoordinates={onSwapCoordinates}
                   onOpenOnMap={onOpenOnMap}
+                  onToggleReserve={onToggleReserve}
                 />
               ))}
             </div>

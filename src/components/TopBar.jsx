@@ -93,7 +93,7 @@ export default function TopBar({
           <Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} />
         </button>
         <div className="top-title">
-          <p className="brand-mark">GPS Checker Map Photo</p>
+          <p className="brand-mark">Dark Cat CRM · GPS Checker Map Photo</p>
           <h1>{current?.label || 'Панель управления'}</h1>
         </div>
       </div>

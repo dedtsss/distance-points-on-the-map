@@ -4,6 +4,7 @@ import PageHeader from './PageHeader.jsx';
 import SessionList from './SessionList.jsx';
 import StatCard from './StatCard.jsx';
 import StatusChip from './StatusChip.jsx';
+import { getSessionMetrics } from '../features/session/sessionDomain.js';
 
 const isToday = (value) => {
   if (!value) return false;
@@ -23,16 +24,17 @@ export default function Dashboard({
   sessions,
   journal,
   onNavigate,
+  onOpenSession,
   onRunFullCheck,
   canRunFullCheck,
   isBusy,
 }) {
+  const allPhotos = sessions.flatMap((session) => session.photos || []);
   const activeSessionToday = sessions.some((session) => isToday(session.createdAt || session.updatedAt));
-  const processed = photos.filter((photo) => !['buffered', 'idle'].includes(photo.status)).length;
-  const lowPrecision = photos.filter((photo) => photo.coordinateQuality === 'low_precision').length;
-  const conflicts = conflictCount(photos);
+  const totals = getSessionMetrics(allPhotos);
+  const conflicts = conflictCount(allPhotos);
   const recentIssues = [
-    ...photos.filter((photo) => photo.userError || photo.distanceStatus === 'too_close' || photo.coordinateQuality === 'low_precision').map((photo) => ({
+    ...allPhotos.filter((photo) => photo.userError || photo.distanceStatus === 'too_close' || photo.coordinateQuality === 'low_precision').map((photo) => ({
       id: `photo-${photo.id}`,
       tone: photo.userError ? 'error' : photo.distanceStatus === 'too_close' ? 'error' : 'warning',
       title: photo.displayFileName || photo.fileName || `Фото ${photo.number}`,
@@ -64,14 +66,14 @@ export default function Dashboard({
           </>
         )}
       >
-        Статистика строится по текущей или восстановленной локальной сессии. Полная история сессий пока не подключена.
+        Метрики строятся только из сохранённых сессий Dark Cat CRM — без декоративных графиков и fake data.
       </PageHeader>
 
       <section className="dashboard-grid">
-        <StatCard label="Сессий сегодня" value={activeSessionToday ? 1 : 0} helper="Только локальная последняя сессия" tone="primary" icon="sessions" />
-        <StatCard label="Фото обработано" value={processed} helper={`${photos.length} выбрано`} tone="info" icon="image" />
-        <StatCard label="Низкая точность" value={lowPrecision} helper="Требует подтверждения" tone={lowPrecision ? 'warning' : 'success'} icon="warning" />
-        <StatCard label="Конфликты расстояний" value={conflicts} helper="По текущему порогу" tone={conflicts ? 'error' : 'success'} icon="error" />
+        <StatCard label="Всего сессий" value={sessions.length} helper={activeSessionToday ? 'Есть активность сегодня' : 'Нет активности сегодня'} tone="primary" icon="sessions" />
+        <StatCard label="Фото обработано" value={totals.processedPhotoCount} helper={`${totals.totalPhotoCount} всего`} tone="info" icon="image" />
+        <StatCard label="Индексы / координаты" value={`${totals.recognizedIndexCount} / ${totals.recognizedCoordinateCount}`} helper={`${totals.uploadedCount} загружено`} tone="success" icon="target" />
+        <StatCard label="ACTIVE / RESERVE" value={`${totals.activeCount} / ${totals.reserveCount}`} helper={`${totals.errorCount || conflicts} требуют внимания`} tone={totals.errorCount || conflicts ? 'warning' : 'success'} icon="warning" />
       </section>
 
       <section className="dashboard-main">
@@ -79,7 +81,7 @@ export default function Dashboard({
           <div>
             <p className="page-eyebrow">Быстрое действие</p>
             <h3>Загрузка и проверка фотографий</h3>
-            <p>OCR координат, индекс точки, очистка metadata, upload через `/api/upload` и расчёт расстояний остаются в существующем pipeline.</p>
+            <p>OCR координат, индекс точки, cleanup, upload через `/api/upload` и карта остаются в существующем pipeline и сохраняются в выбранной сессии.</p>
           </div>
           <div className="quick-actions">
             <button type="button" onClick={() => onNavigate('upload')}>
@@ -97,15 +99,15 @@ export default function Dashboard({
           <div className="panel-heading">
             <div>
               <p className="page-eyebrow">Последние сессии</p>
-              <h3>Локальное хранилище</h3>
+              <h3>Сохранённая история</h3>
             </div>
             <button type="button" className="button-secondary compact-button" onClick={() => onNavigate('sessions')}>Все сессии</button>
           </div>
           {sessions.length > 0 ? (
-            <SessionList sessions={sessions.slice(0, 3)} onOpen={() => onNavigate('results')} />
+            <SessionList sessions={sessions.slice(0, 3)} onOpen={onOpenSession || (() => onNavigate('sessions'))} />
           ) : (
             <EmptyState title="История пока отсутствует" icon="sessions">
-              Приложение сейчас хранит только последнюю локальную сессию в браузере.
+              Создайте первую сессию: здесь появятся реальные показатели обработки.
             </EmptyState>
           )}
         </article>

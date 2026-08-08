@@ -64,7 +64,7 @@ export const MAP_LAYER_DEFINITIONS = Object.freeze({
         }),
       }),
       Object.freeze({
-        url: 'https://tiles.maps.eox.at/wmts/1.0.0/overlay_bright_3857/default/g/{z}/{y}/{x}.jpg',
+        url: 'https://tiles.maps.eox.at/wmts/1.0.0/overlay_bright_3857/default/g/{z}/{y}/{x}.png',
         options: Object.freeze({
           maxNativeZoom: 18,
           maxZoom: 19,

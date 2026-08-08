@@ -63,6 +63,7 @@ export async function runPhotoPipeline(options) {
     try {
       const gps = await readGps(jobs.get(initialPhoto.id).stableFile, {
         debug: options.debug === true,
+        metadataFirst: options.processingSettings?.metadataFirst !== false,
         onProgress: (progress) => {
           patchPhoto(initialPhoto.id, { statusText: progressText(progress) });
           if (String(progress.status).startsWith('cropping:')) log(`OCR ${progress.status.replace('cropping:', '')}`, initialPhoto.id);
@@ -187,7 +188,9 @@ export async function runPhotoPipeline(options) {
     try {
       const cleaned = await clean(jobs.get(photo.id).stableFile, {
         orientation: jobs.get(photo.id).orientation,
-        preferredFilename: `gps-${String(photo.number).padStart(3, '0')}.jpg`,
+        preferredFilename: options.processingSettings?.renameFiles === false
+          ? jobs.get(photo.id).safeName || jobs.get(photo.id).fileName
+          : `gps-${String(photo.number).padStart(3, '0')}.jpg`,
         originalName: jobs.get(photo.id).fileName,
         safeName: jobs.get(photo.id).safeName,
         type: jobs.get(photo.id).type,
@@ -214,6 +217,7 @@ export async function runPhotoPipeline(options) {
         statusText: 'Metadata очищены',
         cleanupStatus: 'done',
         cleanedBlob: cleaned.file,
+        processedFileName: cleaned.file.name || '',
         debug: {
           ...jobs.get(photo.id).debug,
           cleanup: {
@@ -283,7 +287,7 @@ export async function runPhotoPipeline(options) {
       }
 
       const selectedProvider = result.selectedProvider || result.links[0]?.provider;
-      const fallbackUsed = selectedProvider && selectedProvider !== 'ninjabox';
+      const fallbackUsed = selectedProvider && selectedProvider !== (result.providerOrder?.[0] || 'ninjabox');
       patchPhoto(entry.photoId, {
         status: PHOTO_STATUS.UPLOADED,
         statusText: `Загружено: ${providerLabel(selectedProvider)}${fallbackUsed ? ' (резерв)' : ''}`,

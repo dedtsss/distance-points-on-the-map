@@ -31,6 +31,7 @@ export async function readGpsPipeline(stableFile, options = {}) {
   let ocr = null;
   let ocrError = null;
   let exifError = null;
+  let exif = null;
 
   const finish = (result) => {
     try {
@@ -45,6 +46,18 @@ export async function readGpsPipeline(stableFile, options = {}) {
     return result;
   };
 
+  const readExifSafely = async () => {
+    try {
+      exif = await readExif(stableFile);
+    } catch (error) {
+      exifError = error instanceof Error ? error.message : String(error);
+    }
+  };
+
+  // A real EXIF coordinate is authoritative. OCR still runs afterwards to
+  // recover the point index and diagnostics, but can no longer overwrite it.
+  if (options.metadataFirst !== false) await readExifSafely();
+
   try {
     ocr = await readOcr(stableFile, {
       debug: options.debug === true,
@@ -54,14 +67,34 @@ export async function readGpsPipeline(stableFile, options = {}) {
     ocrError = error instanceof Error ? error.message : String(error);
   }
 
+  if (options.metadataFirst !== false) {
+    const exifCoordinates = normalizeCoordinates(
+      exif?.coordinates?.latitude,
+      exif?.coordinates?.longitude,
+    );
+    if (exifCoordinates) {
+      return finish({
+        found: true,
+        coordinates: exifCoordinates,
+        source: 'exif',
+        confidence: 1,
+        ocrStatus: ocr?.ocrStatus || 'exif',
+        indexFromOcr: ocr?.indexFromOcr || null,
+        indexStatus: ocr?.indexStatus || (ocr?.indexFromOcr ? 'uncertain' : 'missing'),
+        coordinateQuality: 'confident',
+        coordinatePrecision: null,
+        coordinateText: null,
+        gpsWarnings: [],
+        ocrAttemptCount: ocr?.attempts?.length || 0,
+        orientation: exif?.orientation || 1,
+        debug: { ocr: debugOcr(ocr, true), ocrError, exif, exifError },
+      });
+    }
+  }
+
   const ocrCoordinates = normalizeCoordinates(ocr?.latitude, ocr?.longitude);
   if (ocr?.ok && ocrCoordinates) {
-    let orientationExif = null;
-    try {
-      orientationExif = await readExif(stableFile);
-    } catch (error) {
-      exifError = error instanceof Error ? error.message : String(error);
-    }
+    if (!exif) await readExifSafely();
     return finish({
       found: true,
       coordinates: ocrCoordinates,
@@ -76,17 +109,12 @@ export async function readGpsPipeline(stableFile, options = {}) {
       coordinateText: ocr.coordinateText || null,
       gpsWarnings: ocr.warnings || [],
       ocrAttemptCount: ocr.attempts?.length || 0,
-      orientation: orientationExif?.orientation || 1,
-      debug: { ocr: debugOcr(ocr, true), ocrError, exif: orientationExif, exifError },
+      orientation: exif?.orientation || 1,
+      debug: { ocr: debugOcr(ocr, true), ocrError, exif, exifError },
     });
   }
 
-  let exif = null;
-  try {
-    exif = await readExif(stableFile);
-  } catch (error) {
-    exifError = error instanceof Error ? error.message : String(error);
-  }
+  if (!exif) await readExifSafely();
 
   const exifCoordinates = normalizeCoordinates(
     exif?.coordinates?.latitude,

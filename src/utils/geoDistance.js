@@ -71,6 +71,10 @@ export function hasUsableCoordinates(point) {
 
 export const isUsablePointCoordinate = hasUsableCoordinates;
 
+export const isReservePoint = (point) => (
+  point?.workStatus === 'reserve' || point?.disposition === 'reserve'
+);
+
 export function haversineDistanceMeters(pointA, pointB) {
   const latitudeA = toCoordinateNumber(getLatitude(pointA));
   const longitudeA = toCoordinateNumber(getLongitude(pointA));
@@ -111,7 +115,7 @@ export const getValidPointsForDistance = (points) => points
     latitude: toCoordinateNumber(getLatitude(point)),
     longitude: toCoordinateNumber(getLongitude(point)),
   }))
-  .filter(hasUsableCoordinates);
+  .filter((point) => !isReservePoint(point) && hasUsableCoordinates(point));
 
 export function buildDistanceMatrix(points) {
   const validPoints = getValidPointsForDistance(points);
@@ -169,6 +173,13 @@ export function markProblemPoints(points, violations) {
   const problemIds = new Set(violations.flatMap((violation) => [violation.pointAId, violation.pointBId]));
 
   return points.map((point) => {
+    if (isReservePoint(point)) {
+      return {
+        ...point,
+        distanceStatus: 'reserve',
+        distanceWarnings: [],
+      };
+    }
     const hasCoordinates = hasUsableCoordinates(point);
     const ownViolations = violations.filter((violation) => (
       violation.pointAId === point.id || violation.pointBId === point.id
