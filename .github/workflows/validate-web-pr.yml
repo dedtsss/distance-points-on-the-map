@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'workers/**'
+      - 'migrations/**'
+      - 'wrangler*.toml'
       - 'public/**'
       - 'scripts/**'
       - 'package.json'

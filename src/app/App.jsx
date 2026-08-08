@@ -285,8 +285,8 @@ export default function App() {
   const folderImportAbortRef = useRef(null);
   const photosRef = useRef(photos);
   const d1AdapterRef = useRef(null);
+  const remotePersistenceQueueRef = useRef(Promise.resolve());
   const hydrationRef = useRef(false);
-  const saveSequenceRef = useRef(0);
   photosRef.current = photos;
   if (!d1AdapterRef.current) d1AdapterRef.current = createD1SessionAdapter();
   const debugMode = useMemo(debugModeFromLocation, []);
@@ -333,11 +333,13 @@ export default function App() {
 
   const persistSessionRecord = async (draft) => {
     const localRecord = saveSessionRecord(draft);
+    const backupPhotos = Array.isArray(draft?.photos) ? draft.photos : photosRef.current;
+    const backupActiveScreen = draft?.activeScreen || activeScreen;
     saveLastSession({
       ...localRecord,
-      activeScreen,
+      activeScreen: backupActiveScreen,
       processingSettings: localRecord.processingSettings || processingSettings,
-      photos: photosRef.current,
+      photos: backupPhotos,
     });
     setSessions((current) => [localRecord, ...current.filter((item) => item.sessionId !== localRecord.sessionId)]);
     setSessionDiagnostics(getSessionDiagnostics());
@@ -348,22 +350,39 @@ export default function App() {
       return { record: localRecord, remote: false, error: new Error('Server persistence is not available.') };
     }
 
-    try {
-      const remoteRecord = await d1AdapterRef.current.saveSession(localRecord);
-      replaceRemoteSession(remoteRecord);
-      setRemoteState({ status: 'ready', error: '', unsynced: false });
-      setStorageDiagnostics({
-        ...sessionStorageDiagnostics(),
-        backend: 'd1',
-        syncState: 'synced',
-        serverUpdatedAt: remoteRecord.updatedAt,
-      });
-      return { record: remoteRecord, remote: true, error: null };
-    } catch (error) {
-      setRemoteState({ status: 'fallback', error: 'Изменения сохранены только локально: серверное хранилище недоступно.', unsynced: true });
-      setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'unsynced' });
-      return { record: localRecord, remote: false, error };
-    }
+    const saveRemote = async () => {
+      try {
+        const remoteRecord = await d1AdapterRef.current.saveSession(localRecord);
+        if (!remoteRecord?.sessionId) throw new Error('Server returned an invalid session record.');
+        const syncedRecord = {
+          ...localRecord,
+          ...remoteRecord,
+          photos: Array.isArray(remoteRecord.photos) ? remoteRecord.photos : localRecord.photos,
+        };
+        saveSessionRecord(syncedRecord, undefined, { forceSessionNumber: true });
+        saveLastSession({
+          ...syncedRecord,
+          activeScreen: backupActiveScreen,
+          photos: backupPhotos,
+        });
+        replaceRemoteSession(syncedRecord);
+        setRemoteState({ status: 'ready', error: '', unsynced: false });
+        setStorageDiagnostics({
+          ...sessionStorageDiagnostics(),
+          backend: 'd1',
+          syncState: 'synced',
+          serverUpdatedAt: syncedRecord.updatedAt,
+        });
+        return { record: syncedRecord, remote: true, error: null };
+      } catch (error) {
+        setRemoteState({ status: 'fallback', error: 'Изменения сохранены только локально: серверное хранилище недоступно.', unsynced: true });
+        setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'unsynced' });
+        return { record: localRecord, remote: false, error };
+      }
+    };
+    const queuedSave = remotePersistenceQueueRef.current.catch(() => undefined).then(saveRemote);
+    remotePersistenceQueueRef.current = queuedSave.catch(() => undefined);
+    return queuedSave;
   };
 
   useEffect(() => {
@@ -415,7 +434,7 @@ export default function App() {
         adapter: d1AdapterRef.current,
         onProgress: (count, _total, record) => {
           imported = count;
-          saveSessionRecord(localMigration.candidates[count - 1]);
+          saveSessionRecord(record, undefined, { forceSessionNumber: true });
           replaceRemoteSession(record);
           setLocalMigration((current) => ({ ...current, imported }));
         },
@@ -1030,7 +1049,8 @@ export default function App() {
       handleToggleReserve(photoId, false);
       return;
     }
-    const record = listStoredSessions().find((session) => session.sessionId === sessionId);
+    const record = sessions.find((session) => session.sessionId === sessionId)
+      || listStoredSessions().find((session) => session.sessionId === sessionId);
     if (!record) return;
     const restored = restoreSessionPhotos(record);
     const nextPhotos = recalculateSessionPhotos(restored.map((photo) => (

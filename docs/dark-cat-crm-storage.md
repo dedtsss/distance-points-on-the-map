@@ -23,8 +23,8 @@ atomic `UPDATE ... RETURNING`; the browser never allocates from `max()+1`.
 
 ## localStorage migration and fallback
 
-`dark-cat-crm-sessions-v1` remains a migration source and a local backup. On
-successful server hydration, missing local session IDs are shown in an explicit
+`dark-cat-crm-sessions-v1` and the legacy `gps-checker-last-session-v1` remain
+migration sources and local backups. On successful server hydration, missing local session IDs are shown in an explicit
 “Перенести в облако” prompt. Import uses the stable session ID, is retry-safe,
 and marks `dark-cat-d1-local-migration-v1` only after every upload succeeds.
 The local copy is intentionally retained during the transition.
@@ -32,7 +32,9 @@ The local copy is intentionally retained during the transition.
 If the server cannot be reached, the UI labels the local write `unsynced` and
 does not claim server persistence. The local adapter remains useful for tests
 and offline/read fallback; it is not authoritative in a ready production
-session.
+session. Remote writes from one browser are serialized, and a successful server
+number is copied back into the local backup so the fallback cannot silently
+revert numbering.
 
 ## Schema and operations
 

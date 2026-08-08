@@ -10,6 +10,7 @@ import {
   listD1Sessions,
   upsertD1Session,
 } from '../workers/host-proxy/d1SessionRepository.js';
+import { saveLastSession } from '../src/features/session/sessionStore.js';
 import { handleWorkerRequest } from '../workers/host-proxy/worker.js';
 
 class MockD1Statement {
@@ -157,6 +158,7 @@ const localStorage = {
   removeItem(key) { this.values.delete(key); },
 };
 const localSession = saveSessionRecord({ sessionId: 'legacy-local', sessionNumber: 44, title: 'Legacy', photos: [] }, localStorage);
+const legacyLastSession = saveLastSession({ sessionId: 'legacy-last', sessionNumber: 45, title: 'Legacy last-session', photos: [] }, localStorage);
 const importedById = new Map();
 let importCalls = 0;
 const migrationAdapter = {
@@ -167,10 +169,10 @@ const migrationAdapter = {
     return remote;
   },
 };
-assert.deepEqual(findLocalSessionsForD1Import([], localStorage).map((session) => session.sessionId), [localSession.sessionId]);
-await importLocalSessionsToD1({ sessions: [localSession], adapter: migrationAdapter, storage: localStorage });
+assert.deepEqual(findLocalSessionsForD1Import([], localStorage).map((session) => session.sessionId), [localSession.sessionId, legacyLastSession.sessionId]);
+await importLocalSessionsToD1({ sessions: [localSession, legacyLastSession], adapter: migrationAdapter, storage: localStorage });
 assert.equal(isD1MigrationComplete(localStorage), true);
 assert.deepEqual(findLocalSessionsForD1Import([...importedById.values()], localStorage), []);
-assert.equal(importCalls, 1, 'migration retry has no duplicate when server already has the deterministic id');
+assert.equal(importCalls, 2, 'migration imports both collection and legacy last-session data');
 
 console.log('D1 schema, CRUD, sanitization, dashboard, API errors, immutable numbering and concurrent allocation passed');

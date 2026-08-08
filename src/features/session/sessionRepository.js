@@ -69,14 +69,19 @@ export function getNextSessionNumber(storage) {
   return loadSessionCollection(storage).nextSessionNumber;
 }
 
-export function saveSessionRecord(session, storage) {
+export function saveSessionRecord(session, storage, options = {}) {
   const collection = loadSessionCollection(storage);
   const existing = collection.sessions.find((item) => item.sessionId === session?.sessionId);
-  const sessionNumber = existing?.sessionNumber || normalizedNumber(session?.sessionNumber, collection.nextSessionNumber);
-  const next = serializeSession(updateSessionRecord(existing || createSession({
-    ...session,
-    sessionNumber,
-  }), {
+  const sessionNumber = options.forceSessionNumber === true
+    ? normalizedNumber(session?.sessionNumber, existing?.sessionNumber || collection.nextSessionNumber)
+    : existing?.sessionNumber || normalizedNumber(session?.sessionNumber, collection.nextSessionNumber);
+  const baseSession = existing && options.forceSessionNumber === true
+    ? { ...existing, sessionNumber }
+    : existing || createSession({
+      ...session,
+      sessionNumber,
+    });
+  const next = serializeSession(updateSessionRecord(baseSession, {
     ...session,
     sessionNumber,
     createdAt: existing?.createdAt || session?.createdAt,
