@@ -1,6 +1,10 @@
 name: Provision Dark Cat D1
 
 on:
+  push:
+    branches: [codex/dark-cat-d1-persistence]
+    paths:
+      - '.github/workflows/provision-d1.yml'
   workflow_dispatch:
     inputs:
       database_name:
