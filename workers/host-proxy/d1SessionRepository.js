@@ -124,6 +124,13 @@ export function validateD1SessionInput(session = {}) {
   if (!validSessionId(session.sessionId)) throw new Error('Invalid session id.');
   if (!Array.isArray(session.photos)) throw new Error('Session photos must be an array.');
   if (session.photos.length > MAX_PHOTOS_PER_SESSION) throw new Error('Too many photos in session.');
+  const photoIds = new Set();
+  session.photos.forEach((photo) => {
+    const photoId = String(photo?.photoId || photo?.id || '');
+    if (!validSessionId(photoId)) throw new Error('Invalid photo id.');
+    if (photoIds.has(photoId)) throw new Error('Duplicate photo id.');
+    photoIds.add(photoId);
+  });
   return true;
 }
 

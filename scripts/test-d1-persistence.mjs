@@ -126,6 +126,10 @@ assert.deepEqual(getD1Dashboard(listed), {
 });
 
 const workerEnv = { DB: db };
+await assert.rejects(
+  () => upsertD1Session(db, { sessionId: 'duplicate-photo-session', photos: [photo('photo-duplicate'), photo('photo-duplicate')] }),
+  /Duplicate photo id/,
+);
 const unauthorizedSession = await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/sessions'), {
   BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'GPS', BASIC_AUTH_PASSWORD: 'secret-for-test-only',
 });
