@@ -126,6 +126,10 @@ assert.deepEqual(getD1Dashboard(listed), {
 });
 
 const workerEnv = { DB: db };
+const unauthorizedSession = await handleWorkerRequest(new Request('https://gps-guest.bruce-group.net/api/sessions'), {
+  BASIC_AUTH_REQUIRED: 'true', BASIC_AUTH_USERNAME: 'GPS', BASIC_AUTH_PASSWORD: 'secret-for-test-only',
+});
+assert.equal(unauthorizedSession.status, 401);
 const getResponse = await handleWorkerRequest(new Request('https://gps.bruce-group.net/api/sessions'), workerEnv);
 assert.equal(getResponse.status, 200);
 assert.equal((await getResponse.json()).sessions.length, 13);

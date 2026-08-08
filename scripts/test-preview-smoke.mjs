@@ -114,6 +114,11 @@ const server = createServer(async (request, response) => {
       response.end(JSON.stringify({ error: 'preview_smoke_no_upload' }));
       return;
     }
+    if (requestUrl.pathname === '/api/sessions') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ ok: true, sessions: [], nextSessionNumber: 1, dashboard: {} }));
+      return;
+    }
     const filePath = await resolveDistFile(requestUrl.pathname);
     if (!filePath) {
       response.writeHead(403);

@@ -72,6 +72,16 @@ const pageErrors = [];
 const failedRequests = [];
 
 const attachDiagnostics = async (page, extraInit = '') => {
+  await page.route('**/api/sessions*', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, sessions: [], nextSessionNumber: 1, dashboard: {} }),
+  }));
+  await page.route('**/api/sessions/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, session: { sessionId: 'test-session', photos: [] }, dashboard: {} }),
+  }));
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });

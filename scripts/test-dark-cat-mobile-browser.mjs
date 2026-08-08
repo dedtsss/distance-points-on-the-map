@@ -75,6 +75,11 @@ try {
     { width: 412, height: 915 },
   ]) {
     const page = await browser.newPage({ viewport });
+    await page.route('**/api/sessions*', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, sessions: [fixtureSession], nextSessionNumber: 43, dashboard: { sessionCount: 1, photoCount: 3, activeCount: 3 } }),
+    }));
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     await page.addInitScript(({ key, session }) => {

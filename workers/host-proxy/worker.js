@@ -108,7 +108,7 @@ const isSessionPath = (request) => {
 const sessionIdFromRequest = (request) => {
   const pathname = new URL(request.url).pathname.replace(/\/$/, '');
   if (!pathname.startsWith(`${API_SESSIONS_PATH}/`)) return '';
-  return decodeURIComponent(pathname.slice(`${API_SESSIONS_PATH}/`.length));
+  try { return decodeURIComponent(pathname.slice(`${API_SESSIONS_PATH}/`.length)); } catch { return ''; }
 };
 
 async function parseSessionBody(request) {
