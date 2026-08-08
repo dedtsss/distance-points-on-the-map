@@ -2,6 +2,7 @@ import { DEFAULT_DISTANCE_THRESHOLD_METERS } from '../distance/distanceService.j
 import { buildPointIdentity } from '../points/pointIdentity.js';
 import {
   haversineDistanceMeters,
+  isReservePoint,
   isValidCoordinate,
 } from '../../utils/geoDistance.js';
 
@@ -42,17 +43,19 @@ export function buildMapModel(photos, thresholdMeters = DEFAULT_DISTANCE_THRESHO
         strict: isStrictDistancePoint(photo),
         lowPrecision: photo.coordinateQuality === 'low_precision',
         suspicious: photo.coordinateQuality === 'suspicious',
+        reserve: isReservePoint(photo),
         distanceStatus: photo.distanceStatus || 'pending',
       };
     })
     .filter(Boolean);
 
   const strictPoints = points.filter((point) => point.strict);
+  const activeStrictPoints = strictPoints.filter((point) => !point.reserve);
   const lines = [];
-  for (let i = 0; i < strictPoints.length; i += 1) {
-    for (let j = i + 1; j < strictPoints.length; j += 1) {
-      const pointA = strictPoints[i];
-      const pointB = strictPoints[j];
+  for (let i = 0; i < activeStrictPoints.length; i += 1) {
+    for (let j = i + 1; j < activeStrictPoints.length; j += 1) {
+      const pointA = activeStrictPoints[i];
+      const pointB = activeStrictPoints[j];
       const distanceMeters = haversineDistanceMeters(pointA.coordinates, pointB.coordinates);
       if (distanceMeters === null) continue;
       lines.push({
@@ -72,6 +75,7 @@ export function buildMapModel(photos, thresholdMeters = DEFAULT_DISTANCE_THRESHO
     thresholdMeters: threshold,
     points,
     strictPoints,
+    activeStrictPoints,
     lines,
     conflicts,
     missingCoordinates: (photos || []).filter((photo) => !coordinatesForPhoto(photo)),

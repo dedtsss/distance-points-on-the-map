@@ -18,11 +18,25 @@ export function normalizeProviderSettings(settings = {}) {
   const fallbackFreeimage = settings.fallbackFreeimage !== undefined
     ? settings.fallbackFreeimage !== false
     : settings.freeimage !== false;
-  return {
+  const enabled = {
     ninjabox: true,
     fallbackFreeimage,
     fallbackX0: settings.fallbackX0 !== false,
   };
+  const allowed = [PRIMARY_PROVIDER, ...FALLBACK_PROVIDERS];
+  const requestedOrder = Array.isArray(settings.providerOrder)
+    ? settings.providerOrder.map((item) => String(item || '').toLowerCase()).filter((item) => allowed.includes(item))
+    : [];
+  const enabledProviders = [
+    PRIMARY_PROVIDER,
+    ...(enabled.fallbackFreeimage ? ['freeimage'] : []),
+    ...(enabled.fallbackX0 ? ['x0'] : []),
+  ];
+  const providerOrder = [...new Set([
+    ...requestedOrder.filter((provider) => enabledProviders.includes(provider)),
+    ...enabledProviders,
+  ])];
+  return requestedOrder.length ? { ...enabled, providerOrder } : enabled;
 }
 
 export function validateProviderSettings(settings) {
@@ -30,14 +44,14 @@ export function validateProviderSettings(settings) {
   const normalized = normalizeProviderSettings(settings);
   const providerOrder = explicitlyDisabled
     ? []
-    : [
+    : normalized.providerOrder || [
       PRIMARY_PROVIDER,
       ...(normalized.fallbackFreeimage ? ['freeimage'] : []),
       ...(normalized.fallbackX0 ? ['x0'] : []),
     ];
   return {
     valid: !explicitlyDisabled,
-    selectedProviders: explicitlyDisabled ? [] : [PRIMARY_PROVIDER],
+    selectedProviders: explicitlyDisabled ? [] : providerOrder,
     providerOrder,
     settings: normalized,
     error: explicitlyDisabled ? 'NinjaBox должен оставаться основным сервисом загрузки.' : '',
