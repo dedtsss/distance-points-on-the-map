@@ -11,6 +11,11 @@ binding = "ASSETS"
 run_worker_first = true
 not_found_handling = "single-page-application"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "dark-cat-crm"
+database_id = "736217a0-044d-49a3-a7c1-0d55e21c17bf"
+
 [vars]
 BASIC_AUTH_REQUIRED = "true"
 
