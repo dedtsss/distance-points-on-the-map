@@ -14,7 +14,8 @@ They are intended to point to the same D1 binding, `DB`, so both contexts see
 one logical CRM history.
 
 The Worker stores session/photo metadata, coordinates, OCR state, ACTIVE/RESERVE
-state, links and settings. It never stores source files, cleaned blobs, browser
+state, links and settings, including processing flags (`metadataCleanup`,
+`renameFiles`, `metadataFirst`). It never stores source files, cleaned blobs, browser
 data URLs or raw OCR debug payloads. Photo data is sanitized before D1 writes.
 
 Session numbers are allocated by the `crm_sequences` singleton row and an

@@ -95,6 +95,11 @@ const normalizeSession = (session = {}, sessionNumber, now) => {
     thresholdMeters: Math.max(1, Math.min(1000, Number(session.thresholdMeters) || 25)),
     settings: {
       providerSettings: cleanJsonValue(session.providerSettings || {}) || {},
+      processingSettings: {
+        metadataCleanup: session.processingSettings?.metadataCleanup !== false,
+        renameFiles: session.processingSettings?.renameFiles !== false,
+        metadataFirst: session.processingSettings?.metadataFirst !== false,
+      },
       regionMode: cleanText(session.regionMode || 'auto', 40),
       mapLayerId: cleanText(session.mapLayerId, 80),
       copiedPhotoIds: Array.isArray(session.copiedPhotoIds) ? [...new Set(session.copiedPhotoIds.map(String).slice(0, 500))] : [],

@@ -90,9 +90,11 @@ const first = await upsertD1Session(db, {
   status: 'in_progress',
   stage: 'result',
   thresholdMeters: 25,
+  processingSettings: { metadataCleanup: false, renameFiles: true, metadataFirst: false },
   photos: [photo('photo-1'), photo('photo-2', 'reserve')],
 });
 assert.equal(first.sessionNumber, 1, 'the server allocates the first number');
+assert.deepEqual(first.processingSettings, { metadataCleanup: false, renameFiles: true, metadataFirst: false });
 assert.equal(first.photos.length, 2);
 assert.equal(first.photos[1].workStatus, 'reserve');
 assert.equal(first.photos[0].thumbnailDataUrl, null, 'D1 does not return image data URLs');
@@ -102,6 +104,7 @@ assert.equal(first.photos[0].uploadResult.links[0].url, 'https://images.example.
 const update = await upsertD1Session(db, { ...first, title: 'Updated', sessionNumber: 2, photos: [photo('photo-1', 'reserve')] });
 assert.equal(update.sessionNumber, 1, 'session number is immutable on update');
 assert.equal(update.title, 'Updated');
+assert.deepEqual(update.processingSettings, { metadataCleanup: false, renameFiles: true, metadataFirst: false });
 assert.equal((await getD1Session(db, 'session-one')).photos[0].workStatus, 'reserve');
 
 const concurrent = await Promise.all(Array.from({ length: 12 }, (_, index) => upsertD1Session(db, {

@@ -18,6 +18,7 @@ const snapshot = saveLastSession({
   name: 'GPS object 15',
   createdAt: '2026-07-04T10:00:00.000Z',
   thresholdMeters: 25,
+  processingSettings: { metadataCleanup: false, renameFiles: true, metadataFirst: false },
   activeScreen: 'map',
   providerSettings: { freeimage: true, ninjabox: true, includeX0: false, fallbackX0: true },
   photos: [{
@@ -107,6 +108,7 @@ for (const forbidden of ['sourceBuffer', 'stableBlob', 'stableFile', 'cleanedBlo
 assert.equal(snapshot.photos[0].freeimageUrl, 'https://free.test/1');
 assert.equal(snapshot.name, 'GPS object 15');
 assert.equal(snapshot.activeScreen, 'map');
+assert.deepEqual(snapshot.processingSettings, { metadataCleanup: false, renameFiles: true, metadataFirst: false });
 assert.equal(snapshot.photos[0].relativePath, 'GPS object 15/day2/source.jpg');
 assert.equal(snapshot.photos[0].indexFromOcr, '5939');
 assert.equal(snapshot.photos[0].displayFileName, 'index-5939.jpg');
@@ -115,6 +117,7 @@ assert.equal(loaded.sessionId, 'session-1');
 assert.equal(loaded.name, 'GPS object 15');
 assert.equal(loaded.version, 1);
 assert.equal(loaded.activeScreen, 'map');
+assert.deepEqual(loaded.processingSettings, { metadataCleanup: false, renameFiles: true, metadataFirst: false });
 const restored = restoreSessionPhotos(loaded);
 assert.equal(restored[0].stableFile, null);
 assert.equal(restored[0].id, 'photo-1');

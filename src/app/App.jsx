@@ -304,10 +304,11 @@ export default function App() {
     ...sessionMeta,
     photos,
     providerSettings,
+    processingSettings,
     thresholdMeters,
     regionMode,
     mapLayerId,
-  }), [sessionMeta, photos, providerSettings, thresholdMeters, regionMode, mapLayerId]);
+  }), [sessionMeta, photos, providerSettings, processingSettings, thresholdMeters, regionMode, mapLayerId]);
   const visibleSessions = useMemo(() => {
     const includeCurrent = Boolean(sessionMeta?.persisted || photos.length > 0);
     const rest = sessions.filter((session) => session.sessionId !== sessionMeta?.sessionId);
@@ -332,7 +333,12 @@ export default function App() {
 
   const persistSessionRecord = async (draft) => {
     const localRecord = saveSessionRecord(draft);
-    saveLastSession({ ...localRecord, activeScreen, photos: photosRef.current });
+    saveLastSession({
+      ...localRecord,
+      activeScreen,
+      processingSettings: localRecord.processingSettings || processingSettings,
+      photos: photosRef.current,
+    });
     setSessions((current) => [localRecord, ...current.filter((item) => item.sessionId !== localRecord.sessionId)]);
     setSessionDiagnostics(getSessionDiagnostics());
 
@@ -485,6 +491,7 @@ export default function App() {
       sessionId: sessionMeta.sessionId,
       sessionRevision,
       providerSettings,
+      processingSettings,
       thresholdMeters,
       activeScreen,
       regionMode,
@@ -500,6 +507,7 @@ export default function App() {
         stage: sessionMeta.stage || stageForScreen(activeScreen),
         photos: photosRef.current,
         providerSettings,
+        processingSettings,
         regionMode,
         mapLayerId,
       });
@@ -517,7 +525,7 @@ export default function App() {
       }
     }, 100);
     return () => globalThis.clearTimeout(timeoutId);
-  }, [sessionRevision, providerSettings, sessionMeta, thresholdMeters, activeScreen, regionMode, mapLayerId]);
+  }, [sessionRevision, providerSettings, processingSettings, sessionMeta, thresholdMeters, activeScreen, regionMode, mapLayerId]);
 
   const clearCurrentPhotos = () => photosRef.current.forEach((photo) => releasePhotoBuffers(photo));
   const modeAfterImport = () => (photosRef.current.length > 0 ? 'ready' : 'idle');
@@ -529,6 +537,11 @@ export default function App() {
     setPhotos(restored.photos);
     setSessionMeta(sessionMetaFromRecord(record));
     setProviderSettings(normalizeProviderSettings(record.providerSettings || DEFAULT_PROVIDER_SETTINGS));
+    setProcessingSettings(record.processingSettings || {
+      metadataCleanup: crmSettings.metadataCleanup,
+      renameFiles: crmSettings.renameFiles,
+      metadataFirst: crmSettings.metadataFirst,
+    });
     setThresholdMeters(Number(record.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
     setRegionMode(record.regionMode || 'auto');
     setMapLayerId(record.mapLayerId || 'hybrid');
@@ -548,6 +561,7 @@ export default function App() {
       description: input.description ?? loadExportDescription(),
       thresholdMeters,
       providerSettings,
+      processingSettings,
       regionMode,
       mapLayerId,
       stage: 'processing',
@@ -568,6 +582,7 @@ export default function App() {
         photos: [],
         thresholdMeters,
         providerSettings,
+        processingSettings,
         regionMode,
         mapLayerId,
         stage: 'processing',
@@ -840,6 +855,7 @@ export default function App() {
         stage: effectiveStages.upload ? 'result' : 'processing',
         photos: result.photos,
         providerSettings,
+        processingSettings,
         regionMode,
         mapLayerId,
       });
