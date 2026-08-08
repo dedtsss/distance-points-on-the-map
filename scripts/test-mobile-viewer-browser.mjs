@@ -24,6 +24,11 @@ const browser = await chromium.launch({ headless: true });
 // Mobile CSS is selected by viewport width. Keep desktop pointer input so the
 // drag smoke uses Chromium's normal Pointer Events path without touch emulation conflicts.
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await page.route('**/api/sessions*', (route) => route.fulfill({
+  status: 200,
+  contentType: 'application/json',
+  body: JSON.stringify({ ok: true, sessions: [], nextSessionNumber: 1, dashboard: {} }),
+}));
 const pageErrors = [];
 page.on('pageerror', (error) => pageErrors.push(error.message));
 

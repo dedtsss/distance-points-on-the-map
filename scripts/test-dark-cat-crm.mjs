@@ -48,9 +48,11 @@ assert.equal(first.sessionNumber, 1);
 assert.equal(second.sessionNumber, 2);
 const persistedFirst = saveSessionRecord({ ...first, photos: [photo('a', 1, 64.1, 30.1)] }, storage);
 assert.equal(persistedFirst.sessionNumber, 1);
+const serverNumberedFirst = saveSessionRecord({ ...persistedFirst, sessionNumber: 77 }, storage, { forceSessionNumber: true });
+assert.equal(serverNumberedFirst.sessionNumber, 77, 'server-assigned number updates the local backup');
 assert.equal(listStoredSessions(storage).length, 2);
 assert.equal(restoreStoredSession(persistedFirst).photos[0].stableFile, null);
-assert.deepEqual(deleteStoredSession(second.sessionId, storage).map((session) => session.sessionNumber), [1]);
+assert.deepEqual(deleteStoredSession(second.sessionId, storage).map((session) => session.sessionNumber), [77]);
 
 // The graph is a triangle plus a standalone point: exact minimum cover is 2.
 const graphPhotos = [

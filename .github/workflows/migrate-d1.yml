@@ -1,0 +1,83 @@
+name: Migrate Dark Cat D1
+
+on:
+  workflow_dispatch:
+    inputs:
+      database_name:
+        description: Bound production D1 database name
+        required: true
+        default: dark-cat-crm
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DATABASE_NAME: ${{ inputs.database_name || 'dark-cat-crm' }}
+      WRANGLER_VERSION: 4.120.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate credentials and shared binding
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+          python3 - <<'PY'
+          import re, sys
+          configs = [open('wrangler.toml', encoding='utf-8').read(), open('wrangler.guest.toml', encoding='utf-8').read()]
+          for label, config in zip(('owner', 'guest'), configs):
+              match = re.search(r'\[\[d1_databases\]\](.*?)(?=\[\[|\Z)', config, flags=re.S)
+              if not match or not re.search(r'^binding\s*=\s*"DB"$', match.group(1), flags=re.M):
+                  print(f'::error::{label} Wrangler config must contain a DB D1 binding before migration.')
+                  sys.exit(1)
+              if not re.search(r'^database_name\s*=\s*"' + re.escape(__import__('os').environ['DATABASE_NAME']) + r'"$', match.group(1), flags=re.M):
+                  print(f'::error::{label} Wrangler config DB binding does not target DATABASE_NAME.')
+                  sys.exit(1)
+          print('Owner and guest point to the same DB binding name.')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export remote D1 backup before migration
+        run: |
+          set -euo pipefail
+          mkdir -p d1-backup
+          npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 export "$DATABASE_NAME" \
+            --remote --skip-confirmation --config wrangler.toml \
+            --output "d1-backup/dark-cat-${GITHUB_RUN_ID}.sql"
+
+      - name: Show unapplied migrations
+        run: npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 migrations list "$DATABASE_NAME" --remote --config wrangler.toml
+
+      - name: Apply remote D1 migrations
+        run: npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 migrations apply "$DATABASE_NAME" --remote --config wrangler.toml
+
+      - name: Verify Dark Cat schema
+        run: |
+          set -euo pipefail
+          npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 execute "$DATABASE_NAME" --remote --config wrangler.toml \
+            --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('crm_sessions', 'crm_photo_items', 'crm_sequences') ORDER BY name;"
+
+      - name: Upload D1 backup artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dark-cat-d1-backup-${{ github.run_id }}
+          path: d1-backup/
+          if-no-files-found: warn
+          retention-days: 30

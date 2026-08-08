@@ -14,6 +14,15 @@ export const SESSION_STAGES = Object.freeze([
 
 const nowIso = () => new Date().toISOString();
 
+const normalizeProcessingSettings = (value) => {
+  if (!value || typeof value !== 'object') return undefined;
+  return {
+    metadataCleanup: value.metadataCleanup !== false,
+    renameFiles: value.renameFiles !== false,
+    metadataFirst: value.metadataFirst !== false,
+  };
+};
+
 export const createSessionId = () => (
   globalThis.crypto?.randomUUID?.()
     || `session-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -114,6 +123,7 @@ export function createSession(input = {}) {
     updatedAt: input.updatedAt || timestamp,
     thresholdMeters: Math.max(1, Math.min(1000, Number(input.thresholdMeters) || 25)),
     providerSettings: input.providerSettings ? { ...input.providerSettings } : undefined,
+    processingSettings: normalizeProcessingSettings(input.processingSettings),
     regionMode: input.regionMode || 'auto',
     mapLayerId: input.mapLayerId || '',
     copiedPhotoIds: Array.isArray(input.copiedPhotoIds) ? [...new Set(input.copiedPhotoIds.map(String))] : [],

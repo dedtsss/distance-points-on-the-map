@@ -145,7 +145,7 @@ export default function SettingsScreen({
 
         <article className="settings-group settings-group-wide">
           <BuildInfo />
-          {storageDiagnostics && <p className="setting-helper">Хранилище: {storageDiagnostics.backend} · сессий: {storageDiagnostics.sessionCount ?? 0} · schema v{storageDiagnostics.schemaVersion ?? '—'}</p>}
+          {storageDiagnostics && <p className="setting-helper">Хранилище: {storageDiagnostics.backend} · sync: {storageDiagnostics.syncState || 'local'} · сессий: {storageDiagnostics.sessionCount ?? 0} · schema v{storageDiagnostics.schemaVersion ?? '—'}</p>}
         </article>
       </section>
     </>

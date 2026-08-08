@@ -118,6 +118,17 @@ const fulfillTile = (route) => route.fulfill({
 });
 await page.route('https://*.tile.openstreetmap.org/**', fulfillTile);
 await page.route('https://tiles.maps.eox.at/**', fulfillTile);
+await page.route('**/api/sessions*', (route) => route.fulfill({
+  status: 200,
+  contentType: 'application/json',
+  body: JSON.stringify({ ok: true, sessions: [], nextSessionNumber: 1, dashboard: {} }),
+}));
+await page.route('**/api/sessions/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'application/json',
+  body: JSON.stringify({ ok: true, session: { sessionId: 'test-session', photos: [] }, dashboard: {} }),
+}));
+await page.route('**/favicon.ico', (route) => route.fulfill({ status: 204, body: '' }));
 await page.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), {
   key: LAST_SESSION_KEY,
   value: session,

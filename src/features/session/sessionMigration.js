@@ -1,0 +1,36 @@
+import { loadSessionCollection } from './sessionRepository.js';
+import { loadLastSession } from './sessionStore.js';
+import { D1_LOCAL_MIGRATION_KEY, readD1MigrationMarker, writeD1MigrationMarker } from './d1SessionAdapter.js';
+
+export function findLocalSessionsForD1Import(remoteSessions = [], storage = globalThis.localStorage) {
+  const remoteIds = new Set((remoteSessions || []).map((session) => session.sessionId));
+  const localSessions = loadSessionCollection(storage).sessions;
+  const legacyLastSession = loadLastSession(storage);
+  if (legacyLastSession?.sessionId && !localSessions.some((session) => session.sessionId === legacyLastSession.sessionId)) {
+    localSessions.push(legacyLastSession);
+  }
+  return localSessions.filter((session) => !remoteIds.has(session.sessionId));
+}
+
+export async function importLocalSessionsToD1({ sessions = [], adapter, storage = globalThis.localStorage, onProgress } = {}) {
+  if (!adapter?.saveSession) throw new Error('D1 session adapter is unavailable.');
+  const candidates = sessions.filter(Boolean);
+  const imported = [];
+  for (const session of candidates) {
+    const remote = await adapter.saveSession(session);
+    imported.push(remote || session);
+    onProgress?.(imported.length, candidates.length, remote || session);
+  }
+  writeD1MigrationMarker({
+    version: 1,
+    completedAt: new Date().toISOString(),
+    sessionIds: candidates.map((session) => session.sessionId),
+  }, storage);
+  return imported;
+}
+
+export function isD1MigrationComplete(storage = globalThis.localStorage) {
+  return Boolean(readD1MigrationMarker(storage)?.completedAt);
+}
+
+export { D1_LOCAL_MIGRATION_KEY };
