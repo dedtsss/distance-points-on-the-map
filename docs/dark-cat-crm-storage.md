@@ -57,8 +57,10 @@ Cloudflare authentication error code `10000`. The missing permission is
 Account `D1: Edit` (including D1 read/list access) on the existing
 `CLOUDFLARE_API_TOKEN` credential. Once granted, use the manual
 `.github/workflows/provision-d1.yml`, record the returned database ID in both
-Wrangler configs as the `DB` binding, apply the migration remotely, and then
-deploy owner and guest.
+Wrangler configs as the shared `DB` binding, then run
+`.github/workflows/migrate-d1.yml`. That workflow exports a remote SQL backup
+artifact before applying migration, verifies the schema, and then owner/guest
+can be deployed.
 
 No secret value belongs in this document, Wrangler config, commits, PRs or
 issue comments.
