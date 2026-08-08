@@ -914,30 +914,42 @@ export default function App() {
   };
 
   const performClearResult = async () => {
+    const deletedSessionId = sessionMeta?.persisted ? sessionMeta.sessionId : '';
+    let remoteDeleteConfirmed = !deletedSessionId;
+    let deleteError = '';
     clearCurrentPhotos();
     deleteLastSession();
-    if (sessionMeta?.persisted) {
-      deleteStoredSession(sessionMeta.sessionId);
+    if (deletedSessionId) {
+      deleteStoredSession(deletedSessionId);
       if (remoteStateRef.current.status === 'ready') {
         try {
-          await d1AdapterRef.current.deleteSession(sessionMeta.sessionId);
+          await d1AdapterRef.current.deleteSession(deletedSessionId);
+          remoteDeleteConfirmed = true;
         } catch {
           setRemoteState({ status: 'fallback', error: 'Сессия удалена локально, но сервер не подтвердил удаление.', unsynced: true });
-          setErrors((current) => [...new Set([...current, 'Удаление не синхронизировано с сервером.'])]);
+          deleteError = 'Удаление не синхронизировано с сервером.';
         }
+      } else {
+        deleteError = 'Сессия удалена локально, но серверное удаление не подтверждено.';
       }
     }
     setPhotos([]);
-    setErrors([]);
+    setErrors(deleteError ? [deleteError] : []);
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     setMode('idle');
     setSessionMeta(newSessionMeta({ sessionNumber: getNextSessionNumber(), description: loadExportDescription() }));
     setSavedSession(null);
-    setSessions(listStoredSessions());
-    setStorageDiagnostics(sessionStorageDiagnostics());
+    if (deletedSessionId && remoteDeleteConfirmed) {
+      setSessions((current) => current.filter((session) => session.sessionId !== deletedSessionId));
+    } else if (!deletedSessionId) {
+      setSessions(listStoredSessions());
+    }
+    setStorageDiagnostics(deletedSessionId
+      ? { ...sessionStorageDiagnostics(), backend: 'd1', syncState: remoteDeleteConfirmed ? 'synced' : 'unsynced' }
+      : sessionStorageDiagnostics());
     setMapFocusPhotoId(null);
     setConfirmClearOpen(false);
-    addLog('Сессия очищена', 'warning');
+    addLog(deleteError ? 'Сессия очищена локально; серверное удаление не подтверждено' : 'Сессия очищена', 'warning');
   };
 
   const handleRemovePhoto = (photoId) => {
@@ -1057,9 +1069,16 @@ export default function App() {
       photo.id === photoId ? withPhotoWorkStatus(photo, 'active') : photo
     )), Number(record.thresholdMeters) || thresholdMeters);
     persistSessionRecord({ ...record, photos: nextPhotos }).then((result) => {
-      if (!result.remote) setErrors((current) => [...new Set([...current, 'Изменение ACTIVE/RESERVE не синхронизировано с сервером.'])]);
+      if (result.remote) {
+        addLog('RESERVE-точка возвращена в ACTIVE и сохранена на сервере', 'success');
+      } else {
+        setErrors((current) => [...new Set([...current, 'Изменение ACTIVE/RESERVE не синхронизировано с сервером.'])]);
+        addLog('RESERVE-точка изменена локально; серверное сохранение не подтверждено', 'warning');
+      }
+    }).catch(() => {
+      setErrors((current) => [...new Set([...current, 'Изменение ACTIVE/RESERVE не синхронизировано с сервером.'])]);
+      addLog('Изменение ACTIVE/RESERVE не сохранено на сервере', 'error');
     });
-    addLog('RESERVE-точка возвращена в ACTIVE', 'success');
   };
 
   const handleOpenPhoto = (photoId) => {
