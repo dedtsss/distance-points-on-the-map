@@ -171,12 +171,6 @@ const photoFromRow = (row) => {
     reserveReason: row.reserve_reason || '',
     thumbnailReference: row.thumbnail_reference || null,
     thumbnailDataUrl: null,
-    sourceBuffer: null,
-    stableBlob: null,
-    stableFile: null,
-    cleanedBlob: null,
-    previewObjectUrl: null,
-    debug: {},
     restored: true,
     canResumeUpload: false,
   };

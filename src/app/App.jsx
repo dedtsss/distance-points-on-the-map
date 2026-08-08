@@ -29,7 +29,6 @@ import {
   createStoredSession,
   deleteStoredSession,
   getNextSessionNumber,
-  loadSessionCollection,
   listStoredSessions,
   restoreStoredSession,
   saveSessionRecord,
@@ -37,9 +36,8 @@ import {
 } from '../features/session/sessionRepository.js';
 import {
   createD1SessionAdapter,
-  readD1MigrationMarker,
-  writeD1MigrationMarker,
 } from '../features/session/d1SessionAdapter.js';
+import { findLocalSessionsForD1Import, importLocalSessionsToD1, isD1MigrationComplete } from '../features/session/sessionMigration.js';
 import { loadCrmSettings, saveCrmSettings } from '../features/settings/settingsStore.js';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService.js';
 import { bufferSelectedFiles } from '../features/files/stableFileStore.js';
@@ -383,9 +381,8 @@ export default function App() {
         if (!sessionMeta?.persisted && photosRef.current.length === 0 && payload.nextSessionNumber) {
           setSessionMeta((current) => ({ ...current, sessionNumber: payload.nextSessionNumber }));
         }
-        const remoteIds = new Set(remoteSessions.map((session) => session.sessionId));
-        const localCandidates = loadSessionCollection().sessions.filter((session) => !remoteIds.has(session.sessionId));
-        if (localCandidates.length > 0 && !readD1MigrationMarker()?.completedAt) {
+        const localCandidates = findLocalSessionsForD1Import(remoteSessions);
+        if (localCandidates.length > 0 && !isD1MigrationComplete()) {
           setLocalMigration({ status: 'ready', candidates: localCandidates, imported: 0, error: '' });
         }
       } catch (error) {
@@ -407,23 +404,21 @@ export default function App() {
     setLocalMigration((current) => ({ ...current, status: 'running', error: '', imported: 0 }));
     let imported = 0;
     try {
-      for (const candidate of localMigration.candidates) {
-        const result = await d1AdapterRef.current.saveSession(candidate);
-        saveSessionRecord(candidate);
-        replaceRemoteSession(result);
-        imported += 1;
-        setLocalMigration((current) => ({ ...current, imported }));
-      }
-      writeD1MigrationMarker({
-        version: 1,
-        completedAt: new Date().toISOString(),
-        sessionIds: localMigration.candidates.map((session) => session.sessionId),
+      const importedRecords = await importLocalSessionsToD1({
+        sessions: localMigration.candidates,
+        adapter: d1AdapterRef.current,
+        onProgress: (count, _total, record) => {
+          imported = count;
+          saveSessionRecord(localMigration.candidates[count - 1]);
+          replaceRemoteSession(record);
+          setLocalMigration((current) => ({ ...current, imported }));
+        },
       });
       const payload = await d1AdapterRef.current.listSessions();
       setSessions(payload.sessions || []);
       setRemoteState({ status: 'ready', error: '', unsynced: false });
       setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'synced', sessionCount: payload.sessions?.length || 0, dashboard: payload.dashboard });
-      setLocalMigration({ status: 'complete', candidates: [], imported, error: '' });
+      setLocalMigration({ status: 'complete', candidates: [], imported: importedRecords.length, error: '' });
       addLog(`Локальные сессии перенесены в облако: ${imported}`, 'success');
     } catch (error) {
       setRemoteState({ status: 'fallback', error: 'Импорт не завершён: часть локальных сессий остаётся unsynced.', unsynced: true });
