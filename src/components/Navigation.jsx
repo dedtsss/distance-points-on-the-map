@@ -4,6 +4,7 @@ import Icon from './Icon.jsx';
 const ICON_BY_SCREEN = {
   dashboard: 'dashboard',
   upload: 'upload',
+  reserve: 'folder',
   map: 'map',
   results: 'results',
   sessions: 'sessions',

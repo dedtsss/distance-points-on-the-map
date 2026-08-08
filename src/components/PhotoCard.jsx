@@ -38,6 +38,7 @@ export default function PhotoCard({
   onApplyIndex,
   onSwapCoordinates,
   onOpenOnMap,
+  onToggleReserve,
 }) {
   const [detailsOpen, setDetailsOpen] = useState(['low_precision', 'suspicious'].includes(photo.coordinateQuality));
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -168,6 +169,7 @@ export default function PhotoCard({
             })}</dd></div>
             <div><dt>Точность</dt><dd><StatusChip tone={qualityTone(photo.coordinateQuality)}>{coordinateLabel(photo)}</StatusChip></dd></div>
             <div><dt>Загрузка</dt><dd>{photo.uploadStatus || 'не запускалась'}</dd></div>
+            <div><dt>Рабочий статус</dt><dd><StatusChip tone={photo.workStatus === 'reserve' || photo.disposition === 'reserve' ? 'warning' : 'success'}>{photo.workStatus === 'reserve' || photo.disposition === 'reserve' ? 'RESERVE' : 'ACTIVE'}</StatusChip></dd></div>
           </dl>
 
           {photo.userError && <p className="card-error">{photo.userError}</p>}
@@ -188,6 +190,11 @@ export default function PhotoCard({
               <Icon name="share" size={16} />
               Поделиться точкой
             </button>
+            {onToggleReserve && (
+              <button type="button" className="button-secondary compact-button" onClick={() => onToggleReserve(photo.id, !(photo.workStatus === 'reserve' || photo.disposition === 'reserve'))} disabled={editingDisabled}>
+                {photo.workStatus === 'reserve' || photo.disposition === 'reserve' ? 'В ACTIVE' : 'В RESERVE'}
+              </button>
+            )}
             <button type="button" className="button-secondary compact-button danger-ghost-button" onClick={() => onRemove?.(photo.id)} disabled={editingDisabled}>
               <Icon name="trash" size={16} />
               Удалить

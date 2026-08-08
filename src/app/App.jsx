@@ -14,9 +14,27 @@ import MapPanel from '../components/MapPanel.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import PhotoCard from '../components/PhotoCard.jsx';
 import ResultsScreen from '../components/ResultsScreen.jsx';
+import ReserveScreen from '../components/ReserveScreen.jsx';
+import SessionWizard from '../components/SessionWizard.jsx';
 import SessionsScreen from '../components/SessionsScreen.jsx';
 import SettingsScreen from '../components/SettingsScreen.jsx';
 import UploadDropzone from '../components/UploadDropzone.jsx';
+import { recommendReserveForConflicts } from '../features/session/conflictResolver.js';
+import {
+  createSession,
+  getReserveItems,
+  withPhotoWorkStatus,
+} from '../features/session/sessionDomain.js';
+import {
+  createStoredSession,
+  deleteStoredSession,
+  getNextSessionNumber,
+  listStoredSessions,
+  restoreStoredSession,
+  saveSessionRecord,
+  sessionStorageDiagnostics,
+} from '../features/session/sessionRepository.js';
+import { loadCrmSettings, saveCrmSettings } from '../features/settings/settingsStore.js';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService.js';
 import { bufferSelectedFiles } from '../features/files/stableFileStore.js';
 import {
@@ -37,6 +55,7 @@ import {
   restoreSessionPhotos,
   saveLastSession,
 } from '../features/session/sessionStore.js';
+import { loadExportDescription } from '../features/export/exportPreferences.js';
 import { DEFAULT_SCREEN, normalizeScreen } from '../features/ui/screens.js';
 import {
   DEFAULT_PROVIDER_SETTINGS,
@@ -53,42 +72,28 @@ import {
 import { runPhotoPipeline } from './pipeline.js';
 import { UPLOAD_RULES_EXPLANATION } from './pipelineRules.js';
 
-const newSessionMeta = (name = '') => ({
-  sessionId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  createdAt: new Date().toISOString(),
-  name,
+const newSessionMeta = (input = {}) => createSession({
+  sessionNumber: input.sessionNumber || getNextSessionNumber(),
+  description: input.description ?? loadExportDescription(),
+  ...input,
 });
+
+const sessionMetaFromRecord = (record) => {
+  const { photos: _photos, ...meta } = record || {};
+  return { ...meta, persisted: true };
+};
+
+const screenForStage = (stage) => ({ processing: 'upload', upload: 'upload', map: 'map', result: 'results' }[stage] || 'upload');
+const stageForScreen = (screen) => ({ upload: 'processing', map: 'map', results: 'result' }[screen] || 'processing');
 
 const debugModeFromLocation = () => (
   typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('debug') === '1'
 );
 
-const buildVisibleSessions = ({ sessionMeta, photos, savedSession }) => {
-  const sessions = [];
-  if (sessionMeta && photos.length > 0) {
-    sessions.push({
-      ...sessionMeta,
-      name: sessionMeta.name || (photos.some((photo) => photo.restored) ? 'Восстановленная сессия' : 'Текущая сессия'),
-      photos,
-      status: photos.some((photo) => ['reading_gps', 'cleaning', 'uploading'].includes(photo.status)) ? 'обрабатывается' : 'локальная',
-    });
-  }
-
-  if (savedSession && savedSession.sessionId !== sessionMeta?.sessionId) {
-    sessions.push({
-      ...savedSession,
-      name: savedSession.name || 'Последняя сохранённая сессия',
-      photos: savedSession.photos || [],
-      status: 'сохранена',
-    });
-  }
-
-  return sessions;
-};
-
 function UploadScreen({
   photos,
+  session,
   mode,
   isBusy,
   providerValidation,
@@ -109,6 +114,10 @@ function UploadScreen({
   onOpenOnMap,
   onOpenSettings,
   folderImport,
+  onSessionChange,
+  onStartNewSession,
+  onStageChange,
+  onToggleReserve,
 }) {
   const hasStableFiles = photos.some((photo) => photo.stableFile);
   const hasCleanedPhotos = photos.some((photo) => photo.cleanedBlob);
@@ -116,6 +125,14 @@ function UploadScreen({
 
   return (
     <>
+      <SessionWizard
+        session={session}
+        photoCount={photos.length}
+        isBusy={isBusy}
+        onSessionChange={onSessionChange}
+        onStartNew={onStartNewSession}
+        onStageChange={onStageChange}
+      />
       <PageHeader
         eyebrow="Загрузка и проверка"
         title="Новая проверка фотографий"
@@ -186,6 +203,7 @@ function UploadScreen({
               onSwapCoordinates={onSwapCoordinates}
               onOpenOnMap={onOpenOnMap}
               providerSettings={providerSettings}
+              onToggleReserve={onToggleReserve}
             />
           ))}
         </section>
@@ -194,7 +212,18 @@ function UploadScreen({
   );
 }
 
-function MapScreen({ photos, thresholdMeters, providerSettings, focusPhotoId, onNavigateUpload }) {
+function MapScreen({
+  photos,
+  thresholdMeters,
+  providerSettings,
+  focusPhotoId,
+  onNavigateUpload,
+  mapLayerId,
+  onMapLayerChange,
+  recommendation,
+  onApplyRecommendation,
+  onToggleReserve,
+}) {
   return (
     <>
       <PageHeader
@@ -202,33 +231,50 @@ function MapScreen({ photos, thresholdMeters, providerSettings, focusPhotoId, on
         title="Точки и расстояния"
         actions={<button type="button" className="button-secondary" onClick={onNavigateUpload}><Icon name="upload" size={18} /> Загрузка</button>}
       >
-        Маркеры используют OCR-индекс, статусы low_precision/suspicious и текущие конфликты расстояний. Расчёты не менялись.
+        Маркеры используют OCR-индекс, статусы quality и конфликтную сеть только ACTIVE-точек. RESERVE остаётся на карте, но не участвует в конфликте.
       </PageHeader>
       <MapPanel
         photos={photos}
         thresholdMeters={thresholdMeters}
         providerSettings={providerSettings}
         focusPhotoId={focusPhotoId}
+        mapLayerId={mapLayerId}
+        onMapLayerChange={onMapLayerChange}
+        recommendation={recommendation}
+        onApplyRecommendation={onApplyRecommendation}
+        onToggleReserve={onToggleReserve}
       />
     </>
   );
 }
 
 export default function App() {
+  const [crmSettings, setCrmSettings] = useState(() => loadCrmSettings());
   const [photos, setPhotos] = useState([]);
   const [errors, setErrors] = useState([]);
   const [mode, setMode] = useState('idle');
   const [folderImport, setFolderImport] = useState({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
   const [savedSession, setSavedSession] = useState(() => loadLastSession());
-  const [sessionMeta, setSessionMeta] = useState(null);
+  const [sessions, setSessions] = useState(() => listStoredSessions());
+  const [sessionMeta, setSessionMeta] = useState(() => newSessionMeta({
+    sessionNumber: getNextSessionNumber(),
+    description: loadExportDescription(),
+  }));
   const [providerSettings, setProviderSettings] = useState({ ...DEFAULT_PROVIDER_SETTINGS });
   const [regionMode, setRegionMode] = useState('auto');
-  const [thresholdMeters, setThresholdMeters] = useState(() => Number(loadLastSession()?.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
+  const [thresholdMeters, setThresholdMeters] = useState(() => Number(loadLastSession()?.thresholdMeters) || crmSettings.distanceThresholdMeters || DEFAULT_DISTANCE_THRESHOLD_METERS);
+  const [processingSettings, setProcessingSettings] = useState(() => ({
+    metadataCleanup: crmSettings.metadataCleanup,
+    renameFiles: crmSettings.renameFiles,
+    metadataFirst: crmSettings.metadataFirst,
+  }));
+  const [mapLayerId, setMapLayerId] = useState(() => crmSettings.mapLayerId || 'hybrid');
   const [activeScreen, setActiveScreen] = useState(DEFAULT_SCREEN);
   const [mapFocusPhotoId, setMapFocusPhotoId] = useState(null);
   const [journal, setJournal] = useState([]);
   const [activeSince, setActiveSince] = useState(null);
   const [sessionDiagnostics, setSessionDiagnostics] = useState(() => getSessionDiagnostics());
+  const [storageDiagnostics, setStorageDiagnostics] = useState(() => sessionStorageDiagnostics());
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const folderImportAbortRef = useRef(null);
   const photosRef = useRef(photos);
@@ -244,7 +290,22 @@ export default function App() {
   const hasUploadedPhotos = photos.some((photo) => photo.uploadResult?.links?.length > 0);
   const hasRestoredPhotos = photos.some((photo) => photo.restored);
   const canRunFullCheck = photos.some((photo) => photo.stableFile);
-  const visibleSessions = useMemo(() => buildVisibleSessions({ sessionMeta, photos, savedSession }), [sessionMeta, photos, savedSession]);
+  const currentSession = useMemo(() => ({
+    ...sessionMeta,
+    photos,
+    providerSettings,
+    thresholdMeters,
+    regionMode,
+    mapLayerId,
+  }), [sessionMeta, photos, providerSettings, thresholdMeters, regionMode, mapLayerId]);
+  const visibleSessions = useMemo(() => {
+    const includeCurrent = Boolean(sessionMeta?.persisted || photos.length > 0);
+    const rest = sessions.filter((session) => session.sessionId !== sessionMeta?.sessionId);
+    const combined = includeCurrent ? [currentSession, ...rest] : rest;
+    return combined.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+  }, [sessions, currentSession, sessionMeta?.persisted, sessionMeta?.sessionId, photos.length]);
+  const conflictRecommendation = useMemo(() => recommendReserveForConflicts(photos, thresholdMeters), [photos, thresholdMeters]);
+  const reserveItems = useMemo(() => getReserveItems(visibleSessions), [visibleSessions]);
 
   const addLog = (message, type = 'info') => setJournal((current) => [...current, {
     id: `${Date.now()}-${Math.random()}`, time: new Date().toLocaleTimeString('ru-RU'), message, type,
@@ -287,6 +348,8 @@ export default function App() {
     coordinates: photo.coordinates,
     distanceStatus: photo.distanceStatus,
     distanceConflicts: photo.distanceConflicts,
+    workStatus: photo.workStatus,
+    reserveReason: photo.reserveReason,
     cleanupStatus: photo.cleanupStatus,
     uploadStatus: photo.uploadStatus,
     uploadLinks: photo.uploadResult?.links,
@@ -301,17 +364,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionMeta || photos.length === 0) return undefined;
+    if (!sessionMeta || (!sessionMeta.persisted && photos.length === 0)) return undefined;
     const timeoutId = globalThis.setTimeout(() => {
       try {
-        saveLastSession({
+        const record = saveSessionRecord({
           ...sessionMeta,
           thresholdMeters,
           activeScreen,
+          stage: sessionMeta.stage || stageForScreen(activeScreen),
           photos: photosRef.current,
           providerSettings,
+          regionMode,
+          mapLayerId,
         });
+        saveLastSession({
+          ...record,
+          activeScreen,
+          photos: photosRef.current,
+        });
+        setSessions(listStoredSessions());
         setSessionDiagnostics(getSessionDiagnostics());
+        setStorageDiagnostics(sessionStorageDiagnostics());
         setJournal((current) => current.at(-1)?.message === 'Сессия сохранена'
           ? current
           : [...current, { id: `${Date.now()}-session`, time: new Date().toLocaleTimeString('ru-RU'), message: 'Сессия сохранена', type: 'info' }].slice(-200));
@@ -320,10 +393,110 @@ export default function App() {
       }
     }, 100);
     return () => globalThis.clearTimeout(timeoutId);
-  }, [sessionRevision, providerSettings, sessionMeta, debugMode, thresholdMeters, activeScreen]);
+  }, [sessionRevision, providerSettings, sessionMeta, debugMode, thresholdMeters, activeScreen, regionMode, mapLayerId, photos.length]);
 
   const clearCurrentPhotos = () => photosRef.current.forEach((photo) => releasePhotoBuffers(photo));
   const modeAfterImport = () => (photosRef.current.length > 0 ? 'ready' : 'idle');
+
+  const selectStoredSession = (record, screen = null) => {
+    if (!record) return false;
+    clearCurrentPhotos();
+    const restored = restoreStoredSession(record);
+    setPhotos(restored.photos);
+    setSessionMeta(sessionMetaFromRecord(record));
+    setProviderSettings(normalizeProviderSettings(record.providerSettings || DEFAULT_PROVIDER_SETTINGS));
+    setThresholdMeters(Number(record.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
+    setRegionMode(record.regionMode || 'auto');
+    setMapLayerId(record.mapLayerId || 'hybrid');
+    setErrors([]);
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
+    setMode(restored.photos.length ? 'done' : 'idle');
+    setActiveScreen(screen || screenForStage(record.stage));
+    return true;
+  };
+
+  const beginNewSession = (input = {}) => {
+    const record = createStoredSession({
+      title: input.title || '',
+      name: input.title || '',
+      color: input.color || '',
+      packing: input.packing || '',
+      description: input.description ?? loadExportDescription(),
+      thresholdMeters,
+      providerSettings,
+      regionMode,
+      mapLayerId,
+      stage: 'processing',
+    });
+    setSessionMeta(sessionMetaFromRecord(record));
+    setSessions(listStoredSessions());
+    setStorageDiagnostics(sessionStorageDiagnostics());
+    return record;
+  };
+
+  const ensureSessionForImport = (input = {}) => {
+    const shouldReuseDraft = !sessionMeta?.persisted || photosRef.current.length === 0;
+    const record = shouldReuseDraft
+      ? saveSessionRecord({
+        ...sessionMeta,
+        title: input.title || sessionMeta?.title || sessionMeta?.name || '',
+        name: input.title || sessionMeta?.title || sessionMeta?.name || '',
+        photos: [],
+        thresholdMeters,
+        providerSettings,
+        regionMode,
+        mapLayerId,
+        stage: 'processing',
+      })
+      : beginNewSession({ title: input.title || '' });
+    const meta = sessionMetaFromRecord(record);
+    setSessionMeta(meta);
+    setSessions(listStoredSessions());
+    setStorageDiagnostics(sessionStorageDiagnostics());
+    return meta;
+  };
+
+  const handleStartNewSession = () => {
+    clearCurrentPhotos();
+    setPhotos([]);
+    setSavedSession(null);
+    setErrors([]);
+    setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
+    beginNewSession();
+    setMode('idle');
+    setActiveScreen('upload');
+    addLog('Создана новая сессия', 'success');
+  };
+
+  const handleSessionChange = (patch) => {
+    setSessionMeta((current) => ({
+      ...current,
+      ...patch,
+      title: patch.title ?? current?.title,
+      name: patch.name ?? patch.title ?? current?.name,
+    }));
+  };
+
+  const handleProcessingSettingsChange = (next) => {
+    const saved = saveCrmSettings({
+      ...crmSettings,
+      ...next,
+      distanceThresholdMeters: thresholdMeters,
+      mapLayerId,
+    });
+    setCrmSettings(saved);
+    setProcessingSettings({
+      metadataCleanup: saved.metadataCleanup,
+      renameFiles: saved.renameFiles,
+      metadataFirst: saved.metadataFirst,
+    });
+  };
+
+  const handleMapLayerChange = (next) => {
+    const saved = saveCrmSettings({ ...crmSettings, ...processingSettings, distanceThresholdMeters: thresholdMeters, mapLayerId: next });
+    setCrmSettings(saved);
+    setMapLayerId(saved.mapLayerId);
+  };
 
   const folderImportCancelled = (error) => (
     error?.name === 'AbortError'
@@ -334,13 +507,12 @@ export default function App() {
   const handleFilesSelected = async (selectedFiles) => {
     const files = Array.from(selectedFiles || []);
     if (files.length === 0) return;
+    const importSession = ensureSessionForImport();
     setMode('buffering');
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     setErrors([]);
     clearCurrentPhotos();
-    deleteLastSession();
     setPhotos([]);
-    setSavedSession(null);
     setActiveScreen('upload');
 
     try {
@@ -349,7 +521,7 @@ export default function App() {
       setPhotos(nextBatch.photos);
       notifyImportReady('files', nextBatch.photos);
       setErrors(buffered.errors);
-      setSessionMeta(newSessionMeta());
+      setSessionMeta(importSession);
       setMode(nextBatch.photos.length > 0 ? 'ready' : 'idle');
       addLog(`Выбрано файлов: ${nextBatch.photos.length}. Превью создано: ${nextBatch.photos.filter((photo) => photo.thumbnailDataUrl).length}.`);
     } catch (error) {
@@ -372,17 +544,17 @@ export default function App() {
       return;
     }
 
+    const importSession = ensureSessionForImport({ title: prepared.report?.folderName || '' });
     const buffered = await bufferSelectedFiles(prepared.files, { signal: controller.signal });
     const finalReport = applyBufferResultToFolderReport(prepared.report, buffered);
     const nextBatch = replacePhotoBatch([], buffered.bufferedFiles);
 
     clearCurrentPhotos();
-    deleteLastSession();
     setPhotos(nextBatch.photos);
     notifyImportReady('folder', nextBatch.photos);
     setSavedSession(null);
     setActiveScreen('upload');
-    setSessionMeta(newSessionMeta(finalReport.folderName));
+    setSessionMeta({ ...importSession, title: importSession.title || finalReport.folderName, name: importSession.name || finalReport.folderName });
     setErrors(buffered.errors);
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.DONE, report: finalReport, error: '' });
     setMode(nextBatch.photos.length > 0 ? 'ready' : 'idle');
@@ -507,6 +679,15 @@ export default function App() {
 
   const handleRun = async (stages, label) => {
     if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return;
+    const automaticFullRun = stages.gps && stages.cleanup && stages.upload;
+    const cleanupEnabled = stages.cleanup && (!automaticFullRun || processingSettings.metadataCleanup !== false);
+    const effectiveStages = {
+      ...stages,
+      cleanup: cleanupEnabled,
+      // The privacy boundary never uploads raw metadata. When cleanup is
+      // disabled, the full run remains an OCR-only run until it is re-enabled.
+      upload: stages.upload && (!stages.cleanup || cleanupEnabled),
+    };
     setMode('running');
     setActiveSince(Date.now());
     addLog(`${label}: запуск`);
@@ -520,7 +701,8 @@ export default function App() {
         thresholdMeters,
         providerSettings,
         regionMode,
-        stages,
+        processingSettings,
+        stages: effectiveStages,
         onLog: (entry) => addLog(entry.message, entry.type),
         onPhotoUpdate: (photoId, patch) => {
           setPhotos((current) => current.map((photo) => photo.id === photoId ? { ...photo, ...patch } : photo));
@@ -528,19 +710,24 @@ export default function App() {
       });
       setPhotos(result.photos);
       try {
-        const snapshot = saveLastSession({
+        const record = saveSessionRecord({
           ...sessionMeta,
           thresholdMeters,
           activeScreen,
+          stage: effectiveStages.upload ? 'result' : 'processing',
           photos: result.photos,
           providerSettings,
+          regionMode,
+          mapLayerId,
         });
-        setSessionMeta({
-          sessionId: snapshot.sessionId,
-          createdAt: snapshot.createdAt,
-          updatedAt: snapshot.updatedAt,
-          name: snapshot.name || sessionMeta?.name || '',
+        saveLastSession({
+          ...record,
+          activeScreen,
+          photos: result.photos,
         });
+        setSessionMeta(sessionMetaFromRecord(record));
+        setSessions(listStoredSessions());
+        setStorageDiagnostics(sessionStorageDiagnostics());
       } catch (storageError) {
         setErrors(['Обработка завершена, но браузер не смог сохранить последний результат.']);
         if (debugMode) console.error(storageError);
@@ -558,17 +745,17 @@ export default function App() {
   };
 
   const handleRestore = () => {
-    clearCurrentPhotos();
-    setPhotos(restoreSessionPhotos(savedSession));
-    setProviderSettings(normalizeProviderSettings(savedSession.providerSettings || DEFAULT_PROVIDER_SETTINGS));
-    setThresholdMeters(Number(savedSession.thresholdMeters) || DEFAULT_DISTANCE_THRESHOLD_METERS);
-    setActiveScreen(normalizeScreen(savedSession.activeScreen || 'results'));
-    setSessionMeta({ sessionId: savedSession.sessionId, createdAt: savedSession.createdAt, updatedAt: savedSession.updatedAt, name: savedSession.name || '' });
-    setErrors([]);
-    setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
-    setMode('done');
+    if (!savedSession) return;
+    const record = saveSessionRecord({
+      ...savedSession,
+      title: savedSession.title || savedSession.name || '',
+      photos: savedSession.photos || [],
+      stage: savedSession.stage || 'result',
+    });
+    selectStoredSession(record, normalizeScreen(savedSession.activeScreen || 'results'));
     setSavedSession(null);
     setSessionDiagnostics({ ...getSessionDiagnostics(), accepted: true });
+    setStorageDiagnostics(sessionStorageDiagnostics());
     addLog(`Сессия восстановлена: ${savedSession.photos.length} фото`, 'success');
   };
 
@@ -581,12 +768,15 @@ export default function App() {
   const performClearResult = () => {
     clearCurrentPhotos();
     deleteLastSession();
+    if (sessionMeta?.persisted) deleteStoredSession(sessionMeta.sessionId);
     setPhotos([]);
     setErrors([]);
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     setMode('idle');
-    setSessionMeta(null);
+    setSessionMeta(newSessionMeta({ sessionNumber: getNextSessionNumber(), description: loadExportDescription() }));
     setSavedSession(null);
+    setSessions(listStoredSessions());
+    setStorageDiagnostics(sessionStorageDiagnostics());
     setMapFocusPhotoId(null);
     setConfirmClearOpen(false);
     addLog('Сессия очищена', 'warning');
@@ -605,9 +795,6 @@ export default function App() {
     }));
     setPhotos(next);
     if (next.length === 0) {
-      deleteLastSession();
-      setSessionMeta(null);
-      setSavedSession(null);
       setMode('idle');
     }
     addLog(`Фото удалено: ${removed.fileName}`);
@@ -648,6 +835,7 @@ export default function App() {
   const handleThresholdMetersChange = (value) => {
     const next = Math.max(1, Math.min(1000, Number(value) || DEFAULT_DISTANCE_THRESHOLD_METERS));
     setThresholdMeters(next);
+    setCrmSettings(saveCrmSettings({ ...crmSettings, ...processingSettings, distanceThresholdMeters: next, mapLayerId }));
     setPhotos((current) => {
       if (current.length === 0) return current;
       const distanceResult = calculateDistances(current, next);
@@ -661,6 +849,57 @@ export default function App() {
   const handleOpenOnMap = (photoId) => {
     setMapFocusPhotoId(photoId);
     setActiveScreen('map');
+  };
+
+  const recalculateSessionPhotos = (items, threshold = thresholdMeters) => {
+    const distanceResult = calculateDistances(items, threshold);
+    return items.map((photo) => ({
+      ...photo,
+      ...(distanceResult.byPhotoId.get(photo.id) || { distanceStatus: 'missing_coordinates', distanceConflicts: [] }),
+    }));
+  };
+
+  const handleToggleReserve = (photoId, shouldReserve, reason = '') => {
+    setPhotos((current) => recalculateSessionPhotos(current.map((photo) => (
+      photo.id === photoId
+        ? withPhotoWorkStatus(photo, shouldReserve ? 'reserve' : 'active', reason || (shouldReserve ? 'Вручную переведено в RESERVE' : ''))
+        : photo
+    ))));
+    addLog(shouldReserve ? 'Точка переведена в RESERVE' : 'Точка возвращена в ACTIVE', 'success');
+  };
+
+  const handleApplyRecommendation = (recommendation) => {
+    const reserveIds = new Set(recommendation?.reservePhotoIds || []);
+    if (reserveIds.size === 0) return;
+    setPhotos((current) => recalculateSessionPhotos(current.map((photo) => (
+      reserveIds.has(photo.id)
+        ? withPhotoWorkStatus(photo, 'reserve', `Рекомендация конфликтов < ${thresholdMeters} м`)
+        : photo
+    ))));
+    addLog(`Рекомендация применена: ${reserveIds.size} точек в RESERVE`, 'success');
+  };
+
+  const handleOpenStoredSession = (sessionId, screen = 'results') => {
+    const record = listStoredSessions().find((session) => session.sessionId === sessionId);
+    if (!record) return false;
+    return selectStoredSession(record, screen);
+  };
+
+  const handleActivateReserveItem = (sessionId, photoId) => {
+    if (sessionId === sessionMeta?.sessionId) {
+      handleToggleReserve(photoId, false);
+      return;
+    }
+    const record = listStoredSessions().find((session) => session.sessionId === sessionId);
+    if (!record) return;
+    const restored = restoreSessionPhotos(record);
+    const nextPhotos = recalculateSessionPhotos(restored.map((photo) => (
+      photo.id === photoId ? withPhotoWorkStatus(photo, 'active') : photo
+    )), Number(record.thresholdMeters) || thresholdMeters);
+    saveSessionRecord({ ...record, photos: nextPhotos });
+    setSessions(listStoredSessions());
+    setStorageDiagnostics(sessionStorageDiagnostics());
+    addLog('RESERVE-точка возвращена в ACTIVE', 'success');
   };
 
   const handleOpenPhoto = (photoId) => {
@@ -702,6 +941,7 @@ export default function App() {
           isBusy={isBusy}
           canRunFullCheck={canRunFullCheck}
           onNavigate={navigate}
+          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'results')}
           onRunFullCheck={() => handleRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')}
         />
       )}
@@ -709,6 +949,7 @@ export default function App() {
       {activeScreen === 'upload' && (
         <UploadScreen
           photos={photos}
+          session={currentSession}
           mode={mode}
           isBusy={isBusy}
           providerValidation={providerValidation}
@@ -729,6 +970,13 @@ export default function App() {
           onOpenOnMap={handleOpenOnMap}
           onOpenSettings={() => navigate('settings')}
           folderImport={folderImport}
+          onSessionChange={handleSessionChange}
+          onStartNewSession={handleStartNewSession}
+          onStageChange={(stage) => {
+            handleSessionChange({ stage });
+            navigate(screenForStage(stage));
+          }}
+          onToggleReserve={handleToggleReserve}
         />
       )}
 
@@ -739,12 +987,29 @@ export default function App() {
           providerSettings={providerSettings}
           focusPhotoId={mapFocusPhotoId}
           onNavigateUpload={() => navigate('upload')}
+          mapLayerId={mapLayerId}
+          onMapLayerChange={handleMapLayerChange}
+          recommendation={conflictRecommendation}
+          onApplyRecommendation={handleApplyRecommendation}
+          onToggleReserve={handleToggleReserve}
+        />
+      )}
+
+      {activeScreen === 'reserve' && (
+        <ReserveScreen
+          reserveItems={reserveItems}
+          onActivate={handleActivateReserveItem}
+          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'results')}
+          onOpenMap={(sessionId, photoId) => {
+            if (handleOpenStoredSession(sessionId, 'map')) setMapFocusPhotoId(photoId);
+          }}
         />
       )}
 
       {activeScreen === 'results' && (
         <ResultsScreen
           photos={photos}
+          session={currentSession}
           providerSettings={providerSettings}
           isBusy={isBusy}
           onClear={() => setConfirmClearOpen(true)}
@@ -755,6 +1020,8 @@ export default function App() {
           onOpenPhoto={handleOpenPhoto}
           onRemovePhoto={handleRemovePhoto}
           onNavigateUpload={() => navigate('upload')}
+          onSessionChange={handleSessionChange}
+          onToggleReserve={handleToggleReserve}
         />
       )}
 
@@ -762,9 +1029,8 @@ export default function App() {
         <SessionsScreen
           sessions={visibleSessions}
           savedSession={savedSession}
-          onOpenSession={() => navigate('results')}
-          onRestoreSaved={handleRestore}
-          onDeleteSaved={handleDeleteSaved}
+          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'results')}
+          onCreateSession={handleStartNewSession}
           onNavigateUpload={() => navigate('upload')}
         />
       )}
@@ -785,6 +1051,11 @@ export default function App() {
           onRegionModeChange={setRegionMode}
           thresholdMeters={thresholdMeters}
           onThresholdMetersChange={handleThresholdMetersChange}
+          processingSettings={processingSettings}
+          onProcessingSettingsChange={handleProcessingSettingsChange}
+          mapLayerId={mapLayerId}
+          onMapLayerChange={handleMapLayerChange}
+          storageDiagnostics={storageDiagnostics}
           debugMode={debugMode}
           isBusy={isBusy}
           onRequestClearSession={() => setConfirmClearOpen(true)}
@@ -798,7 +1069,7 @@ export default function App() {
         onCancel={() => setConfirmClearOpen(false)}
         onConfirm={performClearResult}
       >
-        Фотографии, результаты OCR, ссылки и последняя локальная сессия будут удалены из состояния приложения и `localStorage`.
+        Будет удалена только текущая сессия: её фото-метаданные, OCR, ссылки и локальная запись. Остальная история не изменится.
       </ConfirmDialog>
     </AppShell>
   );

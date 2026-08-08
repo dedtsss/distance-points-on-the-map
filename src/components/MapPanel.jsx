@@ -8,6 +8,7 @@ import {
 } from '../features/map/baseLayers.js';
 import { buildMapModel } from '../features/map/mapModel.js';
 import { indexDisplayText } from '../features/points/pointIdentity.js';
+import { isReservePhoto } from '../features/session/sessionDomain.js';
 import { formatCoordinates } from '../utils/format.js';
 import { formatDistanceMeters } from '../utils/geoDistance.js';
 import EmptyState from './EmptyState.jsx';
@@ -28,15 +29,20 @@ const popupHtml = (photo, providerSettings) => {
   const linkList = links.length
     ? `<ul>${links.map((url) => `<li><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a></li>`).join('')}</ul>`
     : '<p>Ссылок пока нет</p>';
+  const thumbnail = String(photo.thumbnailDataUrl || '').startsWith('data:image/')
+    ? `<img class="map-popup-thumbnail" src="${escapeHtml(photo.thumbnailDataUrl)}" alt="Миниатюра точки">`
+    : '';
   return `
     <div class="map-popup">
       <strong>${escapeHtml(photo.pointLabel || `Фото ${photo.number}`)}</strong>
+      ${thumbnail}
       <dl>
         <div><dt>Индекс</dt><dd>${escapeHtml(indexDisplayText(photo))}</dd></div>
         <div><dt>Файл</dt><dd>${escapeHtml(photo.displayFileName || photo.fileName || '')}</dd></div>
         <div><dt>Координаты</dt><dd>${escapeHtml(formatCoordinates(photo.coordinates))}</dd></div>
         <div><dt>Качество</dt><dd>${escapeHtml(photo.coordinateQuality || 'missing')}</dd></div>
         <div><dt>Расстояние</dt><dd>${escapeHtml(photo.distanceStatus || 'pending')}</dd></div>
+        <div><dt>Статус</dt><dd>${isReservePhoto(photo) ? 'RESERVE' : 'ACTIVE'}</dd></div>
       </dl>
       ${linkList}
     </div>
@@ -48,12 +54,14 @@ const pointHasConflict = (point) => point.distanceStatus === 'too_close';
 const markerClassName = (point, selected = false) => [
   'map-marker',
   pointHasConflict(point) ? 'is-conflict' : '',
+  point.reserve ? 'is-reserve' : '',
   selected ? 'is-selected' : '',
 ].filter(Boolean).join(' ');
 
 const pointDotClassName = (point, selected = false) => [
   'point-dot',
   pointHasConflict(point) ? 'is-conflict' : '',
+  point.reserve ? 'is-reserve' : '',
   selected ? 'is-selected' : '',
 ].filter(Boolean).join(' ');
 
@@ -73,6 +81,7 @@ const matchesFilter = (point, filter) => {
   if (filter === 'low_precision') return point.lowPrecision;
   if (filter === 'suspicious') return point.suspicious;
   if (filter === 'conflicts') return point.distanceStatus === 'too_close';
+  if (filter === 'reserve') return point.reserve;
   return true;
 };
 
@@ -81,6 +90,11 @@ export default function MapPanel({
   thresholdMeters,
   providerSettings,
   focusPhotoId,
+  mapLayerId: preferredMapLayerId,
+  onMapLayerChange,
+  recommendation,
+  onApplyRecommendation,
+  onToggleReserve,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -92,7 +106,7 @@ export default function MapPanel({
   const fittedPointsKeyRef = useRef('');
   const lastFocusPhotoIdRef = useRef(null);
   const [leafletReady, setLeafletReady] = useState(false);
-  const [mapLayerId, setMapLayerId] = useState(() => loadMapLayerId());
+  const [mapLayerId, setMapLayerId] = useState(() => preferredMapLayerId || loadMapLayerId());
   const [mapLayerError, setMapLayerError] = useState('');
   const [panelOpen, setPanelOpen] = useState(() => (
     typeof window === 'undefined' ? true : !window.matchMedia('(max-width: 860px)').matches
@@ -120,6 +134,7 @@ export default function MapPanel({
       fileName: point.photo.displayFileName || point.photo.fileName || '',
       index: point.photo.indexFromOcr || '',
       indexStatus: point.photo.indexStatus || '',
+      reserve: point.reserve,
     })),
     conflicts: model.conflicts
       .filter((line) => visiblePointIds.has(line.pointAId) && visiblePointIds.has(line.pointBId))
@@ -137,6 +152,7 @@ export default function MapPanel({
     { value: 'low_precision', label: 'Low precision', count: model.points.filter((point) => point.lowPrecision).length },
     { value: 'suspicious', label: 'Проверка', count: model.points.filter((point) => point.suspicious).length },
     { value: 'conflicts', label: 'Конфликты', count: model.points.filter((point) => point.distanceStatus === 'too_close').length },
+    { value: 'reserve', label: 'RESERVE', count: model.points.filter((point) => point.reserve).length },
   ];
 
   const fitToPoints = (points) => {
@@ -152,8 +168,13 @@ export default function MapPanel({
   const handleMapLayerChange = (value) => {
     const next = saveMapLayerId(value);
     setMapLayerId(next);
+    onMapLayerChange?.(next);
     setMapLayerError('');
   };
+
+  useEffect(() => {
+    if (preferredMapLayerId && preferredMapLayerId !== mapLayerId) setMapLayerId(preferredMapLayerId);
+  }, [preferredMapLayerId, mapLayerId]);
 
   useEffect(() => {
     if (focusPhotoId) setSelectedPointId(focusPhotoId);
@@ -359,6 +380,7 @@ export default function MapPanel({
         <div className="map-legend" aria-label="Легенда карты">
           <StatusChip tone="neutral">обычная точка</StatusChip>
           <StatusChip tone="error">конфликт &lt; {thresholdMeters} м</StatusChip>
+          <StatusChip tone="warning">RESERVE</StatusChip>
           <StatusChip tone="info">выбранная точка</StatusChip>
         </div>
         <div className="map-toolbar-actions">
@@ -408,7 +430,21 @@ export default function MapPanel({
                 <div><dt>Координаты</dt><dd>{formatCoordinates(selectedPoint.coordinates)}</dd></div>
                 <div><dt>Качество</dt><dd>{selectedPoint.photo.coordinateQuality || 'missing'}</dd></div>
                 <div><dt>Расстояние</dt><dd>{selectedPoint.photo.distanceStatus || 'pending'}</dd></div>
+                <div><dt>Статус</dt><dd>{selectedPoint.reserve ? 'RESERVE' : 'ACTIVE'}</dd></div>
               </dl>
+              {selectedPoint.photo.thumbnailDataUrl && <img className="selected-point-thumbnail" src={selectedPoint.photo.thumbnailDataUrl} alt="Локальная миниатюра точки" />}
+              {model.conflicts.filter((line) => line.pointAId === selectedPoint.id || line.pointBId === selectedPoint.id).length > 0 && (
+                <ul className="selected-point-conflicts">
+                  {model.conflicts.filter((line) => line.pointAId === selectedPoint.id || line.pointBId === selectedPoint.id).map((line) => (
+                    <li key={line.id}>{line.pointAId === selectedPoint.id ? line.pointBLabel : line.pointALabel}: {formatDistanceMeters(line.distanceMeters)} м</li>
+                  ))}
+                </ul>
+              )}
+              {onToggleReserve && (
+                <button type="button" className="button-secondary compact-button" onClick={() => onToggleReserve(selectedPoint.id, !selectedPoint.reserve)}>
+                  {selectedPoint.reserve ? 'Вернуть в ACTIVE' : 'В RESERVE'}
+                </button>
+              )}
             </article>
           )}
           <div className="point-list">
@@ -426,8 +462,8 @@ export default function MapPanel({
                   <strong>{point.label}</strong>
                   <small>{indexDisplayText(point.photo)} · {point.photo.displayFileName || point.photo.fileName}</small>
                 </span>
-                <StatusChip tone={point.distanceStatus === 'too_close' ? 'error' : point.lowPrecision || point.suspicious ? 'warning' : 'success'}>
-                  {point.distanceStatus === 'too_close' ? 'конфликт' : point.photo.coordinateQuality || 'ok'}
+                <StatusChip tone={point.reserve ? 'warning' : point.distanceStatus === 'too_close' ? 'error' : point.lowPrecision || point.suspicious ? 'warning' : 'success'}>
+                  {point.reserve ? 'RESERVE' : point.distanceStatus === 'too_close' ? 'конфликт' : point.photo.coordinateQuality || 'ok'}
                 </StatusChip>
               </button>
             ))}
@@ -440,6 +476,14 @@ export default function MapPanel({
                   <li key={line.id}>{line.pointALabel} - {line.pointBLabel}: {formatDistanceMeters(line.distanceMeters)} м</li>
                 ))}
               </ul>
+            )}
+            {recommendation?.conflictCount > 0 && (
+              <div className="conflict-recommendation">
+                <strong>{recommendation.strategy === 'exact-minimum' ? 'Минимальная рекомендация' : 'Bounded-рекомендация'}</strong>
+                <p>{recommendation.message}</p>
+                <p>В RESERVE: {recommendation.reservePhotoIds.length}; ACTIVE останется: {recommendation.activeAfterCount}.</p>
+                <button type="button" onClick={() => onApplyRecommendation?.(recommendation)} disabled={!recommendation.reservePhotoIds.length}>Принять рекомендацию</button>
+              </div>
             )}
             {model.missingCoordinates.length > 0 && <p>Без координат: {model.missingCoordinates.length}</p>}
           </section>

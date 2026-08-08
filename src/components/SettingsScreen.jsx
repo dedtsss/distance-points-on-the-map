@@ -5,6 +5,7 @@ import Icon from './Icon.jsx';
 import PageHeader from './PageHeader.jsx';
 import ProviderSettings from './ProviderSettings.jsx';
 import StatusChip from './StatusChip.jsx';
+import { MAP_LAYER_OPTIONS } from '../features/map/baseLayers.js';
 
 export default function SettingsScreen({
   providerSettings,
@@ -13,6 +14,11 @@ export default function SettingsScreen({
   onRegionModeChange,
   thresholdMeters,
   onThresholdMetersChange,
+  processingSettings,
+  onProcessingSettingsChange,
+  mapLayerId,
+  onMapLayerChange,
+  storageDiagnostics,
   debugMode,
   isBusy,
   onRequestClearSession,
@@ -32,20 +38,38 @@ export default function SettingsScreen({
 
       <section className="settings-grid">
         <article className="settings-group">
-          <h3>Обработка</h3>
-          <p>Pipeline выполняет OCR, metadata cleanup, расчёт расстояний и upload без изменения исходных файлов на устройстве.</p>
+          <h3>Фотографии</h3>
+          <p>Исходные файлы на устройстве не изменяются. Управляются только реально поддержанные этапы pipeline. Если cleanup выключен, полная обработка не отправляет raw-файл; сначала выполните очистку отдельной кнопкой.</p>
+          <label className="region-setting">
+            <input type="checkbox" checked={processingSettings?.metadataCleanup !== false} onChange={(event) => onProcessingSettingsChange?.({ ...processingSettings, metadataCleanup: event.target.checked })} disabled={isBusy} />
+            Очищать metadata перед upload
+          </label>
+          <label className="region-setting">
+            <input type="checkbox" checked={processingSettings?.renameFiles !== false} onChange={(event) => onProcessingSettingsChange?.({ ...processingSettings, renameFiles: event.target.checked })} disabled={isBusy} />
+            Применять безопасное имя `gps-###.jpg`
+          </label>
           <StatusChip tone={isBusy ? 'warning' : 'success'}>{isBusy ? 'processing' : 'ready'}</StatusChip>
         </article>
 
         <article className="settings-group">
           <h3>OCR</h3>
           <p>Multi-pass OCR координат и индекса включён в текущем pipeline. Debug-подробности доступны только через `?debug=1`.</p>
+          <label className="region-setting">
+            <input type="checkbox" checked={processingSettings?.metadataFirst !== false} onChange={(event) => onProcessingSettingsChange?.({ ...processingSettings, metadataFirst: event.target.checked })} disabled={isBusy} />
+            Сначала GPS metadata, затем OCR fallback
+          </label>
           <StatusChip tone={debugMode ? 'warning' : 'neutral'}>{debugMode ? 'debug включён' : 'debug выключен'}</StatusChip>
         </article>
 
         <article className="settings-group">
           <h3>Карта</h3>
-          <p>Leaflet использует найденные координаты, OCR-индексы, линии расстояний и статусы конфликтов.</p>
+          <p>Leaflet использует ACTIVE-точки для конфликтов; RESERVE остаётся видимым, но не участвует в расчёте.</p>
+          <label className="setting-field">
+            Базовый слой
+            <select value={mapLayerId || 'hybrid'} onChange={(event) => onMapLayerChange?.(event.target.value)} disabled={isBusy}>
+              {MAP_LAYER_OPTIONS.map((layer) => <option key={layer.id} value={layer.id}>{layer.label}</option>)}
+            </select>
+          </label>
           <StatusChip tone="success">Leaflet активен</StatusChip>
         </article>
 
@@ -66,8 +90,8 @@ export default function SettingsScreen({
 
         <article className="settings-group">
           <h3>Загрузка</h3>
-          <p>Frontend отправляет очищенные generic-файлы только через same-origin `/api/upload`.</p>
-          <StatusChip tone="success">metadata cleanup включён</StatusChip>
+          <p>Frontend отправляет только очищенные generic-файлы через same-origin `/api/upload`. Порядок fallback можно менять ниже.</p>
+          <StatusChip tone={processingSettings?.metadataCleanup === false ? 'warning' : 'success'}>{processingSettings?.metadataCleanup === false ? 'cleanup выключен' : 'metadata cleanup включён'}</StatusChip>
         </article>
 
         <article className="settings-group settings-group-wide">
@@ -96,7 +120,7 @@ export default function SettingsScreen({
 
         <article className="settings-group settings-group-wide export-description-setting">
           <h3>Общее описание результата</h3>
-          <p>Этот текст добавляется в начало блока каждой фотографии и сохраняется в браузере между сессиями.</p>
+          <p>Это default для новых сессий. Текущий комментарий сессии редактируется в мастере и сохраняется вместе с ней.</p>
           <label className="setting-field">
             Текст описания
             <textarea
@@ -121,6 +145,7 @@ export default function SettingsScreen({
 
         <article className="settings-group settings-group-wide">
           <BuildInfo />
+          {storageDiagnostics && <p className="setting-helper">Хранилище: {storageDiagnostics.backend} · сессий: {storageDiagnostics.sessionCount ?? 0} · schema v{storageDiagnostics.schemaVersion ?? '—'}</p>}
         </article>
       </section>
     </>

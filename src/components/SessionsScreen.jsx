@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import EmptyState from './EmptyState.jsx';
 import Icon from './Icon.jsx';
 import PageHeader from './PageHeader.jsx';
@@ -7,26 +8,42 @@ export default function SessionsScreen({
   sessions,
   savedSession,
   onOpenSession,
-  onRestoreSaved,
-  onDeleteSaved,
+  onCreateSession,
   onNavigateUpload,
 }) {
+  const [query, setQuery] = useState('');
+  const filteredSessions = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return sessions;
+    return sessions.filter((session) => [
+      session.sessionNumber,
+      session.title,
+      session.name,
+      session.color,
+      session.packing,
+      session.status,
+    ].join(' ').toLowerCase().includes(normalized));
+  }, [query, sessions]);
   return (
     <>
       <PageHeader
         eyebrow="Сессии"
-        title="Локальные проверки"
-        actions={<button type="button" onClick={onNavigateUpload}><Icon name="upload" size={18} /> Новая проверка</button>}
+        title="Сессии обработки"
+        actions={<button type="button" onClick={onCreateSession || onNavigateUpload}><Icon name="plus" size={18} /> Новая сессия</button>}
       >
-        Постоянная история сессий сейчас не реализована. Экран подготовлен к будущему хранилищу и показывает только реальные локальные данные.
+        Новые сверху. История хранится локально в этом браузере; готова non-destructive D1 schema для подключаемого production backend.
       </PageHeader>
 
       <section className="surface-panel">
-        {sessions.length > 0 ? (
-          <SessionList sessions={sessions} onOpen={onOpenSession} />
+        <label className="session-search setting-field">
+          Поиск по номеру, названию, цвету или фасовке
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Например: 0042, Красный, пачка" />
+        </label>
+        {filteredSessions.length > 0 ? (
+          <SessionList sessions={filteredSessions} onOpen={onOpenSession} />
         ) : (
-          <EmptyState title="История пока отсутствует" icon="sessions">
-            После обработки или восстановления результата здесь появится текущая локальная сессия.
+          <EmptyState title={sessions.length ? 'Нет совпадений' : 'История пока отсутствует'} icon="sessions">
+            {sessions.length ? 'Измените текст поиска.' : 'Создайте сессию или начните обработку фотографий.'}
           </EmptyState>
         )}
       </section>
@@ -34,21 +51,12 @@ export default function SessionsScreen({
       <section className="surface-panel">
         <div className="panel-heading">
           <div>
-            <p className="page-eyebrow">Последняя сохранённая сессия</p>
-            <h3>Восстановление из браузера</h3>
+              <p className="page-eyebrow">Совместимость</p>
+              <h3>Последний legacy snapshot</h3>
           </div>
         </div>
         {savedSession ? (
-          <div className="saved-session-actions">
-            <p>Найдена последняя сохранённая сессия: {savedSession.photos?.length || 0} фото.</p>
-            <div>
-              <button type="button" onClick={onRestoreSaved}>Восстановить</button>
-              <button type="button" className="button-secondary danger-ghost-button" onClick={onDeleteSaved}>
-                <Icon name="trash" size={18} />
-                Удалить
-              </button>
-            </div>
-          </div>
+          <div className="saved-session-actions"><p>Найден compatibility snapshot: {savedSession.photos?.length || 0} фото. Его данные уже переносятся в новую сессионную модель после открытия.</p></div>
         ) : (
           <EmptyState title="Сохранённой сессии нет" icon="file">
             Браузер не вернул последнюю сессию из `localStorage`.

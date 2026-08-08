@@ -152,7 +152,10 @@ const noHorizontalScroll = async () => page.evaluate(() => (
 ));
 
 page.on('console', (message) => {
-  if (message.type() === 'error') consoleErrors.push(message.text());
+  if (message.type() === 'error') {
+    const location = message.location();
+    consoleErrors.push(`${message.text()}${location.url ? ` (${location.url})` : ''}`);
+  }
 });
 page.on('pageerror', (error) => pageErrors.push(error.message));
 page.on('requestfailed', (request) => {
@@ -160,6 +163,11 @@ page.on('requestfailed', (request) => {
   if (!url.includes('tile.openstreetmap.org')) failedRequests.push(`${request.method()} ${url}`);
 });
 await page.route('https://*.tile.openstreetmap.org/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'image/png',
+  body: blankTile,
+}));
+await page.route('https://tiles.maps.eox.at/**', (route) => route.fulfill({
   status: 200,
   contentType: 'image/png',
   body: blankTile,
@@ -192,10 +200,10 @@ try {
   assert.equal(await page.locator('.map-marker:not(.is-conflict)').count(), 1, 'ordinary markers should use one class');
 
   await nav('Сессии').click();
-  await visible(page.getByRole('heading', { name: 'Локальные проверки' }), 'sessions screen');
+  await visible(page.getByRole('heading', { name: 'Сессии обработки' }), 'sessions screen');
 
   await nav('Журнал').click();
-  await visible(page.getByRole('heading', { name: 'События обработки' }), 'journal screen');
+  await visible(page.getByRole('heading', { name: 'События и диагностика OCR' }), 'journal screen');
 
   await nav('Настройки').click();
   await visible(page.getByRole('heading', { name: 'Параметры проверки' }), 'settings screen');

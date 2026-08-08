@@ -37,7 +37,10 @@ try {
       const file = new File([blob], imageUrl.split('/').at(-1), { type: 'image/jpeg' });
       const image = await ocr.loadImageFromFile(file);
       const detection = ocr[detectorExport](image);
-      const parsed = await ocr.readGpsFromImageOcr(file, { timeBudgetMs: 45_000 });
+      // Match the production OCR budget. The previous 45s cap was below the
+      // reader's normal 75s default and made this real browser fixture flaky
+      // when a fresh Tesseract worker had to initialise under load.
+      const parsed = await ocr.readGpsFromImageOcr(file, { timeBudgetMs: 75_000 });
       return {
         detection: { found: detection.found, detectorName: detection.detectorName, bounds: detection.bounds },
         parsed: {
