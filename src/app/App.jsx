@@ -29,11 +29,17 @@ import {
   createStoredSession,
   deleteStoredSession,
   getNextSessionNumber,
+  loadSessionCollection,
   listStoredSessions,
   restoreStoredSession,
   saveSessionRecord,
   sessionStorageDiagnostics,
 } from '../features/session/sessionRepository.js';
+import {
+  createD1SessionAdapter,
+  readD1MigrationMarker,
+  writeD1MigrationMarker,
+} from '../features/session/d1SessionAdapter.js';
 import { loadCrmSettings, saveCrmSettings } from '../features/settings/settingsStore.js';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService.js';
 import { bufferSelectedFiles } from '../features/files/stableFileStore.js';
@@ -275,10 +281,16 @@ export default function App() {
   const [activeSince, setActiveSince] = useState(null);
   const [sessionDiagnostics, setSessionDiagnostics] = useState(() => getSessionDiagnostics());
   const [storageDiagnostics, setStorageDiagnostics] = useState(() => sessionStorageDiagnostics());
+  const [remoteState, setRemoteState] = useState({ status: 'loading', error: '', unsynced: false });
+  const [localMigration, setLocalMigration] = useState({ status: 'idle', candidates: [], imported: 0, error: '' });
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const folderImportAbortRef = useRef(null);
   const photosRef = useRef(photos);
+  const d1AdapterRef = useRef(null);
+  const hydrationRef = useRef(false);
+  const saveSequenceRef = useRef(0);
   photosRef.current = photos;
+  if (!d1AdapterRef.current) d1AdapterRef.current = createD1SessionAdapter();
   const debugMode = useMemo(debugModeFromLocation, []);
   const providerValidation = useMemo(() => validateProviderSettings(providerSettings), [providerSettings]);
   const folderImportBusy = [
@@ -310,6 +322,114 @@ export default function App() {
   const addLog = (message, type = 'info') => setJournal((current) => [...current, {
     id: `${Date.now()}-${Math.random()}`, time: new Date().toLocaleTimeString('ru-RU'), message, type,
   }].slice(-200));
+
+  const remoteStateRef = useRef(remoteState);
+  remoteStateRef.current = remoteState;
+
+  const replaceRemoteSession = (record) => {
+    if (!record?.sessionId) return;
+    setSessions((current) => [record, ...current.filter((item) => item.sessionId !== record.sessionId)]
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))));
+  };
+
+  const persistSessionRecord = async (draft) => {
+    const localRecord = saveSessionRecord(draft);
+    saveLastSession({ ...localRecord, activeScreen, photos: photosRef.current });
+    setSessions((current) => [localRecord, ...current.filter((item) => item.sessionId !== localRecord.sessionId)]);
+    setSessionDiagnostics(getSessionDiagnostics());
+
+    if (remoteStateRef.current.status !== 'ready') {
+      setRemoteState((current) => ({ ...current, unsynced: true }));
+      setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'unsynced' });
+      return { record: localRecord, remote: false, error: new Error('Server persistence is not available.') };
+    }
+
+    try {
+      const remoteRecord = await d1AdapterRef.current.saveSession(localRecord);
+      replaceRemoteSession(remoteRecord);
+      setRemoteState({ status: 'ready', error: '', unsynced: false });
+      setStorageDiagnostics({
+        ...sessionStorageDiagnostics(),
+        backend: 'd1',
+        syncState: 'synced',
+        serverUpdatedAt: remoteRecord.updatedAt,
+      });
+      return { record: remoteRecord, remote: true, error: null };
+    } catch (error) {
+      setRemoteState({ status: 'fallback', error: 'Изменения сохранены только локально: серверное хранилище недоступно.', unsynced: true });
+      setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'unsynced' });
+      return { record: localRecord, remote: false, error };
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydrateFromServer = async () => {
+      try {
+        const payload = await d1AdapterRef.current.listSessions();
+        if (cancelled) return;
+        const remoteSessions = payload.sessions || [];
+        setSessions(remoteSessions);
+        hydrationRef.current = true;
+        setRemoteState({ status: 'ready', error: '', unsynced: false });
+        setStorageDiagnostics({
+          ...sessionStorageDiagnostics(),
+          backend: 'd1',
+          syncState: 'synced',
+          sessionCount: remoteSessions.length,
+          nextSessionNumber: payload.nextSessionNumber,
+          dashboard: payload.dashboard,
+        });
+        if (!sessionMeta?.persisted && photosRef.current.length === 0 && payload.nextSessionNumber) {
+          setSessionMeta((current) => ({ ...current, sessionNumber: payload.nextSessionNumber }));
+        }
+        const remoteIds = new Set(remoteSessions.map((session) => session.sessionId));
+        const localCandidates = loadSessionCollection().sessions.filter((session) => !remoteIds.has(session.sessionId));
+        if (localCandidates.length > 0 && !readD1MigrationMarker()?.completedAt) {
+          setLocalMigration({ status: 'ready', candidates: localCandidates, imported: 0, error: '' });
+        }
+      } catch (error) {
+        if (cancelled) return;
+        hydrationRef.current = true;
+        setSessions(listStoredSessions());
+        setRemoteState({ status: 'fallback', error: 'Серверное хранилище недоступно. Локальная копия работает в режиме unsynced.', unsynced: true });
+        setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'unsynced', error: error?.message || 'remote_unavailable' });
+      }
+    };
+    hydrateFromServer();
+    return () => { cancelled = true; };
+  // Server hydration is intentionally performed once for the current browser context.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleImportLocalSessions = async () => {
+    if (localMigration.status === 'running' || localMigration.candidates.length === 0) return;
+    setLocalMigration((current) => ({ ...current, status: 'running', error: '', imported: 0 }));
+    let imported = 0;
+    try {
+      for (const candidate of localMigration.candidates) {
+        const result = await d1AdapterRef.current.saveSession(candidate);
+        saveSessionRecord(candidate);
+        replaceRemoteSession(result);
+        imported += 1;
+        setLocalMigration((current) => ({ ...current, imported }));
+      }
+      writeD1MigrationMarker({
+        version: 1,
+        completedAt: new Date().toISOString(),
+        sessionIds: localMigration.candidates.map((session) => session.sessionId),
+      });
+      const payload = await d1AdapterRef.current.listSessions();
+      setSessions(payload.sessions || []);
+      setRemoteState({ status: 'ready', error: '', unsynced: false });
+      setStorageDiagnostics({ ...sessionStorageDiagnostics(), backend: 'd1', syncState: 'synced', sessionCount: payload.sessions?.length || 0, dashboard: payload.dashboard });
+      setLocalMigration({ status: 'complete', candidates: [], imported, error: '' });
+      addLog(`Локальные сессии перенесены в облако: ${imported}`, 'success');
+    } catch (error) {
+      setRemoteState({ status: 'fallback', error: 'Импорт не завершён: часть локальных сессий остаётся unsynced.', unsynced: true });
+      setLocalMigration((current) => ({ ...current, status: 'error', imported, error: 'Не удалось завершить импорт. Повторите попытку — уже перенесённые сессии не задублируются.' }));
+    }
+  };
 
   const notifyImportReady = (source, batchPhotos) => {
     try {
@@ -363,37 +483,46 @@ export default function App() {
     photosRef.current.forEach((photo) => releasePhotoBuffers(photo));
   }, []);
 
+  const lastPersistedKeyRef = useRef('');
   useEffect(() => {
-    if (!sessionMeta || (!sessionMeta.persisted && photos.length === 0)) return undefined;
-    const timeoutId = globalThis.setTimeout(() => {
-      try {
-        const record = saveSessionRecord({
-          ...sessionMeta,
-          thresholdMeters,
-          activeScreen,
-          stage: sessionMeta.stage || stageForScreen(activeScreen),
-          photos: photosRef.current,
-          providerSettings,
-          regionMode,
-          mapLayerId,
-        });
-        saveLastSession({
-          ...record,
-          activeScreen,
-          photos: photosRef.current,
-        });
-        setSessions(listStoredSessions());
-        setSessionDiagnostics(getSessionDiagnostics());
-        setStorageDiagnostics(sessionStorageDiagnostics());
-        setJournal((current) => current.at(-1)?.message === 'Сессия сохранена'
+    if (!hydrationRef.current || !sessionMeta || (!sessionMeta.persisted && photos.length === 0)) return undefined;
+    const persistKey = JSON.stringify({
+      sessionId: sessionMeta.sessionId,
+      sessionRevision,
+      providerSettings,
+      thresholdMeters,
+      activeScreen,
+      regionMode,
+      mapLayerId,
+    });
+    if (lastPersistedKeyRef.current === persistKey) return undefined;
+    lastPersistedKeyRef.current = persistKey;
+    const timeoutId = globalThis.setTimeout(async () => {
+      const result = await persistSessionRecord({
+        ...sessionMeta,
+        thresholdMeters,
+        activeScreen,
+        stage: sessionMeta.stage || stageForScreen(activeScreen),
+        photos: photosRef.current,
+        providerSettings,
+        regionMode,
+        mapLayerId,
+      });
+      if (result.remote) {
+        setSessionMeta((current) => current?.sessionId === result.record.sessionId
+          ? sessionMetaFromRecord(result.record)
+          : current);
+        setJournal((current) => current.at(-1)?.message === 'Сессия сохранена на сервере'
           ? current
-          : [...current, { id: `${Date.now()}-session`, time: new Date().toLocaleTimeString('ru-RU'), message: 'Сессия сохранена', type: 'info' }].slice(-200));
-      } catch (storageError) {
-        if (debugMode) console.error(storageError);
+          : [...current, { id: `${Date.now()}-session`, time: new Date().toLocaleTimeString('ru-RU'), message: 'Сессия сохранена на сервере', type: 'info' }].slice(-200));
+      } else if (result.error) {
+        setErrors((current) => current.includes('Сессия не синхронизирована с сервером.')
+          ? current
+          : [...current, 'Сессия не синхронизирована с сервером. Локальная копия сохранена как backup.']);
       }
     }, 100);
     return () => globalThis.clearTimeout(timeoutId);
-  }, [sessionRevision, providerSettings, sessionMeta, debugMode, thresholdMeters, activeScreen, regionMode, mapLayerId, photos.length]);
+  }, [sessionRevision, providerSettings, sessionMeta, thresholdMeters, activeScreen, regionMode, mapLayerId]);
 
   const clearCurrentPhotos = () => photosRef.current.forEach((photo) => releasePhotoBuffers(photo));
   const modeAfterImport = () => (photosRef.current.length > 0 ? 'ready' : 'idle');
@@ -709,29 +838,18 @@ export default function App() {
         },
       });
       setPhotos(result.photos);
-      try {
-        const record = saveSessionRecord({
-          ...sessionMeta,
-          thresholdMeters,
-          activeScreen,
-          stage: effectiveStages.upload ? 'result' : 'processing',
-          photos: result.photos,
-          providerSettings,
-          regionMode,
-          mapLayerId,
-        });
-        saveLastSession({
-          ...record,
-          activeScreen,
-          photos: result.photos,
-        });
-        setSessionMeta(sessionMetaFromRecord(record));
-        setSessions(listStoredSessions());
-        setStorageDiagnostics(sessionStorageDiagnostics());
-      } catch (storageError) {
-        setErrors(['Обработка завершена, но браузер не смог сохранить последний результат.']);
-        if (debugMode) console.error(storageError);
-      }
+      const persistence = await persistSessionRecord({
+        ...sessionMeta,
+        thresholdMeters,
+        activeScreen,
+        stage: effectiveStages.upload ? 'result' : 'processing',
+        photos: result.photos,
+        providerSettings,
+        regionMode,
+        mapLayerId,
+      });
+      setSessionMeta(sessionMetaFromRecord(persistence.record));
+      if (!persistence.remote) setErrors((current) => [...new Set([...current, 'Обработка завершена, но результат не синхронизирован с сервером.'])]);
       setMode('done');
       addLog(`${label}: завершено`, 'success');
     } catch (error) {
@@ -765,10 +883,20 @@ export default function App() {
     setSessionDiagnostics(getSessionDiagnostics());
   };
 
-  const performClearResult = () => {
+  const performClearResult = async () => {
     clearCurrentPhotos();
     deleteLastSession();
-    if (sessionMeta?.persisted) deleteStoredSession(sessionMeta.sessionId);
+    if (sessionMeta?.persisted) {
+      deleteStoredSession(sessionMeta.sessionId);
+      if (remoteStateRef.current.status === 'ready') {
+        try {
+          await d1AdapterRef.current.deleteSession(sessionMeta.sessionId);
+        } catch {
+          setRemoteState({ status: 'fallback', error: 'Сессия удалена локально, но сервер не подтвердил удаление.', unsynced: true });
+          setErrors((current) => [...new Set([...current, 'Удаление не синхронизировано с сервером.'])]);
+        }
+      }
+    }
     setPhotos([]);
     setErrors([]);
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
@@ -880,7 +1008,8 @@ export default function App() {
   };
 
   const handleOpenStoredSession = (sessionId, screen = 'results') => {
-    const record = listStoredSessions().find((session) => session.sessionId === sessionId);
+    const record = sessions.find((session) => session.sessionId === sessionId)
+      || listStoredSessions().find((session) => session.sessionId === sessionId);
     if (!record) return false;
     return selectStoredSession(record, screen);
   };
@@ -896,9 +1025,9 @@ export default function App() {
     const nextPhotos = recalculateSessionPhotos(restored.map((photo) => (
       photo.id === photoId ? withPhotoWorkStatus(photo, 'active') : photo
     )), Number(record.thresholdMeters) || thresholdMeters);
-    saveSessionRecord({ ...record, photos: nextPhotos });
-    setSessions(listStoredSessions());
-    setStorageDiagnostics(sessionStorageDiagnostics());
+    persistSessionRecord({ ...record, photos: nextPhotos }).then((result) => {
+      if (!result.remote) setErrors((current) => [...new Set([...current, 'Изменение ACTIVE/RESERVE не синхронизировано с сервером.'])]);
+    });
     addLog('RESERVE-точка возвращена в ACTIVE', 'success');
   };
 
@@ -926,6 +1055,24 @@ export default function App() {
       {debugMode && <div className="debug-mode-banner">Включён режим диагностики</div>}
       {debugMode && <pre className="session-debug">{JSON.stringify(sessionDiagnostics, null, 2)}</pre>}
       <ErrorBanner messages={errors} />
+      {remoteState.status === 'loading' && (
+        <aside className="notice notice-neutral" role="status">Подключение к серверному хранилищу Dark Cat…</aside>
+      )}
+      {remoteState.status !== 'loading' && remoteState.status !== 'ready' && (
+        <aside className="notice notice-warning" role="alert">
+          <strong>Серверное хранилище недоступно.</strong> Новые изменения остаются локальным backup и помечены как unsynced. Повторите действие после восстановления связи.
+        </aside>
+      )}
+      {localMigration.status === 'ready' && (
+        <aside className="notice notice-neutral" role="status">
+          <strong>Найдены локальные сессии.</strong> Перенести в облачное хранилище: {localMigration.candidates.length}.
+          <button type="button" className="button-secondary" onClick={handleImportLocalSessions}>Перенести в облако</button>
+        </aside>
+      )}
+      {localMigration.status === 'running' && (
+        <aside className="notice notice-neutral" role="status">Перенос локальных сессий: {localMigration.imported} из {localMigration.candidates.length}…</aside>
+      )}
+      {localMigration.status === 'error' && <aside className="notice notice-warning" role="alert">{localMigration.error}</aside>}
       <LastSessionPrompt session={savedSession} onRestore={handleRestore} onDelete={handleDeleteSaved} />
       {hasRestoredPhotos && (
         <aside className="notice notice-neutral">

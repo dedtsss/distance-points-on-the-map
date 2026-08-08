@@ -1,6 +1,15 @@
 import { uploadFreeimage } from './freeimage.js';
 import { uploadNinjabox } from './ninjabox.js';
 import { uploadX0 } from './x0.js';
+import {
+  deleteD1Session,
+  getD1Dashboard,
+  getD1Session,
+  getD1SessionPayload,
+  listD1Sessions,
+  upsertD1Session,
+  validateD1SessionInput,
+} from './d1SessionRepository.js';
 
 const MAX_FILES = 20;
 const FILE_CONCURRENCY = 2;
@@ -9,10 +18,13 @@ const ALLOWED_PROVIDERS = new Set(DEFAULT_PROVIDER_ORDER);
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-App-Access-Token',
 };
 const API_UPLOAD_PATH = '/api/upload';
+const API_SESSIONS_PATH = '/api/sessions';
+const API_DASHBOARD_PATH = '/api/dashboard';
+const MAX_SESSION_BODY_BYTES = 1_500_000;
 const AUTH_REALM = 'GPS Checker';
 
 const json = (payload, status = 200) => new Response(JSON.stringify(payload, null, 2), {
@@ -83,6 +95,90 @@ const unauthorized = () => new Response('Authentication required', {
     'WWW-Authenticate': `Basic realm="${AUTH_REALM}", charset="UTF-8"`,
   },
 });
+
+const persistenceUnavailable = () => json({ ok: false, error: 'Server persistence is unavailable.' }, 503);
+
+const d1Binding = (env = {}) => env.DB || env.DARK_CAT_DB || null;
+
+const isSessionPath = (request) => {
+  const pathname = new URL(request.url).pathname.replace(/\/$/, '');
+  return pathname === API_SESSIONS_PATH || pathname.startsWith(`${API_SESSIONS_PATH}/`);
+};
+
+const sessionIdFromRequest = (request) => {
+  const pathname = new URL(request.url).pathname.replace(/\/$/, '');
+  if (!pathname.startsWith(`${API_SESSIONS_PATH}/`)) return '';
+  return decodeURIComponent(pathname.slice(`${API_SESSIONS_PATH}/`.length));
+};
+
+async function parseSessionBody(request) {
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (declaredLength > MAX_SESSION_BODY_BYTES) {
+    return { error: json({ ok: false, error: 'Session payload is too large.' }, 413) };
+  }
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BODY_BYTES) {
+    return { error: json({ ok: false, error: 'Session payload is too large.' }, 413) };
+  }
+  try {
+    const body = JSON.parse(text || '{}');
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('object_required');
+    return { body };
+  } catch {
+    return { error: json({ ok: false, error: 'Malformed JSON body.' }, 400) };
+  }
+}
+
+async function handleSessionRequest(request, env = {}) {
+  const db = d1Binding(env);
+  if (!db) return persistenceUnavailable();
+  const url = new URL(request.url);
+  const sessionId = sessionIdFromRequest(request);
+
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+
+  try {
+    if (url.pathname.replace(/\/$/, '') === API_DASHBOARD_PATH && request.method === 'GET') {
+      const sessions = await listD1Sessions(db);
+      return json({ ok: true, dashboard: getD1Dashboard(sessions) });
+    }
+    if (url.pathname.replace(/\/$/, '') === API_SESSIONS_PATH && request.method === 'GET') {
+      const payload = await getD1SessionPayload(db);
+      return json({ ok: true, ...payload });
+    }
+    if (isSessionPath(request) && sessionId && request.method === 'GET') {
+      const session = await getD1Session(db, sessionId);
+      return session ? json({ ok: true, session }) : json({ ok: false, error: 'Session not found.' }, 404);
+    }
+    if (isSessionPath(request) && sessionId && request.method === 'DELETE') {
+      const deleted = await deleteD1Session(db, sessionId);
+      return deleted ? json({ ok: true, sessionId }) : json({ ok: false, error: 'Session not found.' }, 404);
+    }
+    if (isSessionPath(request) && sessionId && (request.method === 'PUT' || request.method === 'POST')) {
+      const parsed = await parseSessionBody(request);
+      if (parsed.error) return parsed.error;
+      const body = { ...parsed.body, sessionId };
+      validateD1SessionInput(body);
+      const session = await upsertD1Session(db, body);
+      const sessions = await listD1Sessions(db);
+      return json({ ok: true, session, dashboard: getD1Dashboard(sessions) });
+    }
+    if (url.pathname.replace(/\/$/, '') === API_SESSIONS_PATH && request.method === 'POST') {
+      const parsed = await parseSessionBody(request);
+      if (parsed.error) return parsed.error;
+      if (!parsed.body.sessionId) return json({ ok: false, error: 'Session id is required.' }, 400);
+      validateD1SessionInput(parsed.body);
+      const session = await upsertD1Session(db, parsed.body);
+      return json({ ok: true, session });
+    }
+    return json({ ok: false, error: 'Unknown session API route.' }, 404);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (/unique|constraint/i.test(message)) return json({ ok: false, error: 'Session conflicts with existing data.' }, 409);
+    if (/invalid|must be|too many|array/i.test(message)) return json({ ok: false, error: 'Invalid session payload.' }, 400);
+    return json({ ok: false, error: 'Server persistence request failed.' }, 500);
+  }
+}
 
 const isUploadPath = (request) => {
   const url = new URL(request.url);
@@ -314,6 +410,9 @@ async function serveStaticAsset(request, env = {}) {
 export async function handleWorkerRequest(request, env = {}, providerOverrides = {}) {
   if (!isAuthorizedRequest(request, env)) return unauthorized();
   const url = new URL(request.url);
+  if (url.pathname === API_DASHBOARD_PATH || url.pathname.startsWith(`${API_SESSIONS_PATH}/`) || url.pathname === API_SESSIONS_PATH || url.pathname === `${API_SESSIONS_PATH}/`) {
+    return handleSessionRequest(request, env);
+  }
   if (isUploadPath(request)) return handleUploadRequest(request, providerOverrides);
   if (url.pathname.startsWith('/api/')) return json({ ok: false, error: 'Unknown API route.' }, 404);
   return serveStaticAsset(request, env);

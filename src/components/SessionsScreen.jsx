@@ -31,7 +31,7 @@ export default function SessionsScreen({
         title="Сессии обработки"
         actions={<button type="button" onClick={onCreateSession || onNavigateUpload}><Icon name="plus" size={18} /> Новая сессия</button>}
       >
-        Новые сверху. История хранится локально в этом браузере; готова non-destructive D1 schema для подключаемого production backend.
+        Новые сверху. История загружается из серверного D1; локальная копия остаётся backup и источником миграции.
       </PageHeader>
 
       <section className="surface-panel">
