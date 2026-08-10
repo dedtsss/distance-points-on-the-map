@@ -40,7 +40,11 @@ public class GpsLogService extends Service {
     public static final String ACTION_STATUS = "ru.roadgps.prototype.STATUS";
     public static final String EXTRA_STATUS = "status";
     public static final String PREFS_NAME = "road_gps_logger";
-    public static final String PREF_LATEST_CSV = "latest_csv";
+    public static final String PREF_LATEST_CSV = "latest_csv_path";
+    public static final String PREF_SELECTED_CSV = "selected_csv";
+    public static final String PREF_ACTIVE_SESSION_PATH = "active_session_path";
+    public static final String PREF_ACTIVE_SESSION_STARTED_AT = "active_session_started_at";
+    public static final String PREF_ACTIVE_SESSION_IS_RECORDING = "active_session_is_recording";
 
     private static final String CHANNEL_ID = "road_gps_logger";
     private static final int NOTIFICATION_ID = 1001;
@@ -123,12 +127,22 @@ public class GpsLogService extends Service {
         }
 
         try {
-            currentCsv = createCsvFile();
-            csvWriter = new BufferedWriter(new FileWriter(currentCsv, false));
-            csvWriter.write("time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok,internet_latency_ms\n");
-            csvWriter.flush();
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String activePath = prefs.getString(PREF_ACTIVE_SESSION_PATH, null);
+            boolean activeFlag = prefs.getBoolean(PREF_ACTIVE_SESSION_IS_RECORDING, false);
+            if (activeFlag && activePath != null && new File(activePath).exists()) {
+                currentCsv = new File(activePath);
+                csvWriter = new BufferedWriter(new FileWriter(currentCsv, true));
+            } else {
+                currentCsv = createCsvFile();
+                csvWriter = new BufferedWriter(new FileWriter(currentCsv, false));
+                csvWriter.write("time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok,internet_latency_ms\n");
+                csvWriter.flush();
+            }
+            prefs.edit()
+                    .putString(PREF_ACTIVE_SESSION_PATH, currentCsv.getAbsolutePath())
+                    .putLong(PREF_ACTIVE_SESSION_STARTED_AT, System.currentTimeMillis())
+                    .putBoolean(PREF_ACTIVE_SESSION_IS_RECORDING, true)
                     .putString(PREF_LATEST_CSV, currentCsv.getAbsolutePath())
                     .apply();
         } catch (IOException e) {
@@ -149,6 +163,7 @@ public class GpsLogService extends Service {
             locationManager.removeUpdates(locationListener);
         }
 
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         if (csvWriter != null) {
             try {
                 csvWriter.flush();
@@ -161,6 +176,10 @@ public class GpsLogService extends Service {
 
         boolean wasRecording = recording;
         recording = false;
+        prefs.edit()
+                .putBoolean(PREF_ACTIVE_SESSION_IS_RECORDING, false)
+                .putString(PREF_LATEST_CSV, currentCsv == null ? null : currentCsv.getAbsolutePath())
+                .apply();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
         } else {
