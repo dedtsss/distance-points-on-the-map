@@ -127,10 +127,7 @@ public class GpsLogService extends Service {
             csvWriter = new BufferedWriter(new FileWriter(currentCsv, false));
             csvWriter.write("time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok,internet_latency_ms\n");
             csvWriter.flush();
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putString(PREF_LATEST_CSV, currentCsv.getAbsolutePath())
-                    .apply();
+            persistLatestCsvIfPresent();
         } catch (IOException e) {
             sendStatus("Status: failed to create CSV: " + e.getMessage());
             stopSelf();
@@ -296,6 +293,16 @@ public class GpsLogService extends Service {
         static InternetProbeResult unavailable() {
             return new InternetProbeResult(0, -1);
         }
+    }
+
+    private void persistLatestCsvIfPresent() {
+        if (currentCsv == null) {
+            return;
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_LATEST_CSV, currentCsv.getAbsolutePath())
+                .apply();
     }
 
     private File createCsvFile() throws IOException {

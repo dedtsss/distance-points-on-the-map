@@ -1,7 +1,7 @@
-# Road GPS Logger v0.2.0
+# Road GPS Logger v0.4.0
 
 Temporary Android prototype for recording phone GPS points while the phone is connected to the car router Wi-Fi.
-The prototype has no map, server, authentication, OpenWrt integration, or background upload.
+The prototype has no server, authentication, OpenWrt integration, or background upload.
 
 ## Features
 
@@ -12,7 +12,9 @@ The prototype has no map, server, authentication, OpenWrt integration, or backgr
 - CSV filename format: `road_gps_YYYYMMDD_HHMMSS.csv`.
 - CSV columns: `time,lat,lon,accuracy_m,altitude_m,speed_mps,bearing_deg,provider,internet_ok,internet_latency_ms`.
 - `internet_ok` is written as `1` (reachable) or `0` (not reachable) through Android's active network check to `1.1.1.1:53`; `internet_latency_ms` stores the measured connect latency in milliseconds, or `-1` when unavailable.
-- Shares the latest CSV through the Android share sheet.
+- Shares the selected CSV through the Android share sheet.
+- Keeps active session and latest CSV references for session recovery and CSV history.
+- Shows recorded CSV tracks on the in-app map.
 
 ## Build locally
 
@@ -41,3 +43,9 @@ app/build/outputs/apk/debug/app-debug.apk
 - Keep the phone connected to the car router Wi-Fi before starting recording.
 - Mobile data may be disabled; the app uses the active Android network for the internet check.
 - Battery optimization settings can still affect long recordings on some Android devices, so a manual road test is required before relying on the prototype.
+
+## APK signing note
+
+- This debug APK uses the default CI debug signing.
+- If Android reports a package conflict while installing over an older APK, uninstall the old app once and install the new APK.
+- Stable update-over-existing signing will be handled later.
