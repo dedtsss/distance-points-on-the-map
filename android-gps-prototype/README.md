@@ -41,3 +41,10 @@ app/build/outputs/apk/debug/app-debug.apk
 - Keep the phone connected to the car router Wi-Fi before starting recording.
 - Mobile data may be disabled; the app uses the active Android network for the internet check.
 - Battery optimization settings can still affect long recordings on some Android devices, so a manual road test is required before relying on the prototype.
+
+## Signing notes (dev/test)
+
+- GitHub Actions now decodes and uses a stable development/debug signing key for APK builds.
+- After installing the first APK built with this stable dev key, future APKs should install over it.
+- If you installed an older APK from before this signing change, uninstall it once before installing the new APK.
+- This signing is for development/testing only and is not production signing.
