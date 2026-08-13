@@ -6,6 +6,9 @@ export const PHOTO_WORK_STATUS = Object.freeze({
 });
 
 export const SESSION_STAGES = Object.freeze([
+  'select',
+  'recognition',
+  'review',
   'processing',
   'upload',
   'map',

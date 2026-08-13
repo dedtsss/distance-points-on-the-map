@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Dropdown, Space, Tabs } from 'antd';
 import AppShell from '../components/AppShell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Dashboard from '../components/Dashboard.jsx';
@@ -87,8 +88,8 @@ const sessionMetaFromRecord = (record) => {
   return { ...meta, persisted: true };
 };
 
-const screenForStage = (stage) => ({ processing: 'upload', upload: 'upload', map: 'map', result: 'results' }[stage] || 'upload');
-const stageForScreen = (screen) => ({ upload: 'processing', map: 'map', results: 'result' }[screen] || 'processing');
+const screenForStage = (stage) => ({ map: 'map' }[stage] || 'session');
+const stageForScreen = (screen) => ({ map: 'review' }[screen] || 'select');
 
 const debugModeFromLocation = () => (
   typeof window !== 'undefined'
@@ -122,6 +123,8 @@ function UploadScreen({
   onStartNewSession,
   onStageChange,
   onToggleReserve,
+  stage = 'select',
+  onAdvance,
 }) {
   const hasStableFiles = photos.some((photo) => photo.stableFile);
   const hasCleanedPhotos = photos.some((photo) => photo.cleanedBlob);
@@ -136,25 +139,17 @@ function UploadScreen({
         onSessionChange={onSessionChange}
         onStartNew={onStartNewSession}
         onStageChange={onStageChange}
+        onPrimary={onAdvance}
       />
-      <PageHeader
+      {stage === 'select' && <PageHeader
         eyebrow="Загрузка и проверка"
         title="Новая проверка фотографий"
-        actions={(
-          <button
-            type="button"
-            onClick={() => onRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')}
-            disabled={isBusy || !providerValidation.valid || !hasStableFiles}
-          >
-            <Icon name="play" size={18} />
-            {isBusy ? 'Обработка' : 'Проверить и загрузить'}
-          </button>
-        )}
+        actions={null}
       >
         Выберите фотографии, проверьте OCR координат и индекса, затем отправьте только очищенные generic-файлы через `/api/upload`.
-      </PageHeader>
+      </PageHeader>}
 
-      <UploadDropzone
+      {stage === 'select' && <UploadDropzone
         photos={photos}
         isBusy={isBusy}
         isBuffering={isBuffering}
@@ -165,36 +160,36 @@ function UploadScreen({
         onCancelFolderImport={onCancelFolderImport}
         onOpenSettings={onOpenSettings}
         folderImport={folderImport}
-      />
+      />}
 
       {isBuffering && <LoadingState title="Подготовка фотографий">Создаются стабильные копии и миниатюры в памяти браузера.</LoadingState>}
 
-      {photos.length > 0 && (
+      {photos.length > 0 && stage !== 'select' && (
         <section className="run-card sticky-action-panel">
           <div>
             <p className="page-eyebrow">Действия</p>
-            <h3>Этапы проверки</h3>
+            <h3>{stage === 'recognition' ? 'Распознавание EXIF / GPS / OCR' : stage === 'review' ? 'Проверка и metadata cleanup' : 'Загрузка и результат'}</h3>
             <p>{UPLOAD_RULES_EXPLANATION}</p>
           </div>
-          <div className="run-actions action-grid">
-            <button type="button" className="button-secondary" onClick={() => onRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат')} disabled={isBusy || !hasStableFiles}>Только OCR</button>
-            <button type="button" className="button-secondary" onClick={() => onRun({ gps: false, cleanup: true, upload: false }, 'Очистка metadata')} disabled={isBusy || !hasStableFiles}>Очистить metadata</button>
-            <button type="button" className="button-secondary" onClick={() => onRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных')} disabled={isBusy || !providerValidation.valid || !hasCleanedPhotos}>Загрузить очищенные</button>
-            <button type="button" onClick={() => onRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')} disabled={isBusy || !providerValidation.valid || !hasStableFiles}>Полная обработка</button>
-            {!hasUploadedPhotos && mode === 'done' && <button type="button" className="button-secondary danger-ghost-button" onClick={onClearResult}>Очистить результат</button>}
-          </div>
+          <Space wrap>
+            {stage === 'recognition' && <Button onClick={() => onRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат')} disabled={isBusy || !hasStableFiles}>Запустить / повторить OCR</Button>}
+            {stage === 'review' && <Button onClick={() => onRun({ gps: false, cleanup: true, upload: false }, 'Очистка metadata')} disabled={isBusy || !hasStableFiles}>Очистить metadata</Button>}
+            {stage === 'result' && <Button onClick={() => onRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных')} disabled={isBusy || !providerValidation.valid || !hasCleanedPhotos}>Загрузить очищенные</Button>}
+            <Dropdown menu={{ items: [{ key: 'ocr', label: 'Только OCR' }, { key: 'cleanup', label: 'Очистить metadata' }], onClick: ({ key }) => onRun(key === 'ocr' ? { gps: true, cleanup: false, upload: false } : { gps: false, cleanup: true, upload: false }, key === 'ocr' ? 'Только OCR' : 'Очистка metadata') }}><Button>Расширенные действия</Button></Dropdown>
+            {!hasUploadedPhotos && mode === 'done' && <Button danger onClick={onClearResult}>Очистить результат</Button>}
+          </Space>
           {!providerValidation.valid && <p className="settings-error">{providerValidation.error}</p>}
         </section>
       )}
 
-      <JobProgress photos={photos} />
-      <DistanceSummary photos={photos} thresholdMeters={thresholdMeters} />
+      {stage !== 'select' && <JobProgress photos={photos} />}
+      {stage !== 'select' && <DistanceSummary photos={photos} thresholdMeters={thresholdMeters} />}
 
-      {photos.length === 0 ? (
+      {stage === 'select' && photos.length === 0 ? (
         <EmptyState title="Фотографии ещё не выбраны" icon="upload">
           Перетащите изображения в область загрузки или нажмите «Выбрать фотографии».
         </EmptyState>
-      ) : (
+      ) : photos.length > 0 && (
         <section className="photo-grid" aria-label="Выбранные фотографии" aria-live="polite">
           {photos.map((photo) => (
             <PhotoCard
@@ -583,7 +578,7 @@ export default function App() {
       processingSettings,
       regionMode,
       mapLayerId,
-      stage: 'processing',
+      stage: 'select',
     });
     setSessionMeta(sessionMetaFromRecord(record));
     setSessions(listStoredSessions());
@@ -604,7 +599,7 @@ export default function App() {
         processingSettings,
         regionMode,
         mapLayerId,
-        stage: 'processing',
+        stage: 'select',
       })
       : beginNewSession({ title: input.title || '' });
     const meta = sessionMetaFromRecord(record);
@@ -622,7 +617,7 @@ export default function App() {
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
     beginNewSession();
     setMode('idle');
-    setActiveScreen('upload');
+    setActiveScreen('session');
     addLog('Создана новая сессия', 'success');
   };
 
@@ -671,7 +666,7 @@ export default function App() {
     setErrors([]);
     clearCurrentPhotos();
     setPhotos([]);
-    setActiveScreen('upload');
+    setActiveScreen('session');
 
     try {
       const buffered = await bufferSelectedFiles(files);
@@ -711,7 +706,7 @@ export default function App() {
     setPhotos(nextBatch.photos);
     notifyImportReady('folder', nextBatch.photos);
     setSavedSession(null);
-    setActiveScreen('upload');
+    setActiveScreen('session');
     setSessionMeta({ ...importSession, title: importSession.title || finalReport.folderName, name: importSession.name || finalReport.folderName });
     setErrors(buffered.errors);
     setFolderImport({ status: FOLDER_IMPORT_STATUSES.DONE, report: finalReport, error: '' });
@@ -871,7 +866,7 @@ export default function App() {
         ...sessionMeta,
         thresholdMeters,
         activeScreen,
-        stage: effectiveStages.upload ? 'result' : 'processing',
+        stage: effectiveStages.upload ? 'result' : sessionMeta.stage || 'recognition',
         photos: result.photos,
         providerSettings,
         processingSettings,
@@ -1049,7 +1044,7 @@ export default function App() {
     addLog(`Рекомендация применена: ${reserveIds.size} точек в RESERVE`, 'success');
   };
 
-  const handleOpenStoredSession = (sessionId, screen = 'results') => {
+  const handleOpenStoredSession = (sessionId, screen = 'session') => {
     const record = sessions.find((session) => session.sessionId === sessionId)
       || listStoredSessions().find((session) => session.sessionId === sessionId);
     if (!record) return false;
@@ -1082,13 +1077,26 @@ export default function App() {
   };
 
   const handleOpenPhoto = (photoId) => {
-    setActiveScreen('upload');
+    setActiveScreen('session');
     if (typeof document !== 'undefined') {
       globalThis.setTimeout(() => document.getElementById(`photo-${photoId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
     }
   };
 
   const navigate = (screen) => setActiveScreen(normalizeScreen(screen));
+  const handleWizardAdvance = async () => {
+    const stage = currentSession.stage || 'select';
+    if (stage === 'select') return handleSessionChange({ stage: 'recognition' });
+    if (stage === 'recognition') {
+      await handleRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат');
+      return handleSessionChange({ stage: 'review' });
+    }
+    if (stage === 'review') {
+      await handleRun({ gps: false, cleanup: true, upload: false }, 'Подготовка очищенных фото');
+      return handleSessionChange({ stage: 'result' });
+    }
+    return handleRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных');
+  };
 
   return (
     <AppShell
@@ -1130,7 +1138,7 @@ export default function App() {
         </aside>
       )}
 
-      {activeScreen === 'dashboard' && (
+      {activeScreen === 'overview' && (
         <Dashboard
           photos={photos}
           sessions={visibleSessions}
@@ -1138,12 +1146,12 @@ export default function App() {
           isBusy={isBusy}
           canRunFullCheck={canRunFullCheck}
           onNavigate={navigate}
-          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'results')}
-          onRunFullCheck={() => handleRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')}
+          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'session')}
+          onRunFullCheck={() => navigate('session')}
         />
       )}
 
-      {activeScreen === 'upload' && (
+      {activeScreen === 'session' && currentSession.stage !== 'result' && (
         <UploadScreen
           photos={photos}
           session={currentSession}
@@ -1174,7 +1182,16 @@ export default function App() {
             navigate(screenForStage(stage));
           }}
           onToggleReserve={handleToggleReserve}
+          stage={currentSession.stage || 'select'}
+          onAdvance={handleWizardAdvance}
         />
+      )}
+
+      {activeScreen === 'session' && currentSession.stage === 'result' && (
+        <>
+          <SessionWizard session={currentSession} photoCount={photos.length} isBusy={isBusy} onSessionChange={handleSessionChange} onStartNew={handleStartNewSession} onStageChange={(stage) => handleSessionChange({ stage })} onPrimary={handleWizardAdvance} />
+          <ResultsScreen photos={photos} session={currentSession} providerSettings={providerSettings} isBusy={isBusy} onClear={() => setConfirmClearOpen(true)} onApplyIndex={handleManualIndex} onApplyCoordinates={handleManualCoordinates} onSwapCoordinates={handleSwapCoordinates} onOpenOnMap={handleOpenOnMap} onOpenPhoto={handleOpenPhoto} onRemovePhoto={handleRemovePhoto} onNavigateUpload={() => navigate('session')} onSessionChange={handleSessionChange} onToggleReserve={handleToggleReserve} />
+        </>
       )}
 
       {activeScreen === 'map' && (
@@ -1183,7 +1200,7 @@ export default function App() {
           thresholdMeters={thresholdMeters}
           providerSettings={providerSettings}
           focusPhotoId={mapFocusPhotoId}
-          onNavigateUpload={() => navigate('upload')}
+          onNavigateUpload={() => navigate('session')}
           mapLayerId={mapLayerId}
           onMapLayerChange={handleMapLayerChange}
           recommendation={conflictRecommendation}
@@ -1192,53 +1209,11 @@ export default function App() {
         />
       )}
 
-      {activeScreen === 'reserve' && (
-        <ReserveScreen
-          reserveItems={reserveItems}
-          onActivate={handleActivateReserveItem}
-          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'results')}
-          onOpenMap={(sessionId, photoId) => {
-            if (handleOpenStoredSession(sessionId, 'map')) setMapFocusPhotoId(photoId);
-          }}
-        />
-      )}
-
-      {activeScreen === 'results' && (
-        <ResultsScreen
-          photos={photos}
-          session={currentSession}
-          providerSettings={providerSettings}
-          isBusy={isBusy}
-          onClear={() => setConfirmClearOpen(true)}
-          onApplyIndex={handleManualIndex}
-          onApplyCoordinates={handleManualCoordinates}
-          onSwapCoordinates={handleSwapCoordinates}
-          onOpenOnMap={handleOpenOnMap}
-          onOpenPhoto={handleOpenPhoto}
-          onRemovePhoto={handleRemovePhoto}
-          onNavigateUpload={() => navigate('upload')}
-          onSessionChange={handleSessionChange}
-          onToggleReserve={handleToggleReserve}
-        />
-      )}
-
-      {activeScreen === 'sessions' && (
-        <SessionsScreen
-          sessions={visibleSessions}
-          savedSession={savedSession}
-          onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'results')}
-          onCreateSession={handleStartNewSession}
-          onNavigateUpload={() => navigate('upload')}
-        />
-      )}
-
-      {activeScreen === 'journal' && (
-        <JournalScreen
-          entries={journal}
-          activeSince={activeSince}
-          onClear={() => setJournal([])}
-        />
-      )}
+      {activeScreen === 'history' && <Tabs className="history-tabs" items={[
+        { key: 'sessions', label: 'Все сессии', children: <SessionsScreen sessions={visibleSessions} savedSession={savedSession} onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'session')} onCreateSession={handleStartNewSession} onNavigateUpload={() => navigate('session')} /> },
+        { key: 'reserve', label: `RESERVE (${reserveItems.length})`, children: <ReserveScreen reserveItems={reserveItems} onActivate={handleActivateReserveItem} onOpenSession={(sessionId) => handleOpenStoredSession(sessionId, 'session')} onOpenMap={(sessionId, photoId) => { if (handleOpenStoredSession(sessionId, 'map')) setMapFocusPhotoId(photoId); }} /> },
+        { key: 'journal', label: 'Диагностика', children: <JournalScreen entries={journal} activeSince={activeSince} onClear={() => setJournal([])} /> },
+      ]} />}
 
       {activeScreen === 'settings' && (
         <SettingsScreen

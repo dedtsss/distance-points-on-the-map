@@ -37,6 +37,7 @@
     "test:mobile-viewer-browser": "node scripts/test-mobile-viewer-browser.mjs",
     "test:folder-browser": "node scripts/test-folder-picker-browser.mjs",
     "test:preview-smoke": "node scripts/test-preview-smoke.mjs",
+    "capture:ant-pilot": "node scripts/capture-ant-pilot.mjs",
     "test:worker-guest-auth": "node scripts/test-worker-guest-auth.mjs",
     "debug:index-ocr": "node scripts/debug-index-ocr.mjs",
     "test:browser-audit": "node artifacts/browser-audit/iteration3-browser-check.mjs",
@@ -49,7 +50,9 @@
     "test:image-hosts:rulook": "node scripts/image-host-lab/test-rulook.mjs"
   },
   "dependencies": {
+    "@ant-design/pro-components": "^2.8.10",
     "@vitejs/plugin-react": "4.3.1",
+    "antd": "^5.29.3",
     "exifr": "7.1.3",
     "leaflet": "1.9.4",
     "react": "18.2.0",

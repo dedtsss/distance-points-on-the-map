@@ -14,7 +14,7 @@ const fixtureSession = {
   packing: '10 шт.',
   description: 'Проверка mobile flow',
   status: 'attention',
-  stage: 'map',
+  stage: 'result',
   thresholdMeters: 25,
   providerSettings: { ninjabox: true, fallbackFreeimage: true, fallbackX0: true },
   regionMode: 'auto',
@@ -57,7 +57,7 @@ const assertLayout = async (page, label) => {
 
 const openMobileScreen = async (page, label) => {
   await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.locator('.mobile-nav-drawer').getByRole('button', { name: label }).click();
+  await page.locator('.ant-drawer-content').getByRole('menuitem', { name: label }).click();
 };
 
 const server = await createServer({
@@ -88,7 +88,7 @@ try {
     await page.goto(baseUrl, { waitUntil: 'networkidle' });
     await assertLayout(page, `${viewport.width}px dashboard`);
 
-    await openMobileScreen(page, 'Сессии');
+    await openMobileScreen(page, 'История');
     await page.getByRole('button', { name: 'Открыть', exact: true }).click();
     await page.getByRole('heading', { name: 'Сводка текущей проверки' }).waitFor();
     await page.getByRole('button', { name: 'Скачать TXT' }).waitFor();
@@ -101,14 +101,14 @@ try {
     await page.getByRole('button', { name: 'Принять рекомендацию' }).click();
     await assertLayout(page, `${viewport.width}px map`);
 
-    await openMobileScreen(page, 'Резерв');
+    await openMobileScreen(page, 'История');
+    await page.getByRole('tab', { name: /RESERVE/ }).click();
     await page.getByRole('heading', { name: 'Логически исключённые точки' }).waitFor();
     await page.getByText('RESERVE').first().waitFor();
     await assertLayout(page, `${viewport.width}px reserve`);
 
-    await openMobileScreen(page, 'Обработать фотографии · Загрузка и проверка');
-    await page.getByRole('heading', { name: 'Мастер обработки фотографий' }).waitFor();
-    await page.getByRole('button', { name: 'Выбрать папку', exact: true }).waitFor();
+    await openMobileScreen(page, 'Сессия');
+    await page.getByRole('heading', { name: 'Рабочая сессия' }).waitFor();
     await assertLayout(page, `${viewport.width}px wizard`);
 
     await openMobileScreen(page, 'Настройки');

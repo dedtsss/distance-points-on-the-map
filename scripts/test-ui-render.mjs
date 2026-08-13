@@ -14,12 +14,10 @@ try {
   const html = renderToString(React.createElement(App));
 
   assert.match(html, /GPS Checker Map Photo/);
-  assert.match(html, /Дашборд/);
-  assert.match(html, /Загрузка и проверка/);
+  assert.match(html, /Обзор/);
+  assert.match(html, /Сессия/);
+  assert.match(html, /История/);
   assert.match(html, /Карта/);
-  assert.match(html, /Результаты/);
-  assert.match(html, /Сессии/);
-  assert.match(html, /Журнал/);
   assert.match(html, /Настройки/);
   assert.match(html, /Обзор текущей проверки/);
   assert.match(html, /История пока отсутствует/);
