@@ -1,0 +1,99 @@
+name: Deploy Ant UI Pilot Preview
+
+on:
+  push:
+    branches:
+      - preview/ant-design-ui-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production-guest
+    env:
+      VITE_BASE_PATH: /
+      VITE_UPLOAD_PROXY_URL: /api/upload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Focused pilot tests
+        run: |
+          npm run test:wizard-flow
+          npm run test:ui
+          npm run build:cloudflare
+
+      - name: Generate protected preview config
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('wrangler.guest.toml').read_text(encoding='utf-8')
+          src = src.replace('workers_dev = false', 'workers_dev = false\npreview_urls = true', 1)
+          marker = '\n[[routes]]\n'
+          if marker in src:
+              src = src.split(marker, 1)[0].rstrip() + '\n'
+          Path('wrangler.preview.generated.toml').write_text(src, encoding='utf-8')
+          PY
+
+      - name: Upload non-production Worker version
+        id: upload
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          npx wrangler@latest versions upload --config wrangler.preview.generated.toml --preview-alias ant-ui-pilot 2>&1 | tee preview-upload.txt
+          PREVIEW_URL="$(grep -Eo 'https://[a-z0-9.-]+\.workers\.dev' preview-upload.txt | tail -1 || true)"
+          if [ -z "$PREVIEW_URL" ]; then
+            echo 'Preview URL was not found in Wrangler output.' >&2
+            exit 1
+          fi
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "### Dark Cat Ant UI preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "$PREVIEW_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify preview is protected
+        env:
+          PREVIEW_URL: ${{ steps.upload.outputs.preview_url }}
+        run: |
+          STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "$PREVIEW_URL/")"
+          echo "Unauthenticated preview HTTP status: $STATUS"
+          test "$STATUS" = "401"
+
+      - name: Publish preview status
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_URL: ${{ steps.upload.outputs.preview_url }}
+        run: |
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='deploy/ant-ui-preview' \
+            -f description='Protected Ant UI pilot preview uploaded' \
+            -f target_url="$PREVIEW_URL"
+          gh issue comment 45 --repo "$GITHUB_REPOSITORY" --body "PREVIEW_READY\n\nBranch: \`preview/ant-design-ui-v1\`\nCommit: \`${GITHUB_SHA}\`\nURL: ${PREVIEW_URL}\nProtection check: unauthenticated request returned HTTP 401.\nProduction deployment unchanged."
