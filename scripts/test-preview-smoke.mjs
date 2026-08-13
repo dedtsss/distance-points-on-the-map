@@ -150,7 +150,7 @@ const visible = async (locator, label) => {
   assert.equal(await locator.first().isVisible(), true, `${label} should be visible`);
 };
 
-const nav = (label) => page.locator('.sidebar-shell').getByRole('button', { name: label });
+const nav = (label) => page.locator('.sidebar-shell').getByRole('menuitem', { name: label });
 const noHorizontalScroll = async () => page.evaluate(() => (
   document.documentElement.scrollWidth <= window.innerWidth + 1
   && document.body.scrollWidth <= window.innerWidth + 1
@@ -190,10 +190,7 @@ try {
   await visible(page.getByText('0123').first(), 'four-digit index');
   await visible(page.getByText('12345').first(), 'five-digit index');
 
-  await nav('Загрузка и проверка').click();
-  await visible(page.getByRole('heading', { name: 'Новая проверка фотографий' }), 'upload screen');
-
-  await nav('Результаты').click();
+  await nav('Сессия').click();
   await visible(page.getByRole('heading', { name: 'Сводка текущей проверки' }), 'results screen');
   await visible(page.getByText('Индекс: 00042 — проверить').first(), 'mobile/desktop result index text');
 
@@ -204,10 +201,10 @@ try {
   assert.equal(await page.locator('.map-marker.is-conflict').count(), 2, 'conflict markers should stay red');
   assert.equal(await page.locator('.map-marker:not(.is-conflict)').count(), 1, 'ordinary markers should use one class');
 
-  await nav('Сессии').click();
+  await nav('История').click();
   await visible(page.getByRole('heading', { name: 'Сессии обработки' }), 'sessions screen');
 
-  await nav('Журнал').click();
+  await page.getByRole('tab', { name: 'Диагностика' }).click();
   await visible(page.getByRole('heading', { name: 'События и диагностика OCR' }), 'journal screen');
 
   await nav('Настройки').click();
@@ -217,8 +214,8 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await visible(page.locator('.mobile-nav-drawer.is-open'), 'mobile drawer');
-  await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Карта' }).click();
+  await visible(page.locator('.ant-drawer-content'), 'mobile drawer');
+  await page.locator('.ant-drawer-content').getByRole('menuitem', { name: 'Карта' }).click();
   await page.waitForSelector('.leaflet-container .map-marker');
   await page.getByRole('button', { name: 'Показать точки' }).click();
   await visible(page.locator('.map-panel.panel-open .map-side-panel'), 'mobile map bottom sheet');

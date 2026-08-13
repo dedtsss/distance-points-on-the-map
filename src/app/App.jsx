@@ -17,6 +17,7 @@ import PhotoCard from '../components/PhotoCard.jsx';
 import ResultsScreen from '../components/ResultsScreen.jsx';
 import ReserveScreen from '../components/ReserveScreen.jsx';
 import SessionWizard from '../components/SessionWizard.jsx';
+import SessionStepActionBar from '../components/SessionStepActionBar.jsx';
 import SessionsScreen from '../components/SessionsScreen.jsx';
 import SettingsScreen from '../components/SettingsScreen.jsx';
 import UploadDropzone from '../components/UploadDropzone.jsx';
@@ -62,6 +63,7 @@ import {
 } from '../features/session/sessionStore.js';
 import { loadExportDescription } from '../features/export/exportPreferences.js';
 import { DEFAULT_SCREEN, normalizeScreen } from '../features/ui/screens.js';
+import { getPipelineStageOutcome, normalizeWizardStage, WIZARD_STAGES } from '../features/session/wizardFlow.js';
 import {
   DEFAULT_PROVIDER_SETTINGS,
   normalizeProviderSettings,
@@ -80,12 +82,13 @@ import { UPLOAD_RULES_EXPLANATION } from './pipelineRules.js';
 const newSessionMeta = (input = {}) => createSession({
   sessionNumber: input.sessionNumber || getNextSessionNumber(),
   description: input.description ?? loadExportDescription(),
+  stage: input.stage || 'select',
   ...input,
 });
 
 const sessionMetaFromRecord = (record) => {
   const { photos: _photos, ...meta } = record || {};
-  return { ...meta, persisted: true };
+  return { ...meta, stage: normalizeWizardStage(meta.stage), persisted: true };
 };
 
 const screenForStage = (stage) => ({ map: 'map' }[stage] || 'session');
@@ -124,7 +127,6 @@ function UploadScreen({
   onStageChange,
   onToggleReserve,
   stage = 'select',
-  onAdvance,
 }) {
   const hasStableFiles = photos.some((photo) => photo.stableFile);
   const hasCleanedPhotos = photos.some((photo) => photo.cleanedBlob);
@@ -139,7 +141,6 @@ function UploadScreen({
         onSessionChange={onSessionChange}
         onStartNew={onStartNewSession}
         onStageChange={onStageChange}
-        onPrimary={onAdvance}
       />
       {stage === 'select' && <PageHeader
         eyebrow="Загрузка и проверка"
@@ -831,7 +832,7 @@ export default function App() {
   };
 
   const handleRun = async (stages, label) => {
-    if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return;
+    if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return { ok: false, reason: 'prerequisite' };
     const automaticFullRun = stages.gps && stages.cleanup && stages.upload;
     const cleanupEnabled = stages.cleanup && (!automaticFullRun || processingSettings.metadataCleanup !== false);
     const effectiveStages = {
@@ -877,11 +878,18 @@ export default function App() {
       if (!persistence.remote) setErrors((current) => [...new Set([...current, 'Обработка завершена, но результат не синхронизирован с сервером.'])]);
       setMode('done');
       addLog(`${label}: завершено`, 'success');
+      const outcome = getPipelineStageOutcome({ photos: result.photos, stages: effectiveStages });
+      if (!outcome.ok) {
+        setErrors((current) => [...new Set([...current, 'Шаг не завершён: исправьте отмеченные фотографии и повторите действие.'])]);
+        addLog(`${label}: завершён с ошибками`, 'warning');
+      }
+      return { ...outcome, result, persistence };
     } catch (error) {
       setErrors(['Не удалось завершить обработку. Повторно выберите фотографии и попробуйте ещё раз.']);
       setMode('ready');
       addLog(`${label}: ошибка`, 'error');
       if (debugMode) console.error(error);
+      return { ok: false, reason: 'pipeline_error', error };
     } finally {
       setActiveSince(null);
     }
@@ -1088,14 +1096,37 @@ export default function App() {
     const stage = currentSession.stage || 'select';
     if (stage === 'select') return handleSessionChange({ stage: 'recognition' });
     if (stage === 'recognition') {
-      await handleRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат');
-      return handleSessionChange({ stage: 'review' });
+      const outcome = await handleRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат');
+      if (outcome.ok) handleSessionChange({ stage: 'review' });
+      return outcome;
     }
     if (stage === 'review') {
-      await handleRun({ gps: false, cleanup: true, upload: false }, 'Подготовка очищенных фото');
-      return handleSessionChange({ stage: 'result' });
+      const outcome = await handleRun({ gps: false, cleanup: true, upload: false }, 'Подготовка очищенных фото');
+      if (outcome.ok) handleSessionChange({ stage: 'result' });
+      return outcome;
+    }
+    if (currentSession.resultSavedAt) return { ok: true, reason: 'already_saved' };
+    if (photos.every((photo) => photo.uploadStatus === 'done' && photo.uploadResult?.links?.length)) {
+      const persistence = await persistSessionRecord({
+        ...sessionMeta,
+        stage: 'result',
+        resultSavedAt: new Date().toISOString(),
+        photos,
+        thresholdMeters,
+        providerSettings,
+        processingSettings,
+        regionMode,
+        mapLayerId,
+      });
+      setSessionMeta(sessionMetaFromRecord(persistence.record));
+      addLog('Результат сохранён', 'success');
+      return { ok: true, reason: 'saved', persistence };
     }
     return handleRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных');
+  };
+  const handleWizardBack = () => {
+    const current = WIZARD_STAGES.indexOf(currentSession.stage || 'select');
+    if (current > 0) handleSessionChange({ stage: WIZARD_STAGES[current - 1] });
   };
 
   return (
@@ -1151,8 +1182,9 @@ export default function App() {
         />
       )}
 
-      {activeScreen === 'session' && currentSession.stage !== 'result' && (
-        <UploadScreen
+      {activeScreen === 'session' && (
+        <div className="session-step-content">
+        {currentSession.stage !== 'result' && <UploadScreen
           photos={photos}
           session={currentSession}
           mode={mode}
@@ -1183,16 +1215,15 @@ export default function App() {
           }}
           onToggleReserve={handleToggleReserve}
           stage={currentSession.stage || 'select'}
-          onAdvance={handleWizardAdvance}
-        />
-      )}
+        />}
 
-      {activeScreen === 'session' && currentSession.stage === 'result' && (
-        <>
-          <SessionWizard session={currentSession} photoCount={photos.length} isBusy={isBusy} onSessionChange={handleSessionChange} onStartNew={handleStartNewSession} onStageChange={(stage) => handleSessionChange({ stage })} onPrimary={handleWizardAdvance} />
+        {currentSession.stage === 'result' && <>
+          <SessionWizard session={currentSession} photoCount={photos.length} isBusy={isBusy} onSessionChange={handleSessionChange} onStartNew={handleStartNewSession} onStageChange={(stage) => handleSessionChange({ stage })} />
           <ResultsScreen photos={photos} session={currentSession} providerSettings={providerSettings} isBusy={isBusy} onClear={() => setConfirmClearOpen(true)} onApplyIndex={handleManualIndex} onApplyCoordinates={handleManualCoordinates} onSwapCoordinates={handleSwapCoordinates} onOpenOnMap={handleOpenOnMap} onOpenPhoto={handleOpenPhoto} onRemovePhoto={handleRemovePhoto} onNavigateUpload={() => navigate('session')} onSessionChange={handleSessionChange} onToggleReserve={handleToggleReserve} />
-        </>
+        </>}
+        </div>
       )}
+      {activeScreen === 'session' && <SessionStepActionBar session={currentSession} photos={photos} isBusy={isBusy} onPrimary={handleWizardAdvance} onBack={handleWizardBack} onSettings={() => navigate('settings')} />}
 
       {activeScreen === 'map' && (
         <MapScreen

@@ -89,7 +89,8 @@ body {
 .ant-navigation.ant-menu { border-inline-end: 0; background: transparent; }
 .ant-navigation .ant-menu-item { margin-inline: 0; width: 100%; border-radius: 8px; }
 .session-ant-steps { margin: 18px 0 22px; }
-.wizard-primary-row { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+.session-step-content { display: grid; gap: 16px; min-width: 0; }
+.session-step-action-bar { display: flex; gap: 10px; align-items: center; justify-content: flex-end; max-width: 1420px; margin: 16px auto 0; }
 .history-tabs .ant-tabs-nav { margin-bottom: 18px; }
 
 button, input, textarea, select { font: inherit; }
@@ -1542,19 +1543,20 @@ tbody th,
 }
 
 @media (max-width: 640px) {
-  .wizard-primary-row {
-    position: sticky;
-    bottom: 0;
-    z-index: 20;
-    margin: 16px 0 0;
-    padding: 12px max(12px, env(safe-area-inset-left)) calc(12px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-right));
+  .session-step-content { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
+  .session-step-action-bar {
+    position: fixed;
+    inset: auto max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    z-index: 65;
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--color-outline);
+    border-radius: var(--radius-medium);
     background: var(--color-background-elevated);
-    border-top: 1px solid var(--color-outline);
-    width: 100%;
-    min-width: 0;
+    box-shadow: var(--shadow-2);
   }
-  .wizard-primary-row .ant-btn-primary { flex: 1; min-height: 48px; }
-  .wizard-primary-row .ant-btn { min-width: 0; }
+  .session-step-action-bar .ant-btn-primary { flex: 1; min-height: 48px; }
+  .session-step-action-bar .ant-btn { min-width: 0; }
   .session-ant-steps .ant-steps-item-title { font-size: .72rem; }
   h1 { font-size: 1.05rem; }
   h2 { font-size: 1.16rem; }

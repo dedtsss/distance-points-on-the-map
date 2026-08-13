@@ -92,6 +92,12 @@ try {
     await page.getByRole('button', { name: 'Открыть', exact: true }).click();
     await page.getByRole('heading', { name: 'Сводка текущей проверки' }).waitFor();
     await page.getByRole('button', { name: 'Скачать TXT' }).waitFor();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const stepActionBar = page.locator('.session-step-action-bar');
+    await stepActionBar.getByRole('button', { name: 'Сохранить результат', exact: true }).waitFor();
+    const stepActionBox = await stepActionBar.boundingBox();
+    assert.ok(stepActionBox && stepActionBox.y >= 0 && stepActionBox.y + stepActionBox.height <= viewport.height, `${viewport.width}px sticky step CTA is visible after scroll`);
+    assert.equal(await page.evaluate(() => !document.querySelector('.session-wizard .session-step-action-bar')), true, `${viewport.width}px CTA must not be constrained by wizard card`);
     await assertLayout(page, `${viewport.width}px result`);
 
     await openMobileScreen(page, 'Карта');

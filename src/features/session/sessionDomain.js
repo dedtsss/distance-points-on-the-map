@@ -129,6 +129,7 @@ export function createSession(input = {}) {
     processingSettings: normalizeProcessingSettings(input.processingSettings),
     regionMode: input.regionMode || 'auto',
     mapLayerId: input.mapLayerId || '',
+    resultSavedAt: input.resultSavedAt || '',
     copiedPhotoIds: Array.isArray(input.copiedPhotoIds) ? [...new Set(input.copiedPhotoIds.map(String))] : [],
     photos,
     ...getSessionMetrics(photos),
