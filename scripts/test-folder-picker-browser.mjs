@@ -20,17 +20,17 @@ const noHorizontalScroll = async (page) => page.evaluate(() => (
 const summaryText = (page) => page.locator('.folder-import-summary').innerText();
 
 const openUploadScreen = async (page) => {
-  const desktopNav = page.locator('.sidebar-shell').getByRole('button', { name: 'Загрузка и проверка' });
+  const desktopNav = page.locator('.sidebar-shell').getByRole('menuitem', { name: 'Сессия' });
   if ((await desktopNav.count()) && await desktopNav.first().isVisible()) {
     await desktopNav.click();
   } else {
     await page.getByRole('button', { name: 'Открыть меню' }).click();
-    await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Загрузка и проверка' }).click();
+    await page.locator('.ant-drawer-content').getByRole('menuitem', { name: 'Сессия' }).click();
   }
   await visible(page.getByRole('heading', { name: 'Новая проверка фотографий' }), 'upload screen');
 };
 
-const desktopNav = (page, label) => page.locator('.sidebar-shell').getByRole('button', { name: label });
+const desktopNav = (page, label) => page.locator('.sidebar-shell').getByRole('menuitem', { name: label });
 
 const assertImportEvent = async (page, source, count) => {
   await page.waitForFunction(
@@ -140,8 +140,8 @@ try {
   await page.getByRole('button', { name: 'Восстановить' }).click();
   await visible(page.getByText('без доступа к локальной папке'), 'restored folder access notice');
   await visible(page.getByText('GPS object 15/nested/photo1.png'), 'restored relative path');
-  await desktopNav(page, 'Результаты').click();
-  await visible(page.getByRole('heading', { name: 'Сводка текущей проверки' }), 'results after folder restore');
+  await desktopNav(page, 'Сессия').click();
+  await visible(page.getByRole('heading', { name: 'Рабочая сессия' }), 'restored session flow');
   await desktopNav(page, 'Карта').click();
   await visible(page.getByRole('heading', { name: 'Точки и расстояния' }), 'map after folder restore');
 
@@ -230,7 +230,7 @@ try {
   assert.match(largeSummary, /превышение существующего ограничения\s+230/);
   const maxArrayBufferConcurrency = await adapterPage.evaluate(() => window.__arrayBufferStats.max);
   assert.equal(maxArrayBufferConcurrency <= 2, true, 'folder buffering should be concurrency-limited');
-  await adapterPage.locator('.sidebar-shell').getByRole('button', { name: 'Настройки' }).click();
+  await adapterPage.locator('.sidebar-shell').getByRole('menuitem', { name: 'Настройки' }).click();
   await visible(adapterPage.getByRole('heading', { name: 'Параметры проверки' }), 'settings after large import');
 
   for (const viewport of [

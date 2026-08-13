@@ -6,6 +6,9 @@ export const PHOTO_WORK_STATUS = Object.freeze({
 });
 
 export const SESSION_STAGES = Object.freeze([
+  'select',
+  'recognition',
+  'review',
   'processing',
   'upload',
   'map',
@@ -126,6 +129,7 @@ export function createSession(input = {}) {
     processingSettings: normalizeProcessingSettings(input.processingSettings),
     regionMode: input.regionMode || 'auto',
     mapLayerId: input.mapLayerId || '',
+    resultSavedAt: input.resultSavedAt || '',
     copiedPhotoIds: Array.isArray(input.copiedPhotoIds) ? [...new Set(input.copiedPhotoIds.map(String))] : [],
     photos,
     ...getSessionMetrics(photos),

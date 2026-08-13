@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Drawer } from 'antd';
 import TopBar from './TopBar.jsx';
 import Navigation from './Navigation.jsx';
 import Icon from './Icon.jsx';
@@ -56,12 +57,7 @@ export default function AppShell({
       </div>
       {footer}
 
-      <div
-        className={`mobile-nav-backdrop${mobileMenuOpen ? ' is-open' : ''}`}
-        onClick={() => setMobileMenuOpen(false)}
-        aria-hidden="true"
-      />
-      <aside className={`mobile-nav-drawer${mobileMenuOpen ? ' is-open' : ''}`} aria-label="Мобильное меню">
+      <Drawer className="mobile-ant-drawer" placement="left" open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} title="Dark Cat CRM" width={320}>
         <div className="drawer-heading">
           <div className="sidebar-brand">
             <span className="brand-symbol" aria-hidden="true">
@@ -77,7 +73,7 @@ export default function AppShell({
           </button>
         </div>
         <Navigation activeScreen={activeScreen} onScreenChange={onScreenChange} onNavigate={() => setMobileMenuOpen(false)} />
-      </aside>
+      </Drawer>
     </main>
   );
 }

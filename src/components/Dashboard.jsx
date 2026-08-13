@@ -55,7 +55,7 @@ export default function Dashboard({
         title="Обзор текущей проверки"
         actions={(
           <>
-            <button type="button" onClick={() => onNavigate('upload')}>
+            <button type="button" onClick={() => onNavigate('session')}>
               <Icon name="upload" size={18} />
               Загрузить фото
             </button>
@@ -84,7 +84,7 @@ export default function Dashboard({
             <p>OCR координат, индекс точки, cleanup, upload через `/api/upload` и карта остаются в существующем pipeline и сохраняются в выбранной сессии.</p>
           </div>
           <div className="quick-actions">
-            <button type="button" onClick={() => onNavigate('upload')}>
+            <button type="button" onClick={() => onNavigate('session')}>
               <Icon name="plus" size={18} />
               Выбрать фотографии
             </button>
@@ -101,10 +101,10 @@ export default function Dashboard({
               <p className="page-eyebrow">Последние сессии</p>
               <h3>Сохранённая история</h3>
             </div>
-            <button type="button" className="button-secondary compact-button" onClick={() => onNavigate('sessions')}>Все сессии</button>
+            <button type="button" className="button-secondary compact-button" onClick={() => onNavigate('history')}>Все сессии</button>
           </div>
           {sessions.length > 0 ? (
-            <SessionList sessions={sessions.slice(0, 3)} onOpen={onOpenSession || (() => onNavigate('sessions'))} />
+            <SessionList sessions={sessions.slice(0, 3)} onOpen={onOpenSession || (() => onNavigate('history'))} />
           ) : (
             <EmptyState title="История пока отсутствует" icon="sessions">
               Создайте первую сессию: здесь появятся реальные показатели обработки.
@@ -118,7 +118,7 @@ export default function Dashboard({
               <p className="page-eyebrow">Недавние ошибки и конфликты</p>
               <h3>Что требует внимания</h3>
             </div>
-            <button type="button" className="button-secondary compact-button" onClick={() => onNavigate('journal')}>Журнал</button>
+            <button type="button" className="button-secondary compact-button" onClick={() => onNavigate('history')}>Диагностика</button>
           </div>
           {recentIssues.length > 0 ? (
             <ul className="issue-list">

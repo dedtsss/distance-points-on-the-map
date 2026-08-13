@@ -1,16 +1,18 @@
 export const APP_SCREENS = Object.freeze([
-  { id: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
-  { id: 'sessions', label: 'Сессии' },
-  { id: 'upload', label: 'Обработать фотографии · Загрузка и проверка' },
-  { id: 'reserve', label: 'Резерв' },
+  { id: 'overview', label: 'Обзор', icon: 'dashboard' },
+  { id: 'session', label: 'Сессия', icon: 'upload' },
+  { id: 'history', label: 'История', icon: 'sessions' },
   { id: 'map', label: 'Карта' },
-  { id: 'results', label: 'Результаты' },
-  { id: 'journal', label: 'Журнал' },
   { id: 'settings', label: 'Настройки' },
 ]);
 
-export const DEFAULT_SCREEN = 'dashboard';
+export const DEFAULT_SCREEN = 'overview';
+
+const LEGACY_SCREEN_ALIASES = Object.freeze({
+  dashboard: 'overview', upload: 'session', results: 'session', sessions: 'history', reserve: 'history', journal: 'history',
+});
 
 export function normalizeScreen(value) {
-  return APP_SCREENS.some((screen) => screen.id === value) ? value : DEFAULT_SCREEN;
+  const normalized = LEGACY_SCREEN_ALIASES[value] || value;
+  return APP_SCREENS.some((screen) => screen.id === normalized) ? normalized : DEFAULT_SCREEN;
 }

@@ -35,7 +35,7 @@ page.on('pageerror', (error) => pageErrors.push(error.message));
 try {
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Загрузка и проверка' }).click();
+  await page.locator('.ant-drawer-content').getByRole('menuitem', { name: 'Сессия' }).click();
   await page.locator('input[aria-label="Выбрать фотографии для проверки"]').setInputFiles(photoPath);
 
   const openButton = page.getByRole('button', { name: 'Открыть фотографию 1 в просмотрщике' });
