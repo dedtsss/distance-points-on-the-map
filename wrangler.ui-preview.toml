@@ -1,0 +1,13 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "dark-cat-ant-ui-preview"
+main = "workers/ui-preview/worker.js"
+compatibility_date = "2026-07-15"
+account_id = "977cf45e04d4066ca0b8288de1a337ed"
+workers_dev = true
+preview_urls = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"
