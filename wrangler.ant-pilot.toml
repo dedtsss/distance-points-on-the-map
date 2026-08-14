@@ -1,0 +1,23 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+# The database id is injected by the test-only deployment workflow after it
+# creates or finds the isolated D1 database. This file must never target the
+# production Worker, route, or D1 database.
+name = "dark-cat-crm-ant-pilot"
+main = "workers/host-proxy/worker.js"
+compatibility_date = "2026-07-15"
+account_id = "977cf45e04d4066ca0b8288de1a337ed"
+workers_dev = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dark-cat-crm-ant-pilot"
+database_id = "__TEST_D1_DATABASE_ID__"
+
+[vars]
+BASIC_AUTH_USERNAME = "owner"

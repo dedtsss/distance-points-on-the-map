@@ -1,0 +1,131 @@
+name: Deploy isolated Ant Design pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  statuses: write
+
+jobs:
+  deploy-ant-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ant-design-ui-v1-preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DATABASE_NAME: dark-cat-crm-ant-pilot
+      WORKER_NAME: dark-cat-crm-ant-pilot
+      WRANGLER_VERSION: 4.123.0
+      VITE_BASE_PATH: /
+      VITE_UPLOAD_PROXY_URL: /api/upload
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+
+      - name: Confirm isolated deployment configuration
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+          test "$(git branch --show-current)" = 'test/ant-design-ui-v1-preview'
+          test "$DATABASE_NAME" = 'dark-cat-crm-ant-pilot'
+          test "$WORKER_NAME" = 'dark-cat-crm-ant-pilot'
+          ! grep -q 'gps.bruce-group.net' wrangler.ant-pilot.toml
+          ! grep -q '736217a0-044d-49a3-a7c1-0d55e21c17bf' wrangler.ant-pilot.toml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies and browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build and test source head
+        run: |
+          npm run build:cloudflare
+          npm test
+          npm run test:preview-smoke
+
+      - name: Create or find isolated test D1
+        id: d1
+        run: |
+          set -euo pipefail
+          npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 list --json > d1-list.json
+          DATABASE_ID="$(node -e "const rows=require('./d1-list.json'); const row=rows.find((item)=>item.name===process.env.DATABASE_NAME); process.stdout.write(row ? (row.uuid || row.id || '') : '');")"
+          if [ -z "$DATABASE_ID" ]; then
+            npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 create "$DATABASE_NAME" > d1-create.txt
+            DATABASE_ID="$(sed -n 's/.*database_id[[:space:]]*=[[:space:]]*"\([0-9a-f-]\{36\}\)".*/\1/p' d1-create.txt | head -n 1)"
+          fi
+          test -n "$DATABASE_ID" || { echo 'Unable to obtain isolated D1 database id.'; exit 1; }
+          printf 'database_id=%s\n' "$DATABASE_ID" >> "$GITHUB_OUTPUT"
+          echo "Isolated D1 database resolved: $DATABASE_NAME"
+
+      - name: Generate test-only Wrangler config and migrate test D1
+        env:
+          DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+        run: |
+          set -euo pipefail
+          sed "s/__TEST_D1_DATABASE_ID__/$DATABASE_ID/" wrangler.ant-pilot.toml > wrangler.ant-pilot.generated.toml
+          npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 migrations apply "$DATABASE_NAME" --remote --config wrangler.ant-pilot.generated.toml
+          npm exec --yes "wrangler@$WRANGLER_VERSION" -- d1 execute "$DATABASE_NAME" --remote --config wrangler.ant-pilot.generated.toml --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('crm_sessions', 'crm_photo_items', 'crm_sequences') ORDER BY name;"
+
+      - name: Deploy isolated Worker to workers.dev
+        env:
+          DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+        run: |
+          set -euo pipefail
+          sed "s/__TEST_D1_DATABASE_ID__/$DATABASE_ID/" wrangler.ant-pilot.toml > wrangler.ant-pilot.generated.toml
+          npm exec --yes "wrangler@$WRANGLER_VERSION" -- deploy --config wrangler.ant-pilot.generated.toml | tee deploy.log
+          WORKER_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' deploy.log | head -n 1)"
+          test -n "$WORKER_URL" || { echo 'Deployment succeeded but workers.dev URL was not found.'; exit 1; }
+          printf 'worker_url=%s\n' "$WORKER_URL" >> "$GITHUB_OUTPUT"
+          echo "Worker deployed to workers.dev."
+        id: deploy
+
+      - name: Verify isolated API and live UI navigation
+        env:
+          PILOT_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --retry 5 --retry-all-errors --retry-delay 3 "$PILOT_URL/" -o /dev/null
+          curl --fail --retry 5 --retry-all-errors --retry-delay 3 "$PILOT_URL/api/sessions" > sessions.json
+          node -e "const payload=require('./sessions.json'); if (!payload.ok || !Array.isArray(payload.sessions)) throw new Error('isolated /api/sessions did not return the expected D1 payload'); console.log('Isolated D1-backed /api/sessions verified.');"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+          try {
+            await page.goto(process.env.PILOT_URL, { waitUntil: 'networkidle' });
+            await page.getByRole('button', { name: 'Открыть меню' }).click();
+            await page.locator('.ant-drawer-content').getByRole('menuitem', { name: 'Сессия' }).click();
+            await expectVisible(page.getByRole('heading', { name: 'Рабочая сессия' }));
+            for (const step of ['Выбор', 'Распознавание', 'Проверка', 'Результат']) await expectVisible(page.getByText(step, { exact: true }));
+            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, '390px UI must not horizontally scroll');
+          } finally { await browser.close(); }
+          async function expectVisible(locator) { assert.equal(await locator.first().isVisible(), true, 'expected visible UI element'); }
+          console.log('Live navigation and Session wizard steps verified.');
+          NODE
+
+      - name: Publish test deployment status
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PILOT_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='deploy/ant-design-pilot-test' \
+            -f description='Isolated Ant Design test Worker deployed' \
+            -f target_url="$PILOT_URL"
+          gh issue comment 47 --repo "$GITHUB_REPOSITORY" --body "CHECKPOINT: isolated Ant Design pilot deployed.\n\nCommit: \`${GITHUB_SHA}\`\nTest Worker: \`dark-cat-crm-ant-pilot\` on workers.dev\nTest D1: \`dark-cat-crm-ant-pilot\` (isolated)\nTest URL: $PILOT_URL\nChecks: build, npm test, preview smoke, remote migration/schema query, isolated \`/api/sessions\`, live navigation and Session wizard steps.\nProduction Worker/domain/D1 were not changed."
