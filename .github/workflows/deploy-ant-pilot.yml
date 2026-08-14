@@ -1,6 +1,20 @@
 name: Deploy isolated Ant Design pilot
 
 on:
+  push:
+    branches:
+      - test/ant-design-ui-v1-preview
+    paths:
+      - '.github/workflows/deploy-ant-pilot.yml'
+      - 'wrangler.ant-pilot.toml'
+      - 'workers/host-proxy/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'migrations/**'
   workflow_dispatch:
 
 permissions:
