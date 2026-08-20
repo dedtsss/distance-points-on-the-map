@@ -1,7 +1,7 @@
 export const APP_SCREENS = Object.freeze([
   { id: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
   { id: 'sessions', label: 'Сессии' },
-  { id: 'upload', label: 'Обработать фотографии · Загрузка и проверка' },
+  { id: 'upload', label: 'Обработка фото' },
   { id: 'reserve', label: 'Резерв' },
   { id: 'map', label: 'Карта' },
   { id: 'results', label: 'Результаты' },

@@ -38,6 +38,10 @@ export default function AppShell({
           </div>
         </div>
         <Navigation activeScreen={activeScreen} onScreenChange={onScreenChange} collapsed={sidebarCollapsed} />
+        <div className="sidebar-status" aria-label="Статус рабочего места">
+          <span className="sidebar-status-dot" aria-hidden="true" />
+          <span><strong>Локальное рабочее место</strong><small>Данные остаются в браузере</small></span>
+        </div>
       </aside>
 
       <TopBar

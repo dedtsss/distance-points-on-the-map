@@ -229,7 +229,7 @@ function MapScreen({
   onToggleReserve,
 }) {
   return (
-    <>
+    <section className="dedicated-map-screen" aria-label="Рабочая область карты">
       <PageHeader
         eyebrow="Карта"
         title="Точки и расстояния"
@@ -248,7 +248,7 @@ function MapScreen({
         onApplyRecommendation={onApplyRecommendation}
         onToggleReserve={onToggleReserve}
       />
-    </>
+    </section>
   );
 }
 

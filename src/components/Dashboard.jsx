@@ -19,6 +19,14 @@ const conflictCount = (photos) => photos.reduce((sum, photo) => (
   photo.distanceStatus === 'too_close' ? sum + (photo.distanceConflicts?.length || 0) : sum
 ), 0) / 2;
 
+const WORKFLOW_LABELS = {
+  photos: 'Фотографии',
+  recognition: 'Распознавание',
+  map: 'Карта и точки',
+  cleanup: 'Очистка и загрузка',
+  result: 'Результат',
+};
+
 export default function Dashboard({
   photos,
   sessions,
@@ -33,6 +41,9 @@ export default function Dashboard({
   const activeSessionToday = sessions.some((session) => isToday(session.createdAt || session.updatedAt));
   const totals = getSessionMetrics(allPhotos);
   const conflicts = conflictCount(allPhotos);
+  const activeSession = sessions[0];
+  const activeMetrics = activeSession ? getSessionMetrics(activeSession.photos || []) : null;
+  const activeStage = WORKFLOW_LABELS[activeSession?.stage] || 'Фотографии';
   const recentIssues = [
     ...allPhotos.filter((photo) => photo.userError || photo.distanceStatus === 'too_close' || photo.coordinateQuality === 'low_precision').map((photo) => ({
       id: `photo-${photo.id}`,
@@ -68,6 +79,23 @@ export default function Dashboard({
       >
         Метрики строятся только из сохранённых сессий Dark Cat CRM — без декоративных графиков и fake data.
       </PageHeader>
+
+      <section className="command-session-strip" aria-label="Текущая сессия">
+        <div className="command-session-main">
+          <span className="section-kicker">Текущая сессия</span>
+          <strong>{activeSession ? activeSession.description || `Сессия №${String(activeSession.sessionNumber || 0).padStart(4, '0')}` : 'Нет активной сессии'}</strong>
+          <span>{activeSession ? `${activeMetrics.totalPhotoCount} фото · обновлено недавно` : 'Выберите фотографии, чтобы начать рабочий поток'}</span>
+        </div>
+        <div className="command-session-stage">
+          <span className="section-kicker">Этап рабочего потока</span>
+          <strong>{activeStage}</strong>
+          <span>{activeMetrics ? `${activeMetrics.errorCount || conflicts} требуют внимания` : 'Шаг 1 из 5'}</span>
+        </div>
+        <button type="button" className="compact-button" onClick={() => onNavigate(activeSession ? 'upload' : 'upload')}>
+          <Icon name={activeSession ? 'play' : 'plus'} size={16} />
+          {activeSession ? 'Продолжить сессию' : 'Создать сессию'}
+        </button>
+      </section>
 
       <section className="dashboard-grid">
         <StatCard label="Всего сессий" value={sessions.length} helper={activeSessionToday ? 'Есть активность сегодня' : 'Нет активности сегодня'} tone="primary" icon="sessions" />
