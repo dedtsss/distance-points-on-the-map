@@ -41,6 +41,7 @@ export default function ResultsSummary({
   session = {},
   onClear,
   onSessionChange,
+  showCoordinateExport = true,
 }) {
   const [copyStatus, setCopyStatus] = useState('');
   const [geoExportStatus, setGeoExportStatus] = useState('');
@@ -152,17 +153,19 @@ export default function ResultsSummary({
       </div>
       <textarea className="all-links-output" value={indexCoordinateRows} readOnly aria-label="Все ACTIVE индексы и координаты" />
 
-      <div className="results-summary-heading results-summary-subheading">
-        <div><p className="section-kicker">Картография</p><h2>Экспорт ACTIVE-точек</h2></div>
-      </div>
-      <p className="setting-helper">Доступно точек: {exportablePointCount}. GPX, KML и GeoJSON используют только текущие ACTIVE данные.</p>
-      <div className="all-links-actions result-export-actions coordinate-export-actions">
-        <button type="button" onClick={shareSessionCoordinates} disabled={!exportablePointCount}><Icon name="share" size={18} /> Поделиться сессией</button>
-        <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('gpx')} disabled={!exportablePointCount}><Icon name="download" size={18} /> GPX</button>
-        <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('kml')} disabled={!exportablePointCount}><Icon name="download" size={18} /> KML</button>
-        <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('geojson')} disabled={!exportablePointCount}><Icon name="download" size={18} /> GeoJSON</button>
-      </div>
-      {geoExportStatus && <p className="copy-status" role="status">{geoExportStatus}</p>}
+      {showCoordinateExport && (<>
+        <div className="results-summary-heading results-summary-subheading">
+          <div><p className="section-kicker">Картография</p><h2>Экспорт ACTIVE-точек</h2></div>
+        </div>
+        <p className="setting-helper">Доступно точек: {exportablePointCount}. GPX, KML и GeoJSON используют только текущие ACTIVE данные.</p>
+        <div className="all-links-actions result-export-actions coordinate-export-actions">
+          <button type="button" onClick={shareSessionCoordinates} disabled={!exportablePointCount}><Icon name="share" size={18} /> Поделиться сессией</button>
+          <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('gpx')} disabled={!exportablePointCount}><Icon name="download" size={18} /> GPX</button>
+          <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('kml')} disabled={!exportablePointCount}><Icon name="download" size={18} /> KML</button>
+          <button type="button" className="button-secondary" onClick={() => downloadCoordinateFile('geojson')} disabled={!exportablePointCount}><Icon name="download" size={18} /> GeoJSON</button>
+        </div>
+        {geoExportStatus && <p className="copy-status" role="status">{geoExportStatus}</p>}
+      </>)}
 
       <div className="results-summary-heading results-summary-subheading">
         <div><p className="section-kicker">Экспорт</p><h2>Готовый текст по ACTIVE фотографиям</h2></div>

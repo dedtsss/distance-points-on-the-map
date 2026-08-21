@@ -106,8 +106,9 @@ try {
     await page.getByText('RESERVE').first().waitFor();
     await assertLayout(page, `${viewport.width}px reserve`);
 
-    await openMobileScreen(page, 'Обработать фотографии · Загрузка и проверка');
-    await page.getByRole('heading', { name: 'Мастер обработки фотографий' }).waitFor();
+    await openMobileScreen(page, 'Обработка фото');
+    await page.getByRole('heading', { name: 'Command Desk' }).waitFor();
+    await page.locator('.processing-stepper').getByText('Фотографии', { exact: true }).click();
     await page.getByRole('button', { name: 'Выбрать папку', exact: true }).waitFor();
     await assertLayout(page, `${viewport.width}px wizard`);
 

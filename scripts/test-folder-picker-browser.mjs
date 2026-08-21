@@ -20,14 +20,14 @@ const noHorizontalScroll = async (page) => page.evaluate(() => (
 const summaryText = (page) => page.locator('.folder-import-summary').innerText();
 
 const openUploadScreen = async (page) => {
-  const desktopNav = page.locator('.sidebar-shell').getByRole('button', { name: 'Загрузка и проверка' });
+  const desktopNav = page.locator('.sidebar-shell').getByRole('button', { name: 'Обработка фото' });
   if ((await desktopNav.count()) && await desktopNav.first().isVisible()) {
     await desktopNav.click();
   } else {
     await page.getByRole('button', { name: 'Открыть меню' }).click();
-    await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Загрузка и проверка' }).click();
+    await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Обработка фото' }).click();
   }
-  await visible(page.getByRole('heading', { name: 'Новая проверка фотографий' }), 'upload screen');
+  await visible(page.getByRole('heading', { name: 'Command Desk' }), 'processing screen');
 };
 
 const desktopNav = (page, label) => page.locator('.sidebar-shell').getByRole('button', { name: label });
@@ -108,8 +108,7 @@ try {
     path.join(fixture.folder, 'photo2.jpg'),
   ]);
   await assertImportEvent(page, 'files', 2);
-  await visible(page.getByText('photo10.jpg').first(), 'ordinary selected file');
-  await visible(page.getByText('photo2.jpg').first(), 'ordinary selected file 2');
+  await visible(page.getByText('2 принято'), 'ordinary selected file count');
 
   await page.locator('input[aria-label="Выбрать папку с фотографиями"]').setInputFiles(fixture.folder);
   const fallbackEvent = await assertImportEvent(page, 'folder', 3);
@@ -126,7 +125,6 @@ try {
   assert.match(fallbackSummary, /Вложенных папок\s+1/);
   assert.match(fallbackSummary, /неподдерживаемый формат\s+1/);
   assert.match(fallbackSummary, /пустой файл\s+1/);
-  await visible(page.getByText('GPS object 15/nested/photo1.png'), 'nested relative path');
   assert.equal(await noHorizontalScroll(page), true, 'desktop horizontal scroll');
   await page.waitForFunction((key) => {
     const session = JSON.parse(localStorage.getItem(key) || 'null');
@@ -139,7 +137,6 @@ try {
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Восстановить' }).click();
   await visible(page.getByText('без доступа к локальной папке'), 'restored folder access notice');
-  await visible(page.getByText('GPS object 15/nested/photo1.png'), 'restored relative path');
   await desktopNav(page, 'Результаты').click();
   await visible(page.getByRole('heading', { name: 'Сводка текущей проверки' }), 'results after folder restore');
   await desktopNav(page, 'Карта').click();

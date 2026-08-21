@@ -190,8 +190,9 @@ try {
   await visible(page.getByText('0123').first(), 'four-digit index');
   await visible(page.getByText('12345').first(), 'five-digit index');
 
-  await nav('Загрузка и проверка').click();
-  await visible(page.getByRole('heading', { name: 'Новая проверка фотографий' }), 'upload screen');
+  await nav('Обработка фото').click();
+  await visible(page.getByRole('heading', { name: 'Command Desk' }), 'processing screen');
+  await visible(page.locator('.processing-stepper').getByText('Результат', { exact: true }), 'processing result step');
 
   await nav('Результаты').click();
   await visible(page.getByRole('heading', { name: 'Сводка текущей проверки' }), 'results screen');
