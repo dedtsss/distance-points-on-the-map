@@ -39,6 +39,8 @@ jobs:
     steps:
       - name: Checkout test branch
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Confirm isolated deployment configuration
         run: |
