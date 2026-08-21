@@ -1756,6 +1756,13 @@ tbody th,
 
 /* Command Desk v1 · deep Processing workflow */
 .processing-workflow { display: grid; gap: 16px; min-width: 0; }
+.processing-mobile-stepper { display: none; }
+.processing-selected-files { display: grid; max-height: 240px; overflow: auto; margin-top: 10px; border: 1px solid var(--color-outline); border-radius: var(--radius-small); }
+.processing-selected-files > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-top: 1px solid var(--color-outline); }
+.processing-selected-files > div:first-child { border-top: 0; }
+.processing-selected-files span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.processing-selected-files small { color: var(--text-secondary); }
+
 .processing-header { padding: 4px 2px 0; }
 .processing-header h1 { margin: 2px 0 4px; font-size: clamp(24px, 3vw, 30px); }
 .processing-header p:last-child { margin: 0; color: var(--text-secondary); }
@@ -1819,6 +1826,9 @@ tbody th,
 .photo-dossier-links h3 { margin: 0; }
 
 @media (max-width: 860px) {
+  .processing-stepper { display: none !important; }
+  .processing-mobile-stepper { display: grid; gap: 7px; padding: 10px 12px; border: 1px solid var(--color-outline); border-radius: var(--radius-small); background: var(--color-surface); }
+  .processing-mobile-stepper select { width: 100%; min-height: 40px; }
   .processing-stepper { grid-template-columns: 1fr; }
   .processing-stepper button { min-height: 44px; }
   .processing-stepper button strong { white-space: normal; }
@@ -1852,4 +1862,4 @@ tbody th,
 .processing-stepper.ant-steps .ant-steps-item-description { color: var(--color-warning) !important; }
 .processing-stepper.ant-steps .ant-steps-item-icon { background: var(--color-surface-container); border-color: var(--color-outline-strong); }
 .processing-stepper.ant-steps .ant-steps-item-finish .ant-steps-item-icon { border-color: var(--color-success); }
-@media (max-width: 860px) { .processing-stepper.ant-steps { display: grid; } .processing-stepper.ant-steps .ant-steps-item { padding-inline-start: 0 !important; } }
+@media (max-width: 860px) { .processing-stepper.ant-steps { display: none !important; } .processing-stepper.ant-steps .ant-steps-item { padding-inline-start: 0 !important; } }

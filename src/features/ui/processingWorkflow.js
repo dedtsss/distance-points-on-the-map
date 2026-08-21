@@ -8,36 +8,43 @@ export const PROCESSING_STEPS = Object.freeze([
 
 export const PROCESSING_STEP_IDS = Object.freeze(PROCESSING_STEPS.map((step) => step.id));
 
-const recognized = (photo) => (
-  photo?.gpsStatus && !['idle', 'processing'].includes(photo.gpsStatus)
-) || (photo?.ocrStatus && !['idle', 'processing'].includes(photo.ocrStatus))
-  || Boolean(photo?.coordinates)
-  || Number(photo?.ocrAttemptCount) > 0;
-
-const active = (photo) => !['reserve'].includes(String(photo?.workStatus || photo?.disposition || '').toLowerCase());
+const reserve = (photo) => String(photo?.workStatus || photo?.disposition || '').toLowerCase() === 'reserve';
+const active = (photo) => !reserve(photo);
+const validCoordinates = (photo) => Number.isFinite(Number(photo?.coordinates?.latitude)) && Number.isFinite(Number(photo?.coordinates?.longitude));
+const validIndex = (photo) => Boolean(String(photo?.indexFromOcr || '').trim());
+const recognitionReady = (photo) => {
+  if (reserve(photo)) return true;
+  if (!validCoordinates(photo) || !validIndex(photo)) return false;
+  if (['failed', 'error', 'missing'].includes(String(photo?.gpsStatus || '').toLowerCase())) return false;
+  if (['failed', 'error', 'missing'].includes(String(photo?.ocrStatus || '').toLowerCase()) && photo?.indexStatus !== 'manual' && !photo?.manualCoordinates) return false;
+  return true;
+};
+const cleanupReady = (photo) => photo?.cleanupStatus === 'done';
+const uploadReady = (photo) => photo?.uploadStatus === 'done' && (photo?.uploadResult?.links || []).length > 0;
 
 export function deriveProcessingReadiness(photos = []) {
   const all = Array.isArray(photos) ? photos : [];
   const stable = all.filter((photo) => Boolean(photo?.stableFile || photo?.stableBlob || photo?.sourceBuffer));
-  const recognizedPhotos = all.filter(recognized);
+  const recognizedPhotos = all.filter(recognitionReady);
   const activePhotos = all.filter(active);
-  const cleanupSettled = activePhotos.filter((photo) => ['done', 'failed', 'skipped'].includes(photo?.cleanupStatus));
-  const uploadSettled = activePhotos.filter((photo) => ['done', 'failed', 'skipped'].includes(photo?.uploadStatus) || Boolean(photo?.uploadResult));
+  const cleaned = activePhotos.filter(cleanupReady);
+  const uploaded = activePhotos.filter(uploadReady);
   const links = activePhotos.filter((photo) => (photo?.uploadResult?.links || []).length > 0);
   return {
     photos: stable.length > 0,
     recognition: all.length > 0 && recognizedPhotos.length === all.length,
-    map: all.length > 0 && recognizedPhotos.length === all.length,
-    upload: activePhotos.length > 0 && cleanupSettled.length === activePhotos.length && uploadSettled.length === activePhotos.length,
-    result: activePhotos.length > 0 && links.length > 0,
+    canEnterMap: all.length > 0 && recognizedPhotos.length === all.length,
+    map: false,
+    upload: activePhotos.length > 0 && cleaned.length === activePhotos.length && uploaded.length === activePhotos.length,
+    result: activePhotos.length > 0 && uploaded.length === activePhotos.length,
     counts: {
       total: all.length,
       stable: stable.length,
       recognized: recognizedPhotos.length,
-      attention: all.filter((photo) => !photo?.coordinates || ['low_precision', 'suspicious'].includes(photo?.coordinateQuality) || Boolean(photo?.userError)).length,
+      attention: all.filter((photo) => !recognitionReady(photo) || ['low_precision', 'suspicious'].includes(photo?.coordinateQuality) || Boolean(photo?.userError)).length,
       active: activePhotos.length,
-      cleaned: cleanupSettled.length,
-      uploaded: uploadSettled.length,
+      cleaned: cleaned.length,
+      uploaded: uploaded.length,
       links: links.length,
     },
   };
@@ -49,6 +56,8 @@ export function canEnterProcessingStep(stepId, readiness, completed = []) {
   if (index === 0) return true;
   if ((completed || []).includes(stepId)) return true;
   const previous = PROCESSING_STEP_IDS[index - 1];
+  if ((completed || []).includes(previous)) return true;
+  if (stepId === 'map') return Boolean(readiness?.canEnterMap ?? readiness?.recognition);
   return Boolean(readiness?.[previous]);
 }
 
@@ -61,8 +70,13 @@ export function nextProcessingStep(stepId) {
   return index >= 0 && index < PROCESSING_STEP_IDS.length - 1 ? PROCESSING_STEP_IDS[index + 1] : null;
 }
 
-export function createProcessingWorkflowState(step = 'photos') {
-  return { current: PROCESSING_STEP_IDS.includes(step) ? step : 'photos', completed: [], stale: [] };
+export function createProcessingWorkflowState(step = 'photos', persisted = null) {
+  const source = persisted && typeof persisted === 'object' ? persisted : {};
+  return {
+    current: PROCESSING_STEP_IDS.includes(source.current) ? source.current : (PROCESSING_STEP_IDS.includes(step) ? step : 'photos'),
+    completed: Array.isArray(source.completed) ? source.completed.filter((id) => PROCESSING_STEP_IDS.includes(id)) : [],
+    stale: Array.isArray(source.stale) ? source.stale.filter((id) => PROCESSING_STEP_IDS.includes(id)) : [],
+  };
 }
 
 export function completeProcessingStep(state, stepId) {

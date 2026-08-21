@@ -108,7 +108,8 @@ try {
 
     await openMobileScreen(page, 'Обработка фото');
     await page.getByRole('heading', { name: 'Command Desk' }).waitFor();
-    await page.locator('.processing-stepper').getByText('Фотографии', { exact: true }).click();
+    await page.locator('.processing-mobile-stepper').waitFor();
+    await page.locator('.processing-mobile-stepper select').selectOption({ label: 'Фотографии' });
     await page.getByRole('button', { name: 'Выбрать папку', exact: true }).waitFor();
     await assertLayout(page, `${viewport.width}px wizard`);
 

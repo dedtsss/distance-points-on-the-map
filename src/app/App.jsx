@@ -386,6 +386,8 @@ export default function App() {
       processingSettings,
       thresholdMeters,
       activeScreen,
+      stage: sessionMeta.stage,
+      processingWorkflow: sessionMeta.processingWorkflow,
       regionMode,
       mapLayerId,
     });
