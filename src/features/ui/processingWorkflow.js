@@ -50,12 +50,13 @@ export function deriveProcessingReadiness(photos = []) {
   };
 }
 
-export function canEnterProcessingStep(stepId, readiness, completed = []) {
+export function canEnterProcessingStep(stepId, readiness, completed = [], stale = []) {
   const index = PROCESSING_STEP_IDS.indexOf(stepId);
   if (index < 0) return false;
   if (index === 0) return true;
   if ((completed || []).includes(stepId)) return true;
   const previous = PROCESSING_STEP_IDS[index - 1];
+  if ((stale || []).includes(previous)) return false;
   if ((completed || []).includes(previous)) return true;
   if (stepId === 'map') return Boolean(readiness?.canEnterMap ?? readiness?.recognition);
   return Boolean(readiness?.[previous]);
@@ -86,8 +87,21 @@ export function completeProcessingStep(state, stepId) {
 }
 
 export function moveProcessingStep(state, stepId, readiness) {
-  if (!canEnterProcessingStep(stepId, readiness, state?.completed)) return state;
+  if (!canEnterProcessingStep(stepId, readiness, state?.completed, state?.stale)) return state;
   return { ...state, current: stepId };
+}
+
+
+export function invalidateProcessingFrom(state, sourceStep) {
+  const index = PROCESSING_STEP_IDS.indexOf(sourceStep);
+  if (index < 0) return state;
+  const affected = PROCESSING_STEP_IDS.slice(index);
+  return {
+    ...state,
+    stale: [...new Set([...(state?.stale || []), ...affected])],
+    completed: (state?.completed || []).filter((id) => !affected.includes(id)),
+    current: affected.includes(state?.current) ? sourceStep : state?.current,
+  };
 }
 
 export function invalidateProcessingAfter(state, sourceStep) {

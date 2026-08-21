@@ -7,6 +7,7 @@ import {
   createProcessingWorkflowState,
   deriveProcessingReadiness,
   invalidateProcessingAfter,
+  invalidateProcessingFrom,
   moveProcessingStep,
   nextProcessingStep,
 } from '../src/features/ui/processingWorkflow.js';
@@ -78,4 +79,47 @@ assert.equal(failedCleanup.upload, false, 'failed cleanup is settled but not rea
 const skippedUpload = deriveProcessingReadiness([{ ...done[0], uploadStatus: 'skipped' }]);
 assert.equal(skippedUpload.upload, false, 'skipped upload is settled but not ready');
 assert.equal(skippedUpload.result, false);
+
+
+// completed workflow -> recognition rerun -> failure: downstream must be stale/gated
+let completedWorkflow = createProcessingWorkflowState('recognition', {
+  current: 'recognition',
+  completed: ['photos', 'recognition', 'map', 'upload', 'result'],
+  stale: [],
+});
+completedWorkflow = invalidateProcessingFrom(completedWorkflow, 'recognition');
+assert.deepEqual(completedWorkflow.completed, ['photos']);
+assert.deepEqual(completedWorkflow.stale, ['recognition', 'map', 'upload', 'result']);
+const recognitionFailure = deriveProcessingReadiness([{ ...recognized[0], ocrStatus: 'failed', indexFromOcr: '' }]);
+assert.equal(canEnterProcessingStep('map', recognitionFailure, completedWorkflow.completed, completedWorkflow.stale), false, 'failed recognition rerun must gate stale Map');
+assert.equal(canEnterProcessingStep('upload', recognitionFailure, completedWorkflow.completed, completedWorkflow.stale), false, 'failed recognition rerun must gate stale Upload');
+assert.equal(canEnterProcessingStep('result', recognitionFailure, completedWorkflow.completed, completedWorkflow.stale), false, 'failed recognition rerun must gate stale Result');
+
+// completed upload/result -> upload retry failure: old result must be stale and not current
+let uploadRetryWorkflow = createProcessingWorkflowState('upload', {
+  current: 'upload',
+  completed: ['photos', 'recognition', 'map', 'upload', 'result'],
+  stale: [],
+});
+uploadRetryWorkflow = invalidateProcessingFrom(uploadRetryWorkflow, 'upload');
+assert.deepEqual(uploadRetryWorkflow.completed, ['photos', 'recognition', 'map']);
+assert.deepEqual(uploadRetryWorkflow.stale, ['upload', 'result']);
+assert.equal(uploadRetryWorkflow.current, 'upload');
+const uploadRetryFailure = deriveProcessingReadiness([{ ...done[0], uploadStatus: 'failed', uploadResult: { links: [] } }]);
+assert.equal(uploadRetryFailure.result, false);
+assert.equal(canEnterProcessingStep('result', uploadRetryFailure, uploadRetryWorkflow.completed, uploadRetryWorkflow.stale), false, 'failed upload retry must not reopen stale Result');
+
+// confirmed map -> threshold change: Map and dependents must all become stale and current returns to Map
+let thresholdWorkflow = createProcessingWorkflowState('result', {
+  current: 'result',
+  completed: ['photos', 'recognition', 'map', 'upload', 'result'],
+  stale: [],
+});
+thresholdWorkflow = invalidateProcessingFrom(thresholdWorkflow, 'map');
+assert.deepEqual(thresholdWorkflow.completed, ['photos', 'recognition']);
+assert.deepEqual(thresholdWorkflow.stale, ['map', 'upload', 'result']);
+assert.equal(thresholdWorkflow.current, 'map');
+assert.equal(canEnterProcessingStep('upload', deriveProcessingReadiness(done), thresholdWorkflow.completed, thresholdWorkflow.stale), false, 'threshold change must gate Upload until Map is reconfirmed');
+assert.equal(canEnterProcessingStep('result', deriveProcessingReadiness(done), thresholdWorkflow.completed, thresholdWorkflow.stale), false, 'threshold change must gate Result until Map/upload are reconfirmed');
+
 console.log('Processing workflow tests passed');

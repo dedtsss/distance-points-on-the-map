@@ -35,6 +35,7 @@ import {
 import { findLocalSessionsForD1Import, importLocalSessionsToD1, isD1MigrationComplete } from '../features/session/sessionMigration.js';
 import { loadCrmSettings, saveCrmSettings } from '../features/settings/settingsStore.js';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService.js';
+import { invalidateProcessingFrom } from '../features/ui/processingWorkflow.js';
 import { bufferSelectedFiles } from '../features/files/stableFileStore.js';
 import {
   FOLDER_IMPORT_STATUSES,
@@ -879,6 +880,13 @@ export default function App() {
 
   const handleThresholdMetersChange = (value) => {
     const next = Math.max(1, Math.min(1000, Number(value) || DEFAULT_DISTANCE_THRESHOLD_METERS));
+    if (next !== thresholdMeters) {
+      setSessionMeta((current) => current ? {
+        ...current,
+        processingWorkflow: invalidateProcessingFrom(current.processingWorkflow || {}, 'map'),
+        stage: 'processing',
+      } : current);
+    }
     setThresholdMeters(next);
     setCrmSettings(saveCrmSettings({ ...crmSettings, ...processingSettings, distanceThresholdMeters: next, mapLayerId }));
     setPhotos((current) => {
