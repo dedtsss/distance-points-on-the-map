@@ -132,8 +132,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p live-evidence
-          ROOT_CODE="$(curl -sS --retry 5 --retry-all-errors --retry-delay 3 -o /dev/null -w '%{http_code}' "$PILOT_URL/")"
-          case "$ROOT_CODE" in 2*) ;; *) echo "GET / failed with $ROOT_CODE"; exit 1;; esac
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 "$PILOT_URL/" -o /dev/null
+          echo 'GET / -> 2xx verified'
           curl --fail --retry 5 --retry-all-errors --retry-delay 3 "$PILOT_URL/api/sessions" > live-evidence/sessions.json
           node -e "const p=require('./live-evidence/sessions.json'); if(!p.ok||!Array.isArray(p.sessions)||!Number.isInteger(p.nextSessionNumber)) throw new Error('unexpected D1-backed /api/sessions payload'); console.log('GET /api/sessions isolated D1 payload verified');"
           PILOT_URL="$PILOT_URL" node --input-type=module <<'NODE'
