@@ -712,7 +712,7 @@ export default function App() {
   };
 
   const handleRun = async (stages, label) => {
-    if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return;
+    if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return { ok: false, skipped: true, photos };
     const automaticFullRun = stages.gps && stages.cleanup && stages.upload;
     const cleanupEnabled = stages.cleanup && (!automaticFullRun || processingSettings.metadataCleanup !== false);
     const effectiveStages = {
@@ -758,11 +758,13 @@ export default function App() {
       if (!persistence.remote) setErrors((current) => [...new Set([...current, 'Обработка завершена, но результат не синхронизирован с сервером.'])]);
       setMode('done');
       addLog(`${label}: завершено`, 'success');
+      return { ok: true, photos: result.photos, stages: effectiveStages };
     } catch (error) {
       setErrors(['Не удалось завершить обработку. Повторно выберите фотографии и попробуйте ещё раз.']);
       setMode('ready');
       addLog(`${label}: ошибка`, 'error');
       if (debugMode) console.error(error);
+      return { ok: false, error, photos: photosRef.current, stages: effectiveStages };
     } finally {
       setActiveSince(null);
     }
@@ -964,9 +966,10 @@ export default function App() {
     });
   };
 
-  const handleSaveCurrentSession = async () => {
+  const handleSaveCurrentSession = async (processingWorkflow = currentSession?.processingWorkflow) => {
     const persistence = await persistSessionRecord({
       ...currentSession,
+      processingWorkflow,
       stage: 'result',
       activeScreen: 'upload',
       photos,

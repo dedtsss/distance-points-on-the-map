@@ -47,7 +47,7 @@
     "test:image-hosts:cloudflare": "node scripts/image-host-lab/test-cloudflare-egress.mjs",
     "test:image-hosts:ninjabox": "node scripts/image-host-lab/test-ninjabox.mjs",
     "test:image-hosts:rulook": "node scripts/image-host-lab/test-rulook.mjs",
-    "test:processing-workflow": "node scripts/test-processing-workflow.mjs"
+    "test:processing-workflow": "node scripts/test-processing-workflow.mjs && node scripts/test-processing-workflow-browser.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "4.3.1",
