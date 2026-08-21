@@ -12,6 +12,7 @@ export default function AppShell({
   isBusy = false,
   children,
   footer,
+  visualVariant = null,
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -26,7 +27,7 @@ export default function AppShell({
   }, [mobileMenuOpen]);
 
   return (
-    <main className={`app-frame${sidebarCollapsed ? ' has-rail' : ''}`}>
+    <main className={`app-frame${sidebarCollapsed ? ' has-rail' : ''}${visualVariant === 'light' ? ' visual-variant-light' : ''}`} data-visual-variant={visualVariant || undefined}>
       <aside className="sidebar-shell" aria-label="Основная навигация">
         <div className="sidebar-brand">
           <span className="brand-symbol" aria-hidden="true">

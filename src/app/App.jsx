@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/AppShell.jsx';
+import { createProcessingComparisonPhotos, processingComparisonFromLocation } from '../features/ui/processingComparison.js';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Dashboard from '../components/Dashboard.jsx';
 import EmptyState from '../components/EmptyState.jsx';
@@ -127,8 +128,10 @@ function MapScreen({
 }
 
 export default function App() {
+  const comparisonVariant = useMemo(processingComparisonFromLocation, []);
+  const comparisonMode = Boolean(comparisonVariant);
   const [crmSettings, setCrmSettings] = useState(() => loadCrmSettings());
-  const [photos, setPhotos] = useState([]);
+  const [photos, setPhotos] = useState(() => comparisonMode ? createProcessingComparisonPhotos() : []);
   const [errors, setErrors] = useState([]);
   const [mode, setMode] = useState('idle');
   const [folderImport, setFolderImport] = useState({ status: FOLDER_IMPORT_STATUSES.IDLE, report: null, error: '' });
@@ -147,13 +150,13 @@ export default function App() {
     metadataFirst: crmSettings.metadataFirst,
   }));
   const [mapLayerId, setMapLayerId] = useState(() => crmSettings.mapLayerId || 'hybrid');
-  const [activeScreen, setActiveScreen] = useState(DEFAULT_SCREEN);
+  const [activeScreen, setActiveScreen] = useState(() => comparisonMode ? 'upload' : DEFAULT_SCREEN);
   const [mapFocusPhotoId, setMapFocusPhotoId] = useState(null);
   const [journal, setJournal] = useState([]);
   const [activeSince, setActiveSince] = useState(null);
   const [sessionDiagnostics, setSessionDiagnostics] = useState(() => getSessionDiagnostics());
   const [storageDiagnostics, setStorageDiagnostics] = useState(() => sessionStorageDiagnostics());
-  const [remoteState, setRemoteState] = useState({ status: 'loading', error: '', unsynced: false });
+  const [remoteState, setRemoteState] = useState({ status: comparisonMode ? 'ready' : 'loading', error: '', unsynced: false });
   const [localMigration, setLocalMigration] = useState({ status: 'idle', candidates: [], imported: 0, error: '' });
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const folderImportAbortRef = useRef(null);
@@ -260,6 +263,9 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (comparisonMode) {
+      return undefined;
+    }
     let cancelled = false;
     const hydrateFromServer = async () => {
       try {
@@ -296,7 +302,7 @@ export default function App() {
     return () => { cancelled = true; };
   // Server hydration is intentionally performed once for the current browser context.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [comparisonMode]);
 
   const handleImportLocalSessions = async () => {
     if (localMigration.status === 'running' || localMigration.candidates.length === 0) return;
@@ -992,6 +998,7 @@ export default function App() {
       onScreenChange={navigate}
       photoCount={photos.length}
       isBusy={isBusy}
+      visualVariant={comparisonVariant}
       footer={(
         <footer className="app-footer">
           <p className="privacy-note">После успешной загрузки приложение очищает внутренний буфер. Исходные файлы на устройстве не удаляются.</p>
@@ -1019,7 +1026,7 @@ export default function App() {
         <aside className="notice notice-neutral" role="status">Перенос локальных сессий: {localMigration.imported} из {localMigration.candidates.length}…</aside>
       )}
       {localMigration.status === 'error' && <aside className="notice notice-warning" role="alert">{localMigration.error}</aside>}
-      <LastSessionPrompt session={savedSession} onRestore={handleRestore} onDelete={handleDeleteSaved} />
+      {!comparisonMode && <LastSessionPrompt session={savedSession} onRestore={handleRestore} onDelete={handleDeleteSaved} />}
       {hasRestoredPhotos && (
         <aside className="notice notice-neutral">
           Восстановлен сохранённый результат без исходных файлов и без доступа к локальной папке. Для нового cleanup или upload выберите фотографии заново.
@@ -1069,6 +1076,7 @@ export default function App() {
           onApplyRecommendation={handleApplyRecommendation}
           onClearResult={() => setConfirmClearOpen(true)}
           onSaveSession={handleSaveCurrentSession}
+          comparisonVariant={comparisonVariant}
         />
       )}
 
