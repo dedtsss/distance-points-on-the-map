@@ -27,7 +27,7 @@ const openUploadScreen = async (page) => {
     await page.getByRole('button', { name: 'Открыть меню' }).click();
     await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Обработка фото' }).click();
   }
-  await visible(page.getByRole('heading', { name: 'Command Desk' }), 'processing screen');
+  await visible(page.getByRole('heading', { name: 'Проверка фотографий' }), 'processing screen');
 };
 
 const desktopNav = (page, label) => page.locator('.sidebar-shell').getByRole('button', { name: label });

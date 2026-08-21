@@ -1,5 +1,9 @@
 # Dark Cat CRM — Command Desk Design Standard
 
+Dark Cat CRM inherits the shared Bruce UI Standard v2 for internal operational web panels. This document remains the product-specific visual contract: it records the chosen Dark Command Desk family and only the justified overrides below; `docs/UX_CONTRACT.md` remains authoritative for product behavior and workflow.
+
+Project-specific overrides: the existing five-step photo/GPS/map workflow, Leaflet map imagery, and ACTIVE/RESERVE vocabulary are retained because they are product mechanics, not shared-panel IA. The app uses the existing React/Ant implementation profile without introducing a component registry or a light-theme comparison mode.
+
 This file is normative for implementation. It describes the accepted Command Desk visual system, not a mood board.
 
 ## Palette and surfaces
