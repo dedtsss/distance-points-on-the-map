@@ -66,13 +66,12 @@
   border-radius: var(--radius-medium);
   padding: 12px;
   background: var(--color-surface-container);
-  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+  transition: border-color .18s ease, background-color .18s ease;
 }
 
 .photo-result-block.is-copied {
   border-color: var(--color-success);
   background: color-mix(in srgb, var(--color-success-container), var(--color-surface-container) 35%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success), transparent 55%);
 }
 
 .photo-result-block-heading {

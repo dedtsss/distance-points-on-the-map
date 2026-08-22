@@ -21,6 +21,8 @@ Use the existing dark graphite/navy tokens as the base. Recommended semantic map
 
 Purple is not a decorative accent. No decorative gradients, glassmorphism, glow, AI-orb, neon/sci-fi/cyberpunk effects. Functional map tiles are outside this prohibition; application chrome stays flat.
 
+Conformance notes: selection and status markers use crisp outlines rather than glow. Shadows remain only on floating dialogs/drawers and the map label, where they separate an overlay from content. The photo viewer's checkerboard is a functional transparency cue; the Leaflet tile filter applies to map imagery, not application chrome. All UI transitions and the loading spinner have reduced-motion behaviour; loading retains its static ring and text label when motion is reduced.
+
 ## Typography
 
 System UI stack. Working hierarchy:

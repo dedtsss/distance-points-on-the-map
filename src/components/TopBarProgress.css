@@ -63,8 +63,7 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-info));
-    box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary), transparent 36%);
+    background: var(--color-primary);
     transition: width .2s ease;
   }
 }
