@@ -14,7 +14,6 @@ const makePhoto = (number, overrides = {}) => ({
   ...overrides,
 });
 const initialPhotos = Array.from({length: scenario.startsWith('pagination') ? 101 : 2}, (_, index) => makePhoto(index + 1));
-const [photos, setPhotos] = React.useState(initialPhotos);
 const workflow = scenario==='threshold-stale'
   ? {current:'map',completed:['photos','recognition'],stale:['map','upload','result']}
   : scenario==='recognition-failure'
@@ -27,17 +26,22 @@ const workflow = scenario==='threshold-stale'
 const session={sessionId:'harness',sessionNumber:49,processingWorkflow:workflow};
 const updates=[];
 window.__workflowHarness={updates,saved:null};
-window.__workflowHarness.shrink = () => setPhotos((current) => current.map((photo, index) => scenario === 'pagination-recognition'
-  ? {...photo, ocrStatus: index < 2 ? 'failed' : 'manual', indexFromOcr: index < 2 ? '' : String(100 + photo.number)}
-  : {...photo, uploadStatus: index < 2 ? 'failed' : 'done', uploadResult: index < 2 ? {links: []} : photo.uploadResult}
-));
-const onRun=async()=> scenario==='recognition-failure' ? {ok:false,photos} : {ok:true,photos};
 const onSessionChange=(patch)=>{updates.push(patch);window.__workflowHarness.latest=patch.processingWorkflow;};
 const onSaveSession=async(next)=>{window.__workflowHarness.saved=next;return {remote:true};};
 
-createRoot(document.getElementById('root')).render(<ProcessingWorkflow
-  photos={photos} session={session} mode="done" errors={[]} providerValidation={{valid:true,error:''}}
-  providerSettings={{ninjabox:true}} thresholdMeters={30} mapLayerId="osm" recommendation={{conflictCount:0}}
-  folderImport={{status:'idle',report:null}} isBusy={false} onSessionChange={onSessionChange} onRun={onRun}
-  onSaveSession={onSaveSession} onMapLayerChange={()=>{}} onToggleReserve={()=>{}} onApplyRecommendation={()=>{}}
-/>);
+function WorkflowHarness() {
+  const [photos, setPhotos] = React.useState(initialPhotos);
+  const onRun=async()=> scenario==='recognition-failure' ? {ok:false,photos} : {ok:true,photos};
+  window.__workflowHarness.shrink = () => setPhotos((current) => current.map((photo, index) => scenario === 'pagination-recognition'
+    ? {...photo, ocrStatus: index < 2 ? 'failed' : 'manual', indexFromOcr: index < 2 ? '' : String(100 + photo.number)}
+    : {...photo, uploadStatus: index < 2 ? 'failed' : 'done', uploadResult: index < 2 ? {links: []} : photo.uploadResult}
+  ));
+  return <ProcessingWorkflow
+    photos={photos} session={session} mode="done" errors={[]} providerValidation={{valid:true,error:''}}
+    providerSettings={{ninjabox:true}} thresholdMeters={30} mapLayerId="osm" recommendation={{conflictCount:0}}
+    folderImport={{status:'idle',report:null}} isBusy={false} onSessionChange={onSessionChange} onRun={onRun}
+    onSaveSession={onSaveSession} onMapLayerChange={()=>{}} onToggleReserve={()=>{}} onApplyRecommendation={()=>{}}
+  />;
+}
+
+createRoot(document.getElementById('root')).render(<WorkflowHarness />);
