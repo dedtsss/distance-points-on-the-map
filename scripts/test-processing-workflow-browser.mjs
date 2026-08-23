@@ -50,18 +50,18 @@ try {
   // Pagination regression: changing the backing recognition state must clamp a page
   // that was valid for the previous >50-row set.
   page=await open('pagination-recognition');
-  await page.getByRole('button',{name:'Далее'}).click();
+  await page.getByRole('button',{name:'Далее', exact:true}).click();
   await page.evaluate(()=>window.__workflowHarness.shrink());
   await page.waitForFunction(()=>document.querySelectorAll('.processing-row').length === 2);
-  assert.match(await page.locator('.processing-pagination').textContent(),/Показано 1–2 из 2/);
+  assert.equal(await page.locator('.processing-pagination').count(), 0, 'recognition pagination hides after shrinking below page size');
   await page.close();
 
   // The same invariant applies to upload rows after failures/filtering reduce them.
   page=await open('pagination-upload');
-  await page.getByRole('button',{name:'Далее'}).click();
+  await page.getByRole('button',{name:'Далее', exact:true}).click();
   await page.evaluate(()=>window.__workflowHarness.shrink());
   await page.waitForFunction(()=>document.querySelectorAll('.processing-upload-row').length === 2);
-  assert.match(await page.locator('.processing-pagination').textContent(),/Показано 1–2 из 2/);
+  assert.equal(await page.locator('.processing-pagination').count(), 0, 'upload pagination hides after shrinking below page size');
   await page.close();
 } finally {
   await browser.close();
