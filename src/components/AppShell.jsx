@@ -18,6 +18,7 @@ export default function AppShell({
   const menuButtonRef = useRef(null);
   const drawerRef = useRef(null);
   const mainContentRef = useRef(null);
+  const openedMenuRef = useRef(false);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -54,7 +55,10 @@ export default function AppShell({
       mainContentRef.current.removeAttribute('aria-hidden');
       mainContentRef.current.inert = false;
     }
-    menuButtonRef.current?.focus();
+    if (openedMenuRef.current) {
+      openedMenuRef.current = false;
+      menuButtonRef.current?.focus();
+    }
   }, [mobileMenuOpen]);
 
   return (
@@ -85,6 +89,7 @@ export default function AppShell({
           onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
           onMenuClick={() => {
             menuButtonRef.current = document.activeElement;
+            openedMenuRef.current = true;
             setMobileMenuOpen(true);
           }}
           menuButtonRef={menuButtonRef}
@@ -104,7 +109,7 @@ export default function AppShell({
         onClick={() => setMobileMenuOpen(false)}
         aria-hidden="true"
       />
-      <aside ref={drawerRef} className={`mobile-nav-drawer${mobileMenuOpen ? ' is-open' : ''}`} role="dialog" aria-modal="true" aria-label="Мобильное меню" aria-hidden={!mobileMenuOpen}>
+      <aside ref={drawerRef} className={`mobile-nav-drawer${mobileMenuOpen ? ' is-open' : ''}`} role="dialog" aria-modal="true" aria-label="Мобильное меню" aria-hidden={!mobileMenuOpen} inert={mobileMenuOpen ? undefined : ''}>
         <div className="drawer-heading">
           <div className="sidebar-brand">
             <span className="brand-symbol" aria-hidden="true">

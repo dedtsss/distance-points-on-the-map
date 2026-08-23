@@ -46,6 +46,23 @@ try {
   assert.equal(saved.current,'result');
   await page.waitForFunction(()=>!document.querySelector('.processing-stale'));
   await page.close();
+
+  // Pagination regression: changing the backing recognition state must clamp a page
+  // that was valid for the previous >50-row set.
+  page=await open('pagination-recognition');
+  await page.getByRole('button',{name:'Далее'}).click();
+  await page.evaluate(()=>window.__workflowHarness.shrink());
+  await page.waitForFunction(()=>document.querySelectorAll('.processing-row').length === 2);
+  assert.match(await page.locator('.processing-pagination').textContent(),/Показано 1–2 из 2/);
+  await page.close();
+
+  // The same invariant applies to upload rows after failures/filtering reduce them.
+  page=await open('pagination-upload');
+  await page.getByRole('button',{name:'Далее'}).click();
+  await page.evaluate(()=>window.__workflowHarness.shrink());
+  await page.waitForFunction(()=>document.querySelectorAll('.processing-upload-row').length === 2);
+  assert.match(await page.locator('.processing-pagination').textContent(),/Показано 1–2 из 2/);
+  await page.close();
 } finally {
   await browser.close();
   await server.close();

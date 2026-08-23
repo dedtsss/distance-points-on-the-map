@@ -87,6 +87,10 @@ try {
     }, { key: SESSION_REPOSITORY_KEY, session: fixtureSession });
     await page.goto(baseUrl, { waitUntil: 'networkidle' });
     await assertLayout(page, `${viewport.width}px dashboard`);
+    const menuButton = page.getByRole('button', { name: 'Открыть меню' });
+    await menuButton.focus();
+    await menuButton.press('Tab');
+    assert.equal(await page.locator('.mobile-nav-drawer').evaluate((drawer) => drawer.contains(document.activeElement)), false, 'closed drawer must not receive Tab focus');
 
     await openMobileScreen(page, 'Сессии');
     await page.getByRole('button', { name: 'Открыть', exact: true }).click();
