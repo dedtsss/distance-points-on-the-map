@@ -1,5 +1,9 @@
 # Dark Cat CRM — Command Desk Design Standard
 
+Dark Cat CRM inherits the shared Bruce UI Standard v2 for internal operational web panels. This document remains the product-specific visual contract: it records the chosen Dark Command Desk family and only the justified overrides below; `docs/UX_CONTRACT.md` remains authoritative for product behavior and workflow.
+
+Project-specific overrides: the existing five-step photo/GPS/map workflow, Leaflet map imagery, and ACTIVE/RESERVE vocabulary are retained because they are product mechanics, not shared-panel IA. The app uses the existing React/Ant implementation profile without introducing a component registry or a light-theme comparison mode.
+
 This file is normative for implementation. It describes the accepted Command Desk visual system, not a mood board.
 
 ## Palette and surfaces
@@ -16,6 +20,8 @@ Use the existing dark graphite/navy tokens as the base. Recommended semantic map
 - primary text near-white, secondary text cool gray with WCAG-readable contrast.
 
 Purple is not a decorative accent. No decorative gradients, glassmorphism, glow, AI-orb, neon/sci-fi/cyberpunk effects. Functional map tiles are outside this prohibition; application chrome stays flat.
+
+Conformance notes: selection and status markers use crisp outlines rather than glow. Shadows remain only on floating dialogs/drawers and the map label, where they separate an overlay from content. The photo viewer's checkerboard is a functional transparency cue; the Leaflet tile filter applies to map imagery, not application chrome. All UI transitions and the loading spinner have reduced-motion behaviour; loading retains its static ring and text label when motion is reduced.
 
 ## Typography
 

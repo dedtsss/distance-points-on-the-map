@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import TopBar from './TopBar.jsx';
 import Navigation from './Navigation.jsx';
 import Icon from './Icon.jsx';
@@ -15,14 +15,50 @@ export default function AppShell({
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const menuButtonRef = useRef(null);
+  const drawerRef = useRef(null);
+  const mainContentRef = useRef(null);
+  const openedMenuRef = useRef(false);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setMobileMenuOpen(false);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !drawerRef.current) return;
+      const focusable = [...drawerRef.current.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+        .filter((node) => !node.disabled && node.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKeyDown);
+    mainContentRef.current?.setAttribute('aria-hidden', 'true');
+    if (mainContentRef.current) mainContentRef.current.inert = true;
+    requestAnimationFrame(() => drawerRef.current?.querySelector('button')?.focus());
     return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    if (mobileMenuOpen) return;
+    if (mainContentRef.current) {
+      mainContentRef.current.removeAttribute('aria-hidden');
+      mainContentRef.current.inert = false;
+    }
+    if (openedMenuRef.current) {
+      openedMenuRef.current = false;
+      menuButtonRef.current?.focus();
+    }
   }, [mobileMenuOpen]);
 
   return (
@@ -44,28 +80,36 @@ export default function AppShell({
         </div>
       </aside>
 
-      <TopBar
-        photoCount={photoCount}
-        activeScreen={activeScreen}
-        isBusy={isBusy}
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
-        onMenuClick={() => setMobileMenuOpen(true)}
-      />
+      <div ref={mainContentRef} className="app-main-content">
+        <TopBar
+          photoCount={photoCount}
+          activeScreen={activeScreen}
+          isBusy={isBusy}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+          onMenuClick={() => {
+            menuButtonRef.current = document.activeElement;
+            openedMenuRef.current = true;
+            setMobileMenuOpen(true);
+          }}
+          menuButtonRef={menuButtonRef}
+          mobileMenuOpen={mobileMenuOpen}
+        />
 
-      <div className="app-layout">
-        <div className="screen-content">
-          {children}
+        <div className="app-layout">
+          <div className="screen-content">
+            {children}
+          </div>
         </div>
+        {footer}
       </div>
-      {footer}
 
       <div
         className={`mobile-nav-backdrop${mobileMenuOpen ? ' is-open' : ''}`}
         onClick={() => setMobileMenuOpen(false)}
         aria-hidden="true"
       />
-      <aside className={`mobile-nav-drawer${mobileMenuOpen ? ' is-open' : ''}`} aria-label="Мобильное меню">
+      <aside ref={drawerRef} className={`mobile-nav-drawer${mobileMenuOpen ? ' is-open' : ''}`} role="dialog" aria-modal="true" aria-label="Мобильное меню" aria-hidden={!mobileMenuOpen} inert={mobileMenuOpen ? undefined : ''}>
         <div className="drawer-heading">
           <div className="sidebar-brand">
             <span className="brand-symbol" aria-hidden="true">

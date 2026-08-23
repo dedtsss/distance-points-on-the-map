@@ -21,6 +21,8 @@ export default function TopBar({
   onMenuClick,
   sidebarCollapsed,
   onToggleSidebar,
+  menuButtonRef,
+  mobileMenuOpen,
 }) {
   const current = APP_SCREENS.find((screen) => screen.id === activeScreen);
   const entriesRef = useRef(new Map());
@@ -81,7 +83,7 @@ export default function TopBar({
   return (
     <header className={`top-app-bar${mobileProgress ? ' has-mobile-progress' : ''}`}>
       <div className="top-app-bar-main">
-        <button type="button" className="icon-button mobile-menu-button" onClick={onMenuClick} aria-label="Открыть меню">
+        <button ref={menuButtonRef} type="button" className="icon-button mobile-menu-button" onClick={onMenuClick} aria-label="Открыть меню" aria-haspopup="dialog" aria-expanded={mobileMenuOpen}>
           <Icon name="menu" />
         </button>
         <button
