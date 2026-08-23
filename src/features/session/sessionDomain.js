@@ -14,6 +14,17 @@ export const SESSION_STAGES = Object.freeze([
 
 const nowIso = () => new Date().toISOString();
 
+
+const normalizeProcessingWorkflow = (value) => {
+  if (!value || typeof value !== 'object') return undefined;
+  const allowed = ['photos', 'recognition', 'map', 'upload', 'result'];
+  return {
+    current: allowed.includes(value.current) ? value.current : 'photos',
+    completed: Array.isArray(value.completed) ? [...new Set(value.completed.filter((id) => allowed.includes(id)))] : [],
+    stale: Array.isArray(value.stale) ? [...new Set(value.stale.filter((id) => allowed.includes(id)))] : [],
+  };
+};
+
 const normalizeProcessingSettings = (value) => {
   if (!value || typeof value !== 'object') return undefined;
   return {
@@ -124,6 +135,7 @@ export function createSession(input = {}) {
     thresholdMeters: Math.max(1, Math.min(1000, Number(input.thresholdMeters) || 25)),
     providerSettings: input.providerSettings ? { ...input.providerSettings } : undefined,
     processingSettings: normalizeProcessingSettings(input.processingSettings),
+    processingWorkflow: normalizeProcessingWorkflow(input.processingWorkflow),
     regionMode: input.regionMode || 'auto',
     mapLayerId: input.mapLayerId || '',
     copiedPhotoIds: Array.isArray(input.copiedPhotoIds) ? [...new Set(input.copiedPhotoIds.map(String))] : [],

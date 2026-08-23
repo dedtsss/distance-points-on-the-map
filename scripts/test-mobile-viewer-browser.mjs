@@ -35,14 +35,18 @@ page.on('pageerror', (error) => pageErrors.push(error.message));
 try {
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Загрузка и проверка' }).click();
+  await page.locator('.mobile-nav-drawer').getByRole('button', { name: 'Обработка фото' }).click();
   await page.locator('input[aria-label="Выбрать фотографии для проверки"]').setInputFiles(photoPath);
+  await page.getByRole('button', { name: 'Далее: распознавание' }).click();
 
-  const openButton = page.getByRole('button', { name: 'Открыть фотографию 1 в просмотрщике' });
+  const dossierButton = page.getByRole('button', { name: 'Открыть досье' }).first();
+  await dossierButton.waitFor({ state: 'visible' });
+  await dossierButton.click();
+  const openButton = page.getByRole('button', { name: 'Открыть фото крупно' });
   await openButton.waitFor({ state: 'visible' });
   await openButton.click();
 
-  const dialog = page.getByRole('dialog');
+  const dialog = page.locator('.photo-viewer-dialog');
   await dialog.waitFor({ state: 'visible' });
   const dialogBox = await page.locator('.photo-viewer-dialog').boundingBox();
   assert.ok(dialogBox, 'viewer dialog should have a bounding box');

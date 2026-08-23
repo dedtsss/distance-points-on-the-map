@@ -80,7 +80,8 @@ const matchesFilter = (point, filter) => {
   if (filter === 'strict') return point.strict;
   if (filter === 'low_precision') return point.lowPrecision;
   if (filter === 'suspicious') return point.suspicious;
-  if (filter === 'conflicts') return point.distanceStatus === 'too_close';
+  if (filter === 'conflicts' || filter === 'problems') return point.distanceStatus === 'too_close';
+  if (filter === 'active') return !point.reserve;
   if (filter === 'reserve') return point.reserve;
   return true;
 };
@@ -95,6 +96,8 @@ export default function MapPanel({
   recommendation,
   onApplyRecommendation,
   onToggleReserve,
+  commandDeskMode = false,
+  onOpenDossier,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -112,12 +115,17 @@ export default function MapPanel({
     typeof window === 'undefined' ? true : !window.matchMedia('(max-width: 860px)').matches
   ));
   const [filter, setFilter] = useState('all');
+  const [problemSnapshot, setProblemSnapshot] = useState([]);
   const [selectedPointId, setSelectedPointId] = useState(focusPhotoId || null);
   const model = useMemo(() => buildMapModel(photos, thresholdMeters), [photos, thresholdMeters]);
   const activeMapLayer = useMemo(() => getMapLayerDefinition(mapLayerId), [mapLayerId]);
-  const filteredPoints = useMemo(() => (
-    model.points.filter((point) => matchesFilter(point, filter))
-  ), [filter, model.points]);
+  const filteredPoints = useMemo(() => {
+    if (commandDeskMode && filter === 'problems' && problemSnapshot.length) {
+      const ids = new Set(problemSnapshot);
+      return model.points.filter((point) => ids.has(point.id));
+    }
+    return model.points.filter((point) => matchesFilter(point, filter));
+  }, [commandDeskMode, filter, model.points, problemSnapshot]);
   const selectedPoint = model.points.find((point) => point.id === selectedPointId)
     || filteredPoints[0]
     || model.points[0]
@@ -146,7 +154,12 @@ export default function MapPanel({
     latitude: point.coordinates.latitude,
     longitude: point.coordinates.longitude,
   }))), [model.points]);
-  const filterOptions = [
+  const filterOptions = commandDeskMode ? [
+    { value: 'all', label: 'Все', count: model.points.length },
+    { value: 'problems', label: 'Проблемные', count: model.points.filter((point) => point.distanceStatus === 'too_close').length },
+    { value: 'active', label: 'ACTIVE', count: model.points.filter((point) => !point.reserve).length },
+    { value: 'reserve', label: 'RESERVE', count: model.points.filter((point) => point.reserve).length },
+  ] : [
     { value: 'all', label: 'Все', count: model.points.length },
     { value: 'strict', label: 'ОК', count: model.points.filter((point) => point.strict).length },
     { value: 'low_precision', label: 'Low precision', count: model.points.filter((point) => point.lowPrecision).length },
@@ -154,6 +167,10 @@ export default function MapPanel({
     { value: 'conflicts', label: 'Конфликты', count: model.points.filter((point) => point.distanceStatus === 'too_close').length },
     { value: 'reserve', label: 'RESERVE', count: model.points.filter((point) => point.reserve).length },
   ];
+  const handleFilterChange = (value) => {
+    if (commandDeskMode && value === 'problems') setProblemSnapshot(model.points.filter((point) => point.distanceStatus === 'too_close').map((point) => point.id));
+    setFilter(value);
+  };
 
   const fitToPoints = (points) => {
     const L = leafletRef.current;
@@ -420,7 +437,7 @@ export default function MapPanel({
               <Icon name="close" />
             </button>
           </div>
-          <FilterBar label="Фильтр точек" options={filterOptions} value={filter} onChange={setFilter} />
+          <FilterBar label="Фильтр точек" options={filterOptions} value={filter} onChange={handleFilterChange} />
           {selectedPoint && (
             <article className="selected-point-card">
               <h3>{selectedPoint.label}</h3>
@@ -440,11 +457,10 @@ export default function MapPanel({
                   ))}
                 </ul>
               )}
-              {onToggleReserve && (
-                <button type="button" className="button-secondary compact-button" onClick={() => onToggleReserve(selectedPoint.id, !selectedPoint.reserve)}>
-                  {selectedPoint.reserve ? 'Вернуть в ACTIVE' : 'В RESERVE'}
-                </button>
-              )}
+              <div className="selected-point-actions">
+                {onToggleReserve && <button type="button" className="button-secondary compact-button" onClick={() => onToggleReserve(selectedPoint.id, !selectedPoint.reserve)}>{selectedPoint.reserve ? 'Вернуть в ACTIVE' : 'В RESERVE'}</button>}
+                {commandDeskMode && onOpenDossier && <button type="button" className="button-secondary compact-button" onClick={() => onOpenDossier(selectedPoint.id)}>Открыть досье</button>}
+              </div>
             </article>
           )}
           <div className="point-list">

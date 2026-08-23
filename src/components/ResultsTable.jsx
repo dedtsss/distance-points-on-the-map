@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { photoLinksInRequestedOrder } from '../features/links/linkFormatter.js';
 import { indexDisplayText } from '../features/points/pointIdentity.js';
 import { formatCoordinates } from '../utils/format.js';
+import { statusLabel, statusTone } from '../utils/statusLabels.js';
 import StatusChip from './StatusChip.jsx';
 
 const distanceText = (photo) => {
@@ -58,8 +59,8 @@ export default function ResultsTable({
               <th>Индекс</th>
               <th>Координаты</th>
               <th>Качество</th>
-              <th>Расстояние/status</th>
-              <th>Upload status</th>
+              <th>Статус расстояния</th>
+              <th>Статус загрузки</th>
               <th>Ссылки</th>
               <th>Действия</th>
             </tr>
@@ -77,9 +78,9 @@ export default function ResultsTable({
                   </div>
                 </td>
                 <td>{formatCoordinates(photo.coordinates)}</td>
-                <td><StatusChip tone={photo.coordinateQuality === 'confident' || photo.coordinateQuality === 'manual' ? 'success' : photo.coordinateQuality === 'missing' ? 'neutral' : 'warning'}>{photo.coordinateQuality || 'missing'}</StatusChip></td>
-                <td>{distanceText(photo)}</td>
-                <td>{photo.uploadStatus || 'idle'}</td>
+                <td><StatusChip tone={statusTone(photo.coordinateQuality || 'missing')}>{statusLabel(photo.coordinateQuality, 'Не найдено')}</StatusChip></td>
+                <td>{statusLabel(distanceText(photo))}</td>
+                <td>{statusLabel(photo.uploadStatus)}</td>
                 <td>{photo.uploadResult?.links?.length || 0}</td>
                 <td>
                   <div className="table-actions">

@@ -79,6 +79,16 @@ const photoRow = (session, photo, now) => {
   ];
 };
 
+const normalizeProcessingWorkflow = (value) => {
+  const allowed = ['photos', 'recognition', 'map', 'upload', 'result'];
+  if (!value || typeof value !== 'object') return undefined;
+  return {
+    current: allowed.includes(value.current) ? value.current : 'photos',
+    completed: Array.isArray(value.completed) ? [...new Set(value.completed.filter((id) => allowed.includes(id)))] : [],
+    stale: Array.isArray(value.stale) ? [...new Set(value.stale.filter((id) => allowed.includes(id)))] : [],
+  };
+};
+
 const normalizeSession = (session = {}, sessionNumber, now) => {
   const photos = Array.isArray(session.photos) ? session.photos.slice(0, MAX_PHOTOS_PER_SESSION) : [];
   return {
@@ -104,6 +114,7 @@ const normalizeSession = (session = {}, sessionNumber, now) => {
       mapLayerId: cleanText(session.mapLayerId, 80),
       copiedPhotoIds: Array.isArray(session.copiedPhotoIds) ? [...new Set(session.copiedPhotoIds.map(String).slice(0, 500))] : [],
       activeScreen: cleanText(session.activeScreen || 'upload', 40),
+      processingWorkflow: normalizeProcessingWorkflow(session.processingWorkflow),
     },
     photos,
     createdAt: session.createdAt || now,

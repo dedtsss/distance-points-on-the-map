@@ -2,23 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/AppShell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Dashboard from '../components/Dashboard.jsx';
-import DistanceSummary from '../components/DistanceSummary.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import Icon from '../components/Icon.jsx';
-import JobProgress from '../components/JobProgress.jsx';
 import JournalScreen from '../components/JournalScreen.jsx';
 import LastSessionPrompt from '../components/LastSessionPrompt.jsx';
-import LoadingState from '../components/LoadingState.jsx';
 import MapPanel from '../components/MapPanel.jsx';
 import PageHeader from '../components/PageHeader.jsx';
-import PhotoCard from '../components/PhotoCard.jsx';
+import ProcessingWorkflow from '../components/ProcessingWorkflow.jsx';
 import ResultsScreen from '../components/ResultsScreen.jsx';
 import ReserveScreen from '../components/ReserveScreen.jsx';
-import SessionWizard from '../components/SessionWizard.jsx';
 import SessionsScreen from '../components/SessionsScreen.jsx';
 import SettingsScreen from '../components/SettingsScreen.jsx';
-import UploadDropzone from '../components/UploadDropzone.jsx';
 import { recommendReserveForConflicts } from '../features/session/conflictResolver.js';
 import {
   createSession,
@@ -40,6 +35,7 @@ import {
 import { findLocalSessionsForD1Import, importLocalSessionsToD1, isD1MigrationComplete } from '../features/session/sessionMigration.js';
 import { loadCrmSettings, saveCrmSettings } from '../features/settings/settingsStore.js';
 import { calculateDistances, DEFAULT_DISTANCE_THRESHOLD_METERS } from '../features/distance/distanceService.js';
+import { invalidateProcessingFrom } from '../features/ui/processingWorkflow.js';
 import { bufferSelectedFiles } from '../features/files/stableFileStore.js';
 import {
   FOLDER_IMPORT_STATUSES,
@@ -74,7 +70,6 @@ import {
   replacePhotoBatch,
 } from './appState.js';
 import { runPhotoPipeline } from './pipeline.js';
-import { UPLOAD_RULES_EXPLANATION } from './pipelineRules.js';
 
 const newSessionMeta = (input = {}) => createSession({
   sessionNumber: input.sessionNumber || getNextSessionNumber(),
@@ -94,127 +89,6 @@ const debugModeFromLocation = () => (
   typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('debug') === '1'
 );
-
-function UploadScreen({
-  photos,
-  session,
-  mode,
-  isBusy,
-  providerValidation,
-  hasUploadedPhotos,
-  providerSettings,
-  thresholdMeters,
-  onFiles,
-  onFolderFiles,
-  onPickFolder,
-  onDropItems,
-  onCancelFolderImport,
-  onRun,
-  onClearResult,
-  onApplyCoordinates,
-  onApplyIndex,
-  onSwapCoordinates,
-  onRemovePhoto,
-  onOpenOnMap,
-  onOpenSettings,
-  folderImport,
-  onSessionChange,
-  onStartNewSession,
-  onStageChange,
-  onToggleReserve,
-}) {
-  const hasStableFiles = photos.some((photo) => photo.stableFile);
-  const hasCleanedPhotos = photos.some((photo) => photo.cleanedBlob);
-  const isBuffering = mode === 'buffering' || folderImport?.status === FOLDER_IMPORT_STATUSES.ADDING;
-
-  return (
-    <>
-      <SessionWizard
-        session={session}
-        photoCount={photos.length}
-        isBusy={isBusy}
-        onSessionChange={onSessionChange}
-        onStartNew={onStartNewSession}
-        onStageChange={onStageChange}
-      />
-      <PageHeader
-        eyebrow="Загрузка и проверка"
-        title="Новая проверка фотографий"
-        actions={(
-          <button
-            type="button"
-            onClick={() => onRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')}
-            disabled={isBusy || !providerValidation.valid || !hasStableFiles}
-          >
-            <Icon name="play" size={18} />
-            {isBusy ? 'Обработка' : 'Проверить и загрузить'}
-          </button>
-        )}
-      >
-        Выберите фотографии, проверьте OCR координат и индекса, затем отправьте только очищенные generic-файлы через `/api/upload`.
-      </PageHeader>
-
-      <UploadDropzone
-        photos={photos}
-        isBusy={isBusy}
-        isBuffering={isBuffering}
-        onFiles={onFiles}
-        onFolderFiles={onFolderFiles}
-        onPickFolder={onPickFolder}
-        onDropItems={onDropItems}
-        onCancelFolderImport={onCancelFolderImport}
-        onOpenSettings={onOpenSettings}
-        folderImport={folderImport}
-      />
-
-      {isBuffering && <LoadingState title="Подготовка фотографий">Создаются стабильные копии и миниатюры в памяти браузера.</LoadingState>}
-
-      {photos.length > 0 && (
-        <section className="run-card sticky-action-panel">
-          <div>
-            <p className="page-eyebrow">Действия</p>
-            <h3>Этапы проверки</h3>
-            <p>{UPLOAD_RULES_EXPLANATION}</p>
-          </div>
-          <div className="run-actions action-grid">
-            <button type="button" className="button-secondary" onClick={() => onRun({ gps: true, cleanup: false, upload: false }, 'Распознавание координат')} disabled={isBusy || !hasStableFiles}>Только OCR</button>
-            <button type="button" className="button-secondary" onClick={() => onRun({ gps: false, cleanup: true, upload: false }, 'Очистка metadata')} disabled={isBusy || !hasStableFiles}>Очистить metadata</button>
-            <button type="button" className="button-secondary" onClick={() => onRun({ gps: false, cleanup: false, upload: true }, 'Загрузка очищенных')} disabled={isBusy || !providerValidation.valid || !hasCleanedPhotos}>Загрузить очищенные</button>
-            <button type="button" onClick={() => onRun({ gps: true, cleanup: true, upload: true }, 'Полная обработка')} disabled={isBusy || !providerValidation.valid || !hasStableFiles}>Полная обработка</button>
-            {!hasUploadedPhotos && mode === 'done' && <button type="button" className="button-secondary danger-ghost-button" onClick={onClearResult}>Очистить результат</button>}
-          </div>
-          {!providerValidation.valid && <p className="settings-error">{providerValidation.error}</p>}
-        </section>
-      )}
-
-      <JobProgress photos={photos} />
-      <DistanceSummary photos={photos} thresholdMeters={thresholdMeters} />
-
-      {photos.length === 0 ? (
-        <EmptyState title="Фотографии ещё не выбраны" icon="upload">
-          Перетащите изображения в область загрузки или нажмите «Выбрать фотографии».
-        </EmptyState>
-      ) : (
-        <section className="photo-grid" aria-label="Выбранные фотографии" aria-live="polite">
-          {photos.map((photo) => (
-            <PhotoCard
-              key={photo.id}
-              photo={photo}
-              editingDisabled={isBusy}
-              onRemove={onRemovePhoto}
-              onApplyCoordinates={onApplyCoordinates}
-              onApplyIndex={onApplyIndex}
-              onSwapCoordinates={onSwapCoordinates}
-              onOpenOnMap={onOpenOnMap}
-              providerSettings={providerSettings}
-              onToggleReserve={onToggleReserve}
-            />
-          ))}
-        </section>
-      )}
-    </>
-  );
-}
 
 function MapScreen({
   photos,
@@ -513,6 +387,8 @@ export default function App() {
       processingSettings,
       thresholdMeters,
       activeScreen,
+      stage: sessionMeta.stage,
+      processingWorkflow: sessionMeta.processingWorkflow,
       regionMode,
       mapLayerId,
     });
@@ -836,7 +712,7 @@ export default function App() {
   };
 
   const handleRun = async (stages, label) => {
-    if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return;
+    if (photos.length === 0 || isBusy || (stages.upload && !providerValidation.valid)) return { ok: false, skipped: true, photos };
     const automaticFullRun = stages.gps && stages.cleanup && stages.upload;
     const cleanupEnabled = stages.cleanup && (!automaticFullRun || processingSettings.metadataCleanup !== false);
     const effectiveStages = {
@@ -882,11 +758,13 @@ export default function App() {
       if (!persistence.remote) setErrors((current) => [...new Set([...current, 'Обработка завершена, но результат не синхронизирован с сервером.'])]);
       setMode('done');
       addLog(`${label}: завершено`, 'success');
+      return { ok: true, photos: result.photos, stages: effectiveStages };
     } catch (error) {
       setErrors(['Не удалось завершить обработку. Повторно выберите фотографии и попробуйте ещё раз.']);
       setMode('ready');
       addLog(`${label}: ошибка`, 'error');
       if (debugMode) console.error(error);
+      return { ok: false, error, photos: photosRef.current, stages: effectiveStages };
     } finally {
       setActiveSince(null);
     }
@@ -1004,6 +882,13 @@ export default function App() {
 
   const handleThresholdMetersChange = (value) => {
     const next = Math.max(1, Math.min(1000, Number(value) || DEFAULT_DISTANCE_THRESHOLD_METERS));
+    if (next !== thresholdMeters) {
+      setSessionMeta((current) => current ? {
+        ...current,
+        processingWorkflow: invalidateProcessingFrom(current.processingWorkflow || {}, 'map'),
+        stage: 'processing',
+      } : current);
+    }
     setThresholdMeters(next);
     setCrmSettings(saveCrmSettings({ ...crmSettings, ...processingSettings, distanceThresholdMeters: next, mapLayerId }));
     setPhotos((current) => {
@@ -1081,6 +966,20 @@ export default function App() {
     });
   };
 
+  const handleSaveCurrentSession = async (processingWorkflow = currentSession?.processingWorkflow) => {
+    const persistence = await persistSessionRecord({
+      ...currentSession,
+      processingWorkflow,
+      stage: 'result',
+      activeScreen: 'upload',
+      photos,
+    });
+    setSessionMeta(sessionMetaFromRecord(persistence.record));
+    addLog('Сессия сохранена из Command Desk', persistence.remote ? 'success' : 'warning');
+    if (!persistence.remote) setErrors((current) => [...new Set([...current, 'Сессия сохранена локально, но серверная синхронизация не подтверждена.'])]);
+    return persistence;
+  };
+
   const handleOpenPhoto = (photoId) => {
     setActiveScreen('upload');
     if (typeof document !== 'undefined') {
@@ -1144,36 +1043,35 @@ export default function App() {
       )}
 
       {activeScreen === 'upload' && (
-        <UploadScreen
+        <ProcessingWorkflow
           photos={photos}
           session={currentSession}
           mode={mode}
+          errors={errors}
           isBusy={isBusy}
           providerValidation={providerValidation}
-          hasUploadedPhotos={hasUploadedPhotos}
           providerSettings={providerSettings}
           thresholdMeters={thresholdMeters}
+          mapLayerId={mapLayerId}
+          recommendation={conflictRecommendation}
+          folderImport={folderImport}
           onFiles={handleFilesSelected}
           onFolderFiles={handleFolderFilesSelected}
           onPickFolder={handlePickFolder}
           onDropItems={handleDropItems}
           onCancelFolderImport={handleCancelFolderImport}
+          onOpenSettings={() => navigate('settings')}
           onRun={handleRun}
-          onClearResult={() => setConfirmClearOpen(true)}
           onApplyCoordinates={handleManualCoordinates}
           onApplyIndex={handleManualIndex}
           onSwapCoordinates={handleSwapCoordinates}
           onRemovePhoto={handleRemovePhoto}
-          onOpenOnMap={handleOpenOnMap}
-          onOpenSettings={() => navigate('settings')}
-          folderImport={folderImport}
           onSessionChange={handleSessionChange}
-          onStartNewSession={handleStartNewSession}
-          onStageChange={(stage) => {
-            handleSessionChange({ stage });
-            navigate(screenForStage(stage));
-          }}
           onToggleReserve={handleToggleReserve}
+          onMapLayerChange={handleMapLayerChange}
+          onApplyRecommendation={handleApplyRecommendation}
+          onClearResult={() => setConfirmClearOpen(true)}
+          onSaveSession={handleSaveCurrentSession}
         />
       )}
 

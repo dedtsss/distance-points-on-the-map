@@ -21,7 +21,6 @@ export default function UploadDropzone({
   onPickFolder,
   onDropItems,
   onCancelFolderImport,
-  onOpenSettings,
   folderImport,
 }) {
   const inputRef = useRef(null);
@@ -135,10 +134,6 @@ export default function UploadDropzone({
             Выбрать папку
           </button>
         )}
-        <button type="button" className="button-secondary" onClick={onOpenSettings}>
-          <Icon name="tune" size={18} />
-          Параметры проверки
-        </button>
       </div>
       <FolderImportSummary
         status={folderImport?.status}

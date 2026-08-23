@@ -87,6 +87,10 @@ try {
     }, { key: SESSION_REPOSITORY_KEY, session: fixtureSession });
     await page.goto(baseUrl, { waitUntil: 'networkidle' });
     await assertLayout(page, `${viewport.width}px dashboard`);
+    const menuButton = page.getByRole('button', { name: 'Открыть меню' });
+    await menuButton.focus();
+    await menuButton.press('Tab');
+    assert.equal(await page.locator('.mobile-nav-drawer').evaluate((drawer) => drawer.contains(document.activeElement)), false, 'closed drawer must not receive Tab focus');
 
     await openMobileScreen(page, 'Сессии');
     await page.getByRole('button', { name: 'Открыть', exact: true }).click();
@@ -106,8 +110,10 @@ try {
     await page.getByText('RESERVE').first().waitFor();
     await assertLayout(page, `${viewport.width}px reserve`);
 
-    await openMobileScreen(page, 'Обработать фотографии · Загрузка и проверка');
-    await page.getByRole('heading', { name: 'Мастер обработки фотографий' }).waitFor();
+    await openMobileScreen(page, 'Обработка фото');
+    await page.getByRole('heading', { name: 'Проверка фотографий' }).waitFor();
+    await page.locator('.processing-mobile-stepper').waitFor();
+    await page.locator('.processing-mobile-stepper select').selectOption({ label: 'Фотографии' });
     await page.getByRole('button', { name: 'Выбрать папку', exact: true }).waitFor();
     await assertLayout(page, `${viewport.width}px wizard`);
 
