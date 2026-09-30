@@ -4,9 +4,14 @@ import { readPhoto } from '../src/core/readPhoto.js';
 import { splitBatch } from '../src/core/batch.js';
 import { findDistanceViolations, haversineDistanceMeters } from '../src/core/utils/geoDistance.js';
 import { parseFixedOverlayIndex } from '../src/core/features/gps/fixedOverlayOcr.js';
-import { parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } from '../src/core/utils/ocrGpsReader.js';
+import { getOcrAssetRuntimeOptions, parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } from '../src/core/utils/ocrGpsReader.js';
 import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockFormatter.js';
 import { onionBaseUrl, publishCleanImage } from '../src/core/publisher.js';
+
+test('Android OCR requests unpacked traineddata while browser keeps gzip', () => {
+  assert.equal(getOcrAssetRuntimeOptions('android').gzip, false);
+  assert.equal(getOcrAssetRuntimeOptions('web').gzip, true);
+});
 
 test('leading zero and coordinate decimal formats survive parsing', () => {
   assert.equal(parseFixedOverlayIndex('0123'), '0123');
