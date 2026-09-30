@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+
 const DEFAULT_CROP_OPTIONS = { xRatio: 0.48, yRatio: 0.68, widthRatio: 0.52, heightRatio: 0.32 };
 const DEFAULT_PREPROCESS_OPTIONS = {
   method: 'threshold',
@@ -484,25 +486,62 @@ export async function recognizeTextFromCanvas(canvas, options = {}) {
   }
 }
 
+export const getOcrAssetRuntimeOptions = (platform = Capacitor.getPlatform()) => ({
+  // Android's asset packager transparently expands *.gz assets and strips the
+  // suffix. The packaged APK therefore exposes eng.traineddata, not
+  // eng.traineddata.gz. Browser/Vite keeps the .gz file as-is.
+  gzip: platform !== 'android',
+});
+
 export async function createSequentialOcrSession(options = {}) {
   const { createWorker } = await import('tesseract.js');
   const assets = new URL('ocr/', document.baseURI).href;
+  const runtimeOptions = getOcrAssetRuntimeOptions(options.platform || Capacitor.getPlatform());
   const logger = (message) => options.onProgress?.({
     status: message.status || 'ocr',
     progress: Number.isFinite(message.progress) ? message.progress : 0,
   });
-  const worker = await createWorker('eng', 1, {
+  options.onProgress?.({ status: 'ocr:initializing', progress: 0 });
+
+  const initializationTimeoutMs = Math.max(10_000, Number(options.initializationTimeoutMs) || 35_000);
+  let initializationTimeoutId = null;
+  let timedOut = false;
+  const workerPromise = createWorker('eng', 1, {
     logger,
     workerPath: `${assets}worker.min.js`,
     corePath: assets,
     langPath: assets.replace(/\/$/, ''),
     workerBlobURL: false,
+    gzip: runtimeOptions.gzip,
+  }).then(async (worker) => {
+    if (timedOut) {
+      await worker.terminate().catch(() => {});
+      throw new Error('OCR worker initialized after timeout');
+    }
+    return worker;
   });
+  const initializationTimeout = new Promise((_, reject) => {
+    initializationTimeoutId = globalThis.setTimeout(() => {
+      timedOut = true;
+      const error = new Error('OCR initialization timed out');
+      error.name = 'TimeoutError';
+      reject(error);
+    }, initializationTimeoutMs);
+  });
+
+  let worker;
+  try {
+    worker = await Promise.race([workerPromise, initializationTimeout]);
+  } finally {
+    if (initializationTimeoutId) globalThis.clearTimeout(initializationTimeoutId);
+  }
+
   await worker.setParameters({
     tessedit_char_whitelist: options.whitelist || OCR_CHAR_WHITELIST,
     tessedit_pageseg_mode: '6',
     preserve_interword_spaces: '1',
   });
+  options.onProgress?.({ status: 'ocr:ready', progress: 1 });
   return {
     worker,
     terminate: () => worker.terminate().catch(() => {}),
