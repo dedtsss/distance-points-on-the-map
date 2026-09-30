@@ -47,7 +47,20 @@ export default function App() {
       for (let index = 0; index < files.length; index += 1) {
         const file = await fileAt(index);
         setStatus(`Распознавание ${index + 1}/${files.length}`);
-        const read = await readPhoto(file);
+        const read = await readPhoto(file, {
+          onProgress: ({ status: ocrStatus, progress }) => {
+            const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
+            const stage = String(ocrStatus || 'ocr')
+              .replace('ocr:initializing', 'OCR запуск')
+              .replace('ocr:ready', 'OCR готов')
+              .replace('loading tesseract core', 'ядро OCR')
+              .replace('initializing tesseract', 'инициализация OCR')
+              .replace('loading language traineddata', 'язык OCR')
+              .replace('initializing api', 'OCR API')
+              .replace('recognizing text', 'распознавание');
+            setStatus(`Распознавание ${index + 1}/${files.length} · ${stage}${percent}`);
+          },
+        });
         current.push({
           id: String(index + 1), number: index + 1, fileName: file.name,
           ...read, uploadResult: { providerOrder: ['onion'], links: [] },
