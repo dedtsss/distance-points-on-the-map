@@ -5,12 +5,15 @@ on:
     paths:
       - 'darkfoto/**'
       - 'onion-drop/**'
+      - 'workers/host-proxy/ninjabox.js'
       - '.github/workflows/darkfoto-android.yml'
   workflow_dispatch:
 
 jobs:
   verify-and-build:
     runs-on: ubuntu-latest
+    env:
+      VITE_NINJABOX_RELAY_URL: ${{ vars.DARKFOTO_NINJABOX_RELAY_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,7 +36,31 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           npm test
-          npm run android:sync
+          npm run build -- --mode android-test
+          npx cap sync android
+      - name: Test native verification and compile debug APK
+        working-directory: darkfoto/android
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon -Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.workers.max=2
+      - name: Emulator real-JPEG native to WebView OCR acceptance
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: cd darkfoto/android && ./gradlew :app:connectedDebugAndroidTest --no-daemon -Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.workers.max=2
+      - name: Save Android emulator test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarkFoto-Android-test-reports
+          path: |
+            darkfoto/android/app/build/reports/androidTests/connected/
+            darkfoto/android/app/build/outputs/androidTest-results/connected/
+          if-no-files-found: ignore
+      - name: Restore release web assets
+        working-directory: darkfoto
+        run: npm run android:sync
       - name: Test onion-drop
         working-directory: onion-drop
         run: npm test
