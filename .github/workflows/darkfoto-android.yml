@@ -50,7 +50,11 @@ jobs:
         with:
           name: DarkFoto-unsigned-release-apk
           path: darkfoto/android/app/build/outputs/apk/release/app-release-unsigned.apk
-      - name: Download permanent-signed DarkFoto 0.1.2 for chat handoff
+
+  signed-handoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download permanent-signed DarkFoto 0.1.2
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
