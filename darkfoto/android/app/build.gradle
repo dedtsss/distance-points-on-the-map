@@ -7,8 +7,8 @@ android {
         applicationId "app.darkfoto.mvp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "0.1.2"
+        versionCode 3
+        versionName "0.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -39,6 +39,8 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    // Debug-only offline OCR comparison; the release APK keeps the proven Tesseract pipeline.
+    debugImplementation 'com.google.mlkit:text-recognition:16.0.1'
     implementation project(':capacitor-cordova-android-plugins')
 }
 

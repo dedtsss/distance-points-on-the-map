@@ -26,3 +26,28 @@ export async function publishCleanImage(cleanedFile, destination, options = {}) 
   }
   return `${base}${body.viewPath}`;
 }
+
+export function ninjaboxRelayUrl(value) {
+  const url = new URL(String(value || '').trim());
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search
+    || url.pathname !== '/v1/ninjabox' || !url.hostname) {
+    throw new Error('Укажите HTTPS адрес NinjaBox relay с путём /v1/ninjabox');
+  }
+  return url.toString();
+}
+
+export async function publishCleanImageToNinjabox(cleanedFile, relay, options = {}) {
+  if (!cleanedFile || cleanedFile.type !== 'image/jpeg') throw new Error('Нужна очищенная JPEG-копия');
+  const form = new FormData();
+  form.append('file', cleanedFile, cleanedFile.name);
+  const response = await (options.fetch || fetch)(ninjaboxRelayUrl(relay), {
+    method: 'POST', body: form, cache: 'no-store', redirect: 'error',
+  });
+  if (!response.ok) throw new Error(`NinjaBox relay: HTTP ${response.status}`);
+  const result = await response.json();
+  const link = result?.url;
+  if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
+    throw new Error('NinjaBox relay вернул неверную ссылку');
+  }
+  return link;
+}

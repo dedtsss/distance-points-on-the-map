@@ -7,6 +7,7 @@ p, small { color: #b9c4d0; }
 section { background: #1b2530; border: 1px solid #344352; border-radius: 12px; padding: 18px; margin: 18px 0; }
 label { display: block; margin: 12px 0; font-weight: 600; }
 input, textarea { display: block; width: 100%; margin-top: 6px; padding: 11px; border: 1px solid #657587; border-radius: 8px; color: #fff; background: #10151c; font: inherit; }
+select { display: block; width: 100%; margin-top: 6px; padding: 11px; border: 1px solid #657587; border-radius: 8px; color: #fff; background: #10151c; font: inherit; }
 input[type=file] { font-size: 14px; }
 button { min-height: 44px; padding: 10px 16px; border: 0; border-radius: 8px; color: #07110d; background: #7be0ac; font: inherit; font-weight: 700; }
 button:disabled { opacity: .5; }
@@ -14,3 +15,4 @@ output { display: block; margin-top: 12px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: #10151c; border-radius: 8px; }
 li { margin: 12px 0; overflow-wrap: anywhere; }
 [role=alert] { color: #ffb9a9; }
+a { color: #9bccff; }
