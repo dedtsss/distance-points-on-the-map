@@ -36,13 +36,34 @@ try {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', .85));
       const file = new File([blob], 'fixture.jpg', { type: 'image/jpeg' });
       const parsed = await ocr.readCoordinatesWithOcr(file, {});
-      return { ok: parsed.ok, index: parsed.indexFromOcr, latitude: parsed.latitude, longitude: parsed.longitude, attempts: parsed.attempts?.map((attempt) => attempt.name) };
+      let recoveredAfterMiss = null;
+      if (fixture.name === 'black leading zero') {
+        const { recognizeTextFromCanvas } = await import(`${base}src/core/utils/ocrGpsReader.js`);
+        let missed = false;
+        const retry = await ocr.readCoordinatesWithOcr(file, { dependencies: {
+          recognize: async (canvas, options) => {
+            if (!missed && options.whitelist === '0123456789') {
+              missed = true;
+              return { text: '', confidence: 0 };
+            }
+            return recognizeTextFromCanvas(canvas, options);
+          },
+        } });
+        recoveredAfterMiss = { missed, index: retry.indexFromOcr, attempts: retry.indexAttempts?.length || 0 };
+      }
+      return { ok: parsed.ok, index: parsed.indexFromOcr, latitude: parsed.latitude, longitude: parsed.longitude,
+        attempts: parsed.attempts?.map((attempt) => attempt.name), recoveredAfterMiss };
     }, { base, fixture });
     assert.equal(result.ok, true, JSON.stringify({ fixture, result }));
     assert.equal(result.index, fixture.index, JSON.stringify({ fixture, result }));
     assert.ok(Math.abs(result.latitude - 64.123456) < .0001, fixture.name);
     assert.ok(Math.abs(result.longitude - 30.123456) < .0001, fixture.name);
     assert.ok(result.attempts.every((name) => !name.startsWith('full_image')), fixture.name);
+    if (fixture.name === 'black leading zero') {
+      assert.equal(result.recoveredAfterMiss.missed, true);
+      assert.equal(result.recoveredAfterMiss.index, '0123');
+      assert.ok(result.recoveredAfterMiss.attempts > 1);
+    }
     console.log(`${fixture.name}: ${result.index}, ${result.latitude}, ${result.longitude}`);
   }
   const cleanup = await page.evaluate(async (baseUrl) => {

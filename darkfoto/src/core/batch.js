@@ -3,18 +3,23 @@ import { findDistanceViolations } from './utils/geoDistance.js';
 import { validateCoordinateBatch } from './features/gps/coordinateSanity.js';
 
 export function splitBatch(photos, thresholdMeters = 25) {
-  const sanity = validateCoordinateBatch(photos);
+  const indexed = photos.filter((photo) => photo.indexFromOcr && photo.indexStatus === 'found');
+  const sanity = validateCoordinateBatch(indexed);
   const checked = photos.map((photo) => ({ ...photo, ...(sanity.byPhotoId.get(photo.id) || {}) }));
-  const recommendation = recommendReserveForConflicts(checked, thresholdMeters);
+  const eligible = checked.filter((photo) => photo.coordinateQuality === 'confident' && photo.coordinates
+    && photo.indexFromOcr && photo.indexStatus === 'found');
+  const unresolved = checked.filter((photo) => !eligible.includes(photo))
+    .map((photo) => ({ ...photo, workStatus: 'unresolved' }));
+  const recommendation = recommendReserveForConflicts(eligible, thresholdMeters);
   const reserveIds = new Set(recommendation.reservePhotoIds);
-  const resolved = checked.map((photo) => ({
+  const resolved = eligible.map((photo) => ({
     ...photo,
     workStatus: reserveIds.has(photo.id) ? 'reserve' : 'active',
   }));
   return {
     main: resolved.filter((photo) => photo.workStatus === 'active'),
     reserve: resolved.filter((photo) => photo.workStatus === 'reserve'),
-    unresolved: resolved.filter((photo) => photo.coordinateQuality !== 'confident'),
+    unresolved,
     recommendation,
     remainingConflicts: findDistanceViolations(resolved, { thresholdMeters }),
   };
