@@ -3,6 +3,7 @@ package app.darkfoto.mvp;
 import static org.junit.Assert.*;
 
 import android.content.Intent;
+import android.app.Instrumentation;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.util.concurrent.CountDownLatch;
@@ -30,9 +31,17 @@ public class AndroidWebViewOcrTest {
 
     @Test
     public void nativeCacheToWebViewDecodeCropOcrAndThreePhotoSplit() throws Exception {
-        Intent intent = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(), MainActivity.class);
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        Intent intent = new Intent(instrumentation.getTargetContext(), MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        MainActivity activity = (MainActivity) InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
+        // startActivitySync waits for an idle event queue, which a starting WebView need not provide.
+        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(MainActivity.class.getName(), null, false);
+        MainActivity activity;
+        try {
+            instrumentation.getTargetContext().startActivity(intent);
+            activity = (MainActivity) instrumentation.waitForMonitorWithTimeout(monitor, 90_000);
+            assertNotNull("MainActivity did not start", activity);
+        } finally { instrumentation.removeMonitor(monitor); }
         try {
             boolean ready = false;
             for (int attempt = 0; attempt < 20; attempt++) {

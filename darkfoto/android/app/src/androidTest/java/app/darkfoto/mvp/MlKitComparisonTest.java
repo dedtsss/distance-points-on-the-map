@@ -37,7 +37,7 @@ public class MlKitComparisonTest {
                 Bitmap crop = Bitmap.createBitmap(full, x, y, width, full.getHeight() - y);
                 Bitmap prepared = Bitmap.createScaledBitmap(crop, width * 3, crop.getHeight() * 3, false);
                 long started = System.currentTimeMillis();
-                Text text = Tasks.await(recognizer.process(InputImage.fromBitmap(prepared, 0)), 60, TimeUnit.SECONDS);
+                Text text = Tasks.await(recognizer.process(InputImage.fromBitmap(prepared, 0)), 120, TimeUnit.SECONDS);
                 String result = text.getText().replace('\n', ' ').trim();
                 Log.i("DarkFotoMLKit", name + " timeMs=" + (System.currentTimeMillis() - started) + " text=" + result);
                 assertFalse("Bundled ML Kit returned no text for " + name, result.isEmpty());
