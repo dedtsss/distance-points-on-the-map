@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 
 import android.content.Intent;
 import android.app.Instrumentation;
+import android.os.SystemClock;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.util.concurrent.CountDownLatch;
@@ -25,7 +26,8 @@ public class AndroidWebViewOcrTest {
                 value.set(result);
                 latch.countDown();
             }));
-        assertTrue("WebView callback timed out", latch.await(10, TimeUnit.SECONDS));
+        // Cold WebView startup may navigate away before a callback arrives; callers retry.
+        if (!latch.await(15, TimeUnit.SECONDS)) return null;
         return String.valueOf(new JSONTokener(value.get()).nextValue());
     }
 
@@ -44,19 +46,21 @@ public class AndroidWebViewOcrTest {
         } finally { instrumentation.removeMonitor(monitor); }
         try {
             boolean ready = false;
-            for (int attempt = 0; attempt < 20; attempt++) {
+            long readyDeadline = SystemClock.elapsedRealtime() + 120_000;
+            while (SystemClock.elapsedRealtime() < readyDeadline) {
                 if ("ready".equals(evaluate(activity, "typeof window.__darkfotoAndroidTest === 'function' ? 'ready' : 'waiting'"))) {
                     ready = true;
                     break;
                 }
-                Thread.sleep(500);
+                Thread.sleep(1000);
             }
             assertTrue("Android test harness did not load", ready);
-            evaluate(activity, "window.__darkfotoAndroidTest().then(x => window.__darkfotoResult = JSON.stringify(x)).catch(e => window.__darkfotoResult = JSON.stringify({error:String(e)})); 'started'");
+            assertEquals("started", evaluate(activity, "window.__darkfotoAndroidTest().then(x => window.__darkfotoResult = JSON.stringify(x)).catch(e => window.__darkfotoResult = JSON.stringify({error:String(e)})); 'started'"));
             String result = "";
-            for (int attempt = 0; attempt < 180; attempt++) {
-                result = evaluate(activity, "window.__darkfotoResult || ''");
-                if (!result.isEmpty()) break;
+            long resultDeadline = SystemClock.elapsedRealtime() + 180_000;
+            while (SystemClock.elapsedRealtime() < resultDeadline) {
+                String value = evaluate(activity, "window.__darkfotoResult || ''");
+                if (value != null && !value.isEmpty()) { result = value; break; }
                 Thread.sleep(1000);
             }
             assertFalse("Android OCR timed out", result.isEmpty());
