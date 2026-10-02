@@ -24,7 +24,6 @@ import java.util.concurrent.TimeUnit;
 
 /** One bounded, offline OCR pass over the camera stamp. No full JPEG crosses the bridge. */
 final class NativeStampOcr {
-    private static final int WORK_WIDTH = 960;
     private final TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
 
     private Bitmap decode(Context context, Uri uri) throws Exception {
@@ -85,13 +84,13 @@ final class NativeStampOcr {
             if (alternate) black = !black;
             // The two known camera formats use a right black stamp or a full-width gray caption.
             int x = black ? Math.round(image.getWidth() * .64f) : 0;
-            int y = Math.round(image.getHeight() * (black ? .85f : .86f));
+            int y = Math.round(image.getHeight() * (black ? .86f : .88f));
             int width = image.getWidth() - x;
             int height = image.getHeight() - y;
             Bitmap crop = Bitmap.createBitmap(image, x, y, width, height);
-            int targetWidth = Math.min(1280, Math.max(800, WORK_WIDTH));
+            int targetWidth = black ? 960 : 1280;
             prepared = Bitmap.createScaledBitmap(crop, targetWidth,
-                Math.max(1, Math.round((float) height * targetWidth / width)), true);
+                Math.max(1, Math.round((float) height * targetWidth / width)), false);
             crop.recycle();
             Text result = null;
             String ocrError = "";

@@ -100,6 +100,10 @@ export async function recognizeAndroidStamp(item, options = {}) {
   let first;
   let second;
   let nativeError;
+  const diagnostics = () => options.debug ? { debugPasses: [first, second].filter(Boolean).map((pass) => ({
+    profile: pass.profile, text: pass.text, lines: pass.lines, ocrError: pass.ocrError,
+    elapsedMs: pass.elapsedMs,
+  })) } : {};
   try {
     first = await withDeadline(folder.recognizePhoto({ id: item.id }), NATIVE_PASS_TIMEOUT_MS, 'native');
     let parsed = parseNativeStamp(first);
@@ -109,7 +113,8 @@ export async function recognizeAndroidStamp(item, options = {}) {
         parsed = mergeNativePasses(parsed, parseNativeStamp(second));
       } catch (error) { nativeError = error; }
     }
-    if (parsed.ok && parsed.indexStatus === 'found') return { ...parsed, recognitionMs: Math.round(performance.now() - started) };
+    if (parsed.ok && parsed.indexStatus === 'found') return { ...parsed, ...diagnostics(),
+      recognitionMs: Math.round(performance.now() - started) };
     // Fallback receives only the prepared native crop and a four-second product deadline.
     try {
       const text = await (options.fallback || boundedTesseract)(first.roi, FALLBACK_TIMEOUT_MS);
@@ -118,7 +123,7 @@ export async function recognizeAndroidStamp(item, options = {}) {
         text: line, topRatio: index / Math.max(1, all.length),
       })) }));
     } catch (error) { nativeError = error; }
-    return { ...parsed, ocrEngine: 'native_mlkit+tesseract_fallback',
+    return { ...parsed, ...diagnostics(), ocrEngine: 'native_mlkit+tesseract_fallback',
       recognitionMs: Math.round(performance.now() - started),
       warnings: [...parsed.warnings, ...(nativeError ? [String(nativeError.message || nativeError)] : [])] };
   } catch (error) {
