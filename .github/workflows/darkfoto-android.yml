@@ -45,7 +45,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: default
+          target: google_apis
           arch: x86_64
           profile: pixel_6
           script: cd darkfoto/android && ./gradlew :app:connectedDebugAndroidTest --no-daemon -Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.workers.max=2
