@@ -9,7 +9,12 @@ export function splitBatch(photos, thresholdMeters = 25) {
   const eligible = checked.filter((photo) => photo.coordinateQuality === 'confident' && photo.coordinates
     && photo.indexFromOcr && photo.indexStatus === 'found');
   const unresolved = checked.filter((photo) => !eligible.includes(photo))
-    .map((photo) => ({ ...photo, workStatus: 'unresolved' }));
+    .map((photo) => ({ ...photo, workStatus: 'unresolved',
+      reviewReason: !photo.coordinates ? 'coordinates_missing'
+        : !photo.indexFromOcr ? 'index_missing'
+          : photo.indexStatus !== 'found' ? 'index_low_confidence'
+            : photo.sanityReason || (photo.coordinateQuality === 'low_precision'
+              ? 'coordinates_low_precision' : 'coordinates_low_confidence') }));
   const recommendation = recommendReserveForConflicts(eligible, thresholdMeters);
   const reserveIds = new Set(recommendation.reservePhotoIds);
   const resolved = eligible.map((photo) => ({

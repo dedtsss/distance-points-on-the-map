@@ -6,6 +6,11 @@ import { formatAllPhotoResultBlocks } from './core/features/export/resultBlockFo
 import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from './core/publisher.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto, clearAndroidPhotoCache } from './androidFolder.js';
 import { checkForUpdate, installRelease, installedVersion, isAndroidUpdateAvailable } from './update.js';
+import { recognizeAndroidStamp } from './nativeOcr.js';
+import { exportText, isNativeTextExport } from './androidText.js';
+import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
+  IonCardContent, IonItem, IonLabel, IonInput, IonTextarea, IonSelect, IonSelectOption,
+  IonSegment, IonSegmentButton, IonBadge, IonList, IonText } from '@ionic/react';
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
   .sort((left, right) => (left.webkitRelativePath || left.name).localeCompare(right.webkitRelativePath || right.name));
@@ -89,8 +94,10 @@ export default function App() {
       for (let index = 0; index < files.length; index += 1) {
         setStatus(`Распознавание ${index + 1}/${files.length}`);
         try {
+          const nativeOcr = files[index].native ? await recognizeAndroidStamp(files[index]) : null;
           const file = await fileAt(index);
           const read = await readPhoto(file, {
+            ...(nativeOcr ? { readOcr: async () => nativeOcr } : {}),
             onProgress: ({ status: ocrStatus, progress }) => {
               const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
               const stage = String(ocrStatus || 'ocr')
@@ -108,6 +115,7 @@ export default function App() {
             id: String(index + 1), number: index + 1, fileName: file.name,
             ...read, uploadResult: { providerOrder: [publisher], links: [] },
           });
+          console.info('DarkFoto recognition', { photo: index + 1, engine: read.ocrEngine, elapsedMs: read.recognitionMs });
         } catch (error) {
           current.push({
             id: String(index + 1), number: index + 1, fileName: files[index].name,
@@ -150,67 +158,98 @@ export default function App() {
 
   const grouped = split ? splitBatch(rows) : null;
   const formatOptions = { description: comment, color, packing };
-  const download = () => {
+  const download = async (action = 'save') => {
     const main = formatAllPhotoResultBlocks(grouped?.main || [], formatOptions);
     const reserve = formatAllPhotoResultBlocks(grouped?.reserve || [], formatOptions);
-    const review = grouped?.unresolved.map((photo) => photo.fileName).join('\n') || '';
-    const blob = new Blob([`Main\n\n${main}\n\nReserve\n\n${reserve}\n\nNeeds review / Error\n\n${review}\n`], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'darkfoto-result.txt';
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const review = grouped?.unresolved.map((photo) => `${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`).join('\n') || '';
+    const text = `Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nТребует проверки\n\n${review}\n`;
+    try { await exportText(text, action); setStatus('TXT готов.'); }
+    catch (error) { setStatus(`TXT: ${errorText(error)}`); }
   };
 
-  return <main>
-    <h1>DarkFoto</h1>
-    <nav><button type="button" onClick={() => setScreen('photos')}>Фото</button>{' '}
-      <button type="button" onClick={showAbout}>О приложении / Обновление</button></nav>
-    {screen === 'about' ? <section>
-      <h2>О приложении</h2>
-      <p>DarkFoto</p>
-      <p>Установлена версия: {version ? `${version.versionName} (код ${version.versionCode})` : '—'}</p>
-      <p role="status">{updateStatus || 'Обновление не проверено.'}</p>
-      {version && <button type="button" onClick={checkUpdate}>Проверить обновление</button>}
-      {candidate && <p>Новая версия: {candidate.version} <button type="button" onClick={downloadUpdate}>Скачать / Установить</button></p>}
-    </section> : <>
-    <p>Выберите фотографии, проверьте распознавание и получите Main / Reserve. Исходники остаются на устройстве.</p>
-    <section>
-      {hasAndroidFolderPicker() && <button type="button" onClick={selectAndroidFolder} disabled={busy}>Выбрать папку Android</button>}
-      {hasAndroidFolderPicker() && <button type="button" onClick={selectAndroidPhotos} disabled={busy}>Выбрать фото Android</button>}
-      {!hasAndroidFolderPicker() && <><label>Папка с фото <input type="file" accept="image/*" webkitdirectory="" multiple onChange={select} disabled={busy} /></label>
-        <label>Отдельные фото <input type="file" accept="image/*" multiple onChange={select} disabled={busy} /></label></>}
-      <small>Выбрано: {files.length}</small>
-    </section>
-    <section>
-      <label>Публикация <select value={publisher} onChange={(event) => setPublisher(event.target.value)} disabled={busy}>
-        <option value="none">Только локально</option><option value="onion">Onion</option><option value="ninjabox">NinjaBox</option>
-      </select></label>
-      {publisher === 'onion' && <><label>Onion адрес <input type="url" placeholder="http://… .onion/" value={onion} onChange={(event) => setOnion(event.target.value)} disabled={busy} autoComplete="off" /></label>
-        <small>Маршрут Tor/Orbot должен уже работать. Ошибка соединения не переключает сервис.</small></>}
-      {publisher === 'ninjabox' && <><label>NinjaBox relay HTTPS <input type="url" placeholder="https://…/v1/ninjabox" value={ninjaboxRelay} onChange={(event) => setNinjaboxRelay(event.target.value)} disabled={busy} autoComplete="off" /></label>
-        <small>Публичный внешний хост. Отправляются только очищенные JPEG-копии.</small></>}
-      <label>Цвет <input value={color} onChange={(event) => setColor(event.target.value)} /></label>
-      <label>Фасовка <input value={packing} onChange={(event) => setPacking(event.target.value)} /></label>
-      <label>Комментарий <textarea value={comment} onChange={(event) => setComment(event.target.value)} /></label>
-      <button type="button" onClick={run} disabled={busy || !files.length}>{busy ? 'Обработка…' : 'Обработать'}</button>
-      <output aria-live="polite">{status}</output>
-    </section>
-    {grouped && <section>
-      <h2>Main: {grouped.main.length} · Reserve: {grouped.reserve.length} · Needs review / Error: {grouped.unresolved.length}</h2>
-      <p>Конфликтов до разделения: {grouped.recommendation.conflictCount}. Осталось: {grouped.remainingConflicts.length}. Стратегия: {grouped.recommendation.strategy}.</p>
-      {grouped.unresolved.length > 0 && <p role="alert">Требуют проверки индекса или координат: {grouped.unresolved.map((photo) => photo.fileName).join(', ')}</p>}
-      <button type="button" onClick={download}>Скачать TXT</button>
-      <h3>Main</h3><pre>{formatAllPhotoResultBlocks(grouped.main, formatOptions)}</pre>
-      <h3>Reserve</h3><pre>{formatAllPhotoResultBlocks(grouped.reserve, formatOptions)}</pre>
-    </section>}
-    {rows.length > 0 && <section><h2>Проверка фото</h2><ol>{rows.map((photo) => <li key={photo.id}>
-      <strong>{photo.fileName}</strong>: #{photo.indexFromOcr || 'не распознан'} · {photo.coordinates ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'координаты не найдены'} ({photo.gpsSource}, {photo.coordinateQuality})
-      {photo.uploadResult?.links?.map((link) => <p key={link.url}><a href={link.url} target="_blank" rel="noreferrer">{link.provider}: {link.url}</a></p>)}
-      {photo.publishError && <p role="alert">Публикация: {photo.publishError}</p>}
-      {photo.warnings.length > 0 && <small>{photo.warnings.join('; ')}</small>}
-    </li>)}</ol></section>}
-  </>}
-  </main>;
+  const reviewLabels = {
+    coordinates_missing: 'Координаты не найдены', index_missing: 'Индекс не найден',
+    index_low_confidence: 'Индекс распознан неуверенно', coordinates_low_precision: 'Недостаточная точность координат',
+    coordinates_low_confidence: 'Координаты требуют проверки', low_confidence: 'Координаты распознаны неуверенно',
+    batch_outlier: 'Координаты отличаются от партии', outside_expected_region: 'Координаты вне ожидаемого региона',
+  };
+  const reviewById = new Map((grouped?.unresolved || []).map((photo) => [photo.id, photo.reviewReason]));
+  const reserveIds = new Set((grouped?.reserve || []).map((photo) => photo.id));
+
+  return <IonApp><IonPage>
+    <IonHeader><IonToolbar><IonTitle>DarkFoto</IonTitle></IonToolbar></IonHeader>
+    <IonContent className="darkfoto-content">
+      <div className="darkfoto-layout">
+        <IonSegment value={screen} onIonChange={(event) => event.detail.value === 'about' ? showAbout() : setScreen('photos')}>
+          <IonSegmentButton value="photos"><IonLabel>Фото</IonLabel></IonSegmentButton>
+          <IonSegmentButton value="about"><IonLabel>О приложении</IonLabel></IonSegmentButton>
+        </IonSegment>
+        {screen === 'about' ? <IonCard><IonCardContent>
+          <h2>О приложении / Обновление</h2>
+          <p>Установлена версия: {version ? `${version.versionName} (код ${version.versionCode})` : '—'}</p>
+          <p role="status">{updateStatus || 'Обновление не проверено.'}</p>
+          {version && <IonButton expand="block" onClick={checkUpdate}>Проверить обновление</IonButton>}
+          {candidate && <><p>Новая версия: {candidate.version}</p><IonButton expand="block" onClick={downloadUpdate}>Скачать / Установить</IonButton></>}
+        </IonCardContent></IonCard> : <>
+          <p className="intro">Выберите фотографии и получите Основные / Резерв. Исходники остаются на устройстве.</p>
+          <IonCard><IonCardContent>
+            <h2>Фотографии</h2>
+            {hasAndroidFolderPicker() ? <div className="action-row">
+              <IonButton expand="block" fill="outline" onClick={selectAndroidPhotos} disabled={busy}>Выбрать фото</IonButton>
+              <IonButton expand="block" fill="outline" onClick={selectAndroidFolder} disabled={busy}>Выбрать папку</IonButton>
+            </div> : <div className="web-pickers">
+              <label>Отдельные фото<input type="file" accept="image/*" multiple onChange={select} disabled={busy} /></label>
+              <label>Папка с фото<input type="file" accept="image/*" webkitdirectory="" multiple onChange={select} disabled={busy} /></label>
+            </div>}
+            <p>Выбрано: {files.length}</p>
+          </IonCardContent></IonCard>
+          <IonCard><IonCardContent>
+            <IonList lines="inset">
+              <IonItem><IonSelect label="Публикация" labelPlacement="stacked" value={publisher}
+                onIonChange={(event) => setPublisher(event.detail.value)} disabled={busy}>
+                <IonSelectOption value="none">Только локально</IonSelectOption>
+                <IonSelectOption value="onion">Onion</IonSelectOption>
+                <IonSelectOption value="ninjabox">NinjaBox</IonSelectOption>
+              </IonSelect></IonItem>
+              {publisher === 'onion' && <IonItem><IonInput label="Onion адрес" labelPlacement="stacked" type="url"
+                value={onion} onIonInput={(event) => setOnion(event.detail.value || '')} disabled={busy} /></IonItem>}
+              {publisher === 'ninjabox' && <IonItem><IonInput label="NinjaBox relay HTTPS" labelPlacement="stacked" type="url"
+                value={ninjaboxRelay} onIonInput={(event) => setNinjaboxRelay(event.detail.value || '')} disabled={busy} /></IonItem>}
+              <IonItem><IonInput label="Цвет" labelPlacement="stacked" value={color}
+                onIonInput={(event) => setColor(event.detail.value || '')} /></IonItem>
+              <IonItem><IonInput label="Фасовка" labelPlacement="stacked" value={packing}
+                onIonInput={(event) => setPacking(event.detail.value || '')} /></IonItem>
+              <IonItem><IonTextarea label="Комментарий" labelPlacement="stacked" value={comment}
+                onIonInput={(event) => setComment(event.detail.value || '')} /></IonItem>
+            </IonList>
+            <IonButton className="primary-action" expand="block" onClick={run} disabled={busy || !files.length}>
+              {busy ? 'Обработка…' : 'Обработать фото'}
+            </IonButton>
+            <IonText><p role="status" aria-live="polite">{status}</p></IonText>
+          </IonCardContent></IonCard>
+          {grouped && <IonCard><IonCardContent>
+            <h2>Результат</h2>
+            <div className="counts">
+              <IonBadge color="success">Основные {grouped.main.length}</IonBadge>
+              <IonBadge color="warning">Резерв {grouped.reserve.length}</IonBadge>
+              <IonBadge color="danger">Требует проверки {grouped.unresolved.length}</IonBadge>
+            </div>
+            <div className="action-row"><IonButton expand="block" fill="outline" onClick={() => download('save')}>Сохранить TXT</IonButton>
+              {isNativeTextExport() && <IonButton expand="block" fill="outline" onClick={() => download('share')}>Поделиться TXT</IonButton>}</div>
+          </IonCardContent></IonCard>}
+          {rows.length > 0 && <IonCard><IonCardContent><h2>Фотографии</h2><IonList lines="full">
+            {rows.map((photo) => <IonItem key={photo.id}><IonLabel className="photo-result">
+              <strong>{photo.fileName}</strong>
+              <span>#{photo.indexFromOcr || '—'} · {photo.coordinates
+                ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'координаты не найдены'}</span>
+              <span>{reviewById.has(photo.id) ? `Требует проверки: ${reviewLabels[reviewById.get(photo.id)] || reviewById.get(photo.id)}`
+                : !grouped ? 'Распознано' : reserveIds.has(photo.id) ? 'Резерв' : 'Основное'}</span>
+              {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: {link.url}</a>)}
+              {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
+            </IonLabel></IonItem>)}
+          </IonList></IonCardContent></IonCard>}
+        </>}
+      </div>
+    </IonContent>
+  </IonPage></IonApp>;
 }

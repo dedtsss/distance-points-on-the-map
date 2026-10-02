@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DarkFotoFolderPlugin.class);
         registerPlugin(DarkFotoUpdatePlugin.class);
+        registerPlugin(DarkFotoTextPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

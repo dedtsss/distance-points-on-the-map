@@ -32,7 +32,7 @@ public class AndroidWebViewOcrTest {
     }
 
     @Test
-    public void nativeCacheToWebViewDecodeCropOcrAndThreePhotoSplit() throws Exception {
+    public void nativeCropOcrParserAndFivePhotoSplit() throws Exception {
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         Intent intent = new Intent(instrumentation.getTargetContext(), MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -65,14 +65,24 @@ public class AndroidWebViewOcrTest {
             }
             assertFalse("Android OCR timed out", result.isEmpty());
             JSONObject batch = new JSONObject(result);
+            android.util.Log.i("DarkFotoAcceptance", batch.toString());
+            System.out.println("DarkFotoAcceptance " + batch);
             assertFalse(batch.optString("error"), batch.has("error"));
             JSONArray photos = batch.getJSONArray("photos");
-            assertEquals(3, photos.length());
+            assertEquals(5, photos.length());
             assertEquals("5939", photos.getJSONObject(0).getString("index"));
             assertEquals(64.604344, photos.getJSONObject(0).getJSONObject("coordinates").getDouble("latitude"), 0.00001);
             assertEquals(30.591954, photos.getJSONObject(0).getJSONObject("coordinates").getDouble("longitude"), 0.00001);
-            assertEquals(1, batch.getInt("main"));
-            assertEquals(1, batch.getInt("reserve"));
+            assertEquals("6300", photos.getJSONObject(2).getString("index"));
+            assertEquals("6301", photos.getJSONObject(3).getString("index"));
+            assertEquals("6302", photos.getJSONObject(4).getString("index"));
+            assertEquals(64.581207, photos.getJSONObject(3).getJSONObject("coordinates").getDouble("latitude"), 0.00001);
+            assertEquals(30.597531, photos.getJSONObject(3).getJSONObject("coordinates").getDouble("longitude"), 0.00001);
+            assertEquals(1, batch.getInt("singleMain"));
+            assertEquals(0, batch.getInt("singleReserve"));
+            assertEquals(0, batch.getInt("singleUnresolved"));
+            assertEquals(2, batch.getInt("main"));
+            assertEquals(2, batch.getInt("reserve"));
             assertEquals(1, batch.getInt("unresolved"));
             assertEquals(0, batch.getInt("remainingConflicts"));
         } finally { activity.finish(); }

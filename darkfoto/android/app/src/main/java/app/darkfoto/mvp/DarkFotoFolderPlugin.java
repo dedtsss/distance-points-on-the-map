@@ -23,6 +23,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "DarkFotoFolder")
 public class DarkFotoFolderPlugin extends Plugin {
@@ -30,6 +32,8 @@ public class DarkFotoFolderPlugin extends Plugin {
     private static final int MAX_BYTES = 25 * 1024 * 1024;
     private final Map<String, Uri> selected = new HashMap<>();
     private final Map<String, File> cached = new HashMap<>();
+    private final ExecutorService ocrExecutor = Executors.newSingleThreadExecutor();
+    private NativeStampOcr stampOcr;
 
     private void clearCached() {
         for (File file : cached.values()) file.delete();
@@ -183,6 +187,19 @@ public class DarkFotoFolderPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void recognizePhoto(PluginCall call) {
+        Uri uri = selected.get(call.getString("id"));
+        if (uri == null) { call.reject("Photo selection expired"); return; }
+        boolean alternate = Boolean.TRUE.equals(call.getBoolean("alternate"));
+        ocrExecutor.execute(() -> {
+            try {
+                if (stampOcr == null) stampOcr = new NativeStampOcr();
+                call.resolve(stampOcr.recognize(getContext(), uri, alternate));
+            } catch (Exception error) { call.reject("Native OCR failed", error); }
+        });
+    }
+
+    @PluginMethod
     public void clearPhotoCache(PluginCall call) {
         clearCached();
         call.resolve();
@@ -199,7 +216,7 @@ public class DarkFotoFolderPlugin extends Plugin {
         clearCached();
         JSArray files = new JSArray();
         String[] names = { "black-bottom-right-overlay-crop.jpg", "gray-bottom-caption-overlay-crop.jpg",
-                           "black-bottom-right-overlay-crop.jpg" };
+                           "representative-6300.jpg", "representative-6301.jpg", "representative-6302.jpg" };
         try {
             File directory = new File(getContext().getCacheDir(), "darkfoto-test-input");
             if (!directory.exists() && !directory.mkdirs()) throw new IOException("Test cache unavailable");
@@ -223,6 +240,8 @@ public class DarkFotoFolderPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         clearCached();
+        ocrExecutor.shutdownNow();
+        if (stampOcr != null) stampOcr.close();
         super.handleOnDestroy();
     }
 }

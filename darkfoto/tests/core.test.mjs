@@ -9,6 +9,7 @@ import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockF
 import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
 import { selectUpdate } from '../src/update.js';
 import { handleNinjaboxRelay, isSanitizedJpeg } from '../relay/worker.js';
+import { parseNativeStamp, mergeNativePasses } from '../src/nativeOcr.js';
 
 test('Android OCR requests unpacked traineddata while browser keeps gzip', () => {
   assert.equal(getOcrAssetRuntimeOptions('android').gzip, false);
@@ -78,6 +79,41 @@ test('unresolved index or coordinates never enter Main, Reserve or distance chec
   assert.equal(result.reserve.length, 0);
   assert.deepEqual(result.unresolved.map((photo) => photo.id), ['b', 'c']);
   assert.equal(result.remainingConflicts.length, 0);
+  assert.equal(result.unresolved[0].reviewReason, 'index_missing');
+  assert.equal(result.unresolved[1].reviewReason, 'coordinates_missing');
+});
+
+test('6301 single photo and same-coordinate 6300/6301/6302 are eligible', () => {
+  const recognized = (index, id) => ({ id, number: Number(id),
+    ...parseNativeStamp({ text: '64.581207N 30.597531E', lines: [
+      { text: '64.581207N 30.597531E', topRatio: 0.25 },
+      { text: `Номер индекса: ${index}`, topRatio: 0.8 },
+    ] }),
+  });
+  const rows = ['6300', '6301', '6302'].map((index, position) => {
+    const parsed = recognized(index, String(position + 1));
+    return { ...parsed, coordinates: { latitude: parsed.latitude, longitude: parsed.longitude },
+      gpsSource: 'ocr', gpsConfidence: parsed.confidence, coordinateQuality: 'confident' };
+  });
+  const single = splitBatch([rows[1]]);
+  assert.deepEqual([single.main.length, single.reserve.length, single.unresolved.length], [1, 0, 0]);
+  const batch = splitBatch(rows);
+  assert.deepEqual([batch.main.length, batch.reserve.length, batch.unresolved.length], [1, 2, 0]);
+  assert.equal(batch.remainingConflicts.length, 0);
+});
+
+test('native stamp index policy rejects date, time, coordinate fragments and multiple values', () => {
+  const stamp = (lines) => parseNativeStamp({ text: '64.581207N 30.597531E', lines });
+  for (const value of ['12.09.2025', '12:34', '30.597531E', '2025-10-02', '2025']) {
+    assert.equal(stamp([{ text: value, topRatio: 0.8 }]).indexStatus, 'missing');
+  }
+  assert.equal(stamp([{ text: '6301', topRatio: 0.2 }]).indexStatus, 'missing');
+  assert.equal(stamp([{ text: '6300', topRatio: 0.8 }, { text: '6301', topRatio: 0.9 }]).indexStatus, 'missing');
+  assert.equal(stamp([{ text: '6301', topRatio: 0.8 }]).indexStatus, 'found');
+  assert.equal(parseNativeStamp({ profile: 'black', text: '64.581207N 30.597531E',
+    lines: [{ text: 'HOMep uHdekca: 6301', topRatio: 0.8 }] }).indexStatus, 'found');
+  assert.equal(mergeNativePasses(stamp([{ text: '6300', topRatio: 0.8 }]),
+    stamp([{ text: '6301', topRatio: 0.8 }])).indexStatus, 'uncertain');
 });
 
 test('explicit NinjaBox route accepts only per-photo viewer links and never falls back', async () => {

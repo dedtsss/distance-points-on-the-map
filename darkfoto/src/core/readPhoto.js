@@ -9,6 +9,7 @@ export async function readPhoto(file, options = {}) {
   let exif;
   let ocr;
   const errors = [];
+  const ocrStarted = performance.now();
   try { exif = await readExif(file); } catch (error) { errors.push(`EXIF: ${error.message}`); }
   try { ocr = await readOcr(file, { onProgress: options.onProgress }); } catch (error) { errors.push(`OCR: ${error.message}`); }
 
@@ -32,5 +33,7 @@ export async function readPhoto(file, options = {}) {
     orientation: exif?.orientation || 1,
     ocrStatus: ocr?.ocrStatus || 'missing',
     warnings: [...(ocr?.warnings || []), ...errors],
+    ocrEngine: ocr?.ocrEngine || 'tesseract_web',
+    recognitionMs: ocr?.recognitionMs ?? Math.round(performance.now() - ocrStarted),
   };
 }
