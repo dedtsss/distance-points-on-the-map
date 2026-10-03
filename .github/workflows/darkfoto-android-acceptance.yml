@@ -1,0 +1,56 @@
+name: DarkFoto Android OCR Acceptance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  real-jpeg-ocr-acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: darkfoto/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Prepare Android OCR acceptance build
+        working-directory: darkfoto
+        run: |
+          npm ci
+          npm run build -- --mode android-test
+          npx cap sync android
+      - name: Compile debug and instrumentation APKs
+        working-directory: darkfoto/android
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon -Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.workers.max=2
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Emulator real-JPEG native ML Kit OCR and grouping acceptance
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: cd darkfoto/android && ./gradlew :app:connectedDebugAndroidTest --no-daemon -Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.workers.max=2
+      - name: Save emulator reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarkFoto-Android-OCR-acceptance-reports
+          path: |
+            darkfoto/android/app/build/reports/androidTests/connected/
+            darkfoto/android/app/build/outputs/androidTest-results/connected/
+          if-no-files-found: ignore

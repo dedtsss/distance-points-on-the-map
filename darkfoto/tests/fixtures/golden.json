@@ -1,0 +1,15 @@
+{
+  "provenance": "Complete 960x1280 JPEGs from approved redacted field diagnostics. The 6300-6302 cases are representative derivatives of the real black-stamp JPEG: only the stamp text was replaced to reproduce the owner's indexes and coordinates; no owner 630x originals were available.",
+  "cases": [
+    { "file": "black-bottom-right-overlay-crop.jpg", "index": "5939", "coordinates": [64.604344, 30.591954], "eligibility": "main" },
+    { "file": "gray-bottom-caption-overlay-crop.jpg", "index": null, "coordinates": [64.60271, 30.61999], "eligibility": "review", "reason": "index_missing" },
+    { "file": "representative-6300.jpg", "index": "6300", "coordinates": [64.581207, 30.597531], "eligibility": "same_coordinate_group" },
+    { "file": "representative-6301.jpg", "index": "6301", "coordinates": [64.581207, 30.597531], "eligibility": "main_alone_and_same_coordinate_group" },
+    { "file": "representative-6302.jpg", "index": "6302", "coordinates": [64.581207, 30.597531], "eligibility": "same_coordinate_group" }
+  ],
+  "expectedGroups": {
+    "single6301": { "main": 1, "reserve": 0, "review": 0 },
+    "sameCoordinates": { "main": 1, "reserve": 2, "review": 0 },
+    "allFive": { "main": 2, "reserve": 2, "review": 1 }
+  }
+}
