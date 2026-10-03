@@ -32,3 +32,6 @@ ion-button { min-height: 48px; }
 .web-pickers label { display: block; margin: 12px 0; font-weight: 600; color: #c4d0dc; }
 .web-pickers input { display: block; width: 100%; min-height: 48px; margin-top: 6px; color: #eef1f5; }
 [role=alert] { color: #ffb9a9; }
+.session-summary { margin: -2px 0 14px; color: #eef1f5 !important; }
+ion-action-sheet.publication-sheet { --background: #1b2530; --button-color: #eef1f5; --color: #eef1f5; }
+ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }

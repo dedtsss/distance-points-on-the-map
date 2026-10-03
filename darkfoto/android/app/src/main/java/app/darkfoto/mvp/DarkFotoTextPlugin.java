@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 @CapacitorPlugin(name = "DarkFotoText")
 public class DarkFotoTextPlugin extends Plugin {
@@ -30,6 +31,18 @@ public class DarkFotoTextPlugin extends Plugin {
         return value;
     }
 
+    static String safeFilename(String value) {
+        String name = value == null ? "" : value.trim();
+        name = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
+            .replaceAll("\\s+", "_")
+            .replaceAll("_+", "_")
+            .replaceAll("^[._ ]+|[._ ]+$", "");
+        if (name.isEmpty()) name = "DarkFotoResult";
+        if (name.length() > 120) name = name.substring(0, 120);
+        if (!name.toLowerCase(Locale.ROOT).endsWith(".txt")) name += ".txt";
+        return name;
+    }
+
     @PluginMethod
     public void saveText(PluginCall call) {
         try {
@@ -37,7 +50,7 @@ public class DarkFotoTextPlugin extends Plugin {
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("text/plain");
-            intent.putExtra(Intent.EXTRA_TITLE, "darkfoto-result.txt");
+            intent.putExtra(Intent.EXTRA_TITLE, safeFilename(call.getString("filename")));
             startActivityForResult(call, intent, "documentCreated");
         } catch (Exception error) { call.reject("TXT cannot be saved", error); }
     }
@@ -58,7 +71,7 @@ public class DarkFotoTextPlugin extends Plugin {
         try {
             File directory = new File(getContext().getCacheDir(), "darkfoto-share");
             if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("TXT cache unavailable");
-            File file = new File(directory, "darkfoto-result.txt");
+            File file = new File(directory, safeFilename(call.getString("filename")));
             try (OutputStream output = new FileOutputStream(file)) { writeUtf8(output, content(call)); }
             Uri uri = FileProvider.getUriForFile(getContext(),
                 getContext().getPackageName() + ".fileprovider", file);
@@ -76,8 +89,9 @@ public class DarkFotoTextPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
-        File file = new File(new File(getContext().getCacheDir(), "darkfoto-share"), "darkfoto-result.txt");
-        file.delete();
+        File directory = new File(getContext().getCacheDir(), "darkfoto-share");
+        File[] files = directory.listFiles();
+        if (files != null) for (File file : files) file.delete();
         super.handleOnDestroy();
     }
 }

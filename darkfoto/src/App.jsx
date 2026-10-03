@@ -25,6 +25,7 @@ export default function App() {
   const [version, setVersion] = useState(null);
   const [candidate, setCandidate] = useState(null);
   const [updateStatus, setUpdateStatus] = useState('');
+  const [session, setSession] = useState('');
   const [comment, setComment] = useState('');
   const [color, setColor] = useState('');
   const [packing, setPacking] = useState('');
@@ -157,13 +158,15 @@ export default function App() {
   };
 
   const grouped = split ? splitBatch(rows) : null;
-  const formatOptions = { description: comment, color, packing };
+  const normalizedSession = session.trim();
+  const formatOptions = { description: comment, color, packing, session: normalizedSession };
   const download = async (action = 'save') => {
     const main = formatAllPhotoResultBlocks(grouped?.main || [], formatOptions);
     const reserve = formatAllPhotoResultBlocks(grouped?.reserve || [], formatOptions);
     const review = grouped?.unresolved.map((photo) => `${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`).join('\n') || '';
-    const text = `Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nТребует проверки\n\n${review}\n`;
-    try { await exportText(text, action); setStatus('TXT готов.'); }
+    const sessionHeader = normalizedSession ? `Сессия: ${normalizedSession}\n\n` : '';
+    const text = `${sessionHeader}Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nТребует проверки\n\n${review}\n`;
+    try { await exportText(text, action, normalizedSession); setStatus('TXT готов.'); }
     catch (error) { setStatus(`TXT: ${errorText(error)}`); }
   };
 
@@ -206,6 +209,7 @@ export default function App() {
           <IonCard><IonCardContent>
             <IonList lines="inset">
               <IonItem><IonSelect label="Публикация" labelPlacement="stacked" value={publisher}
+                interface="action-sheet" interfaceOptions={{ header: 'Публикация', cssClass: 'publication-sheet' }}
                 onIonChange={(event) => setPublisher(event.detail.value)} disabled={busy}>
                 <IonSelectOption value="none">Только локально</IonSelectOption>
                 <IonSelectOption value="onion">Onion</IonSelectOption>
@@ -215,6 +219,8 @@ export default function App() {
                 value={onion} onIonInput={(event) => setOnion(event.detail.value || '')} disabled={busy} /></IonItem>}
               {publisher === 'ninjabox' && <IonItem><IonInput label="NinjaBox relay HTTPS" labelPlacement="stacked" type="url"
                 value={ninjaboxRelay} onIonInput={(event) => setNinjaboxRelay(event.detail.value || '')} disabled={busy} /></IonItem>}
+              <IonItem><IonInput label="Сессия" labelPlacement="stacked" value={session}
+                placeholder="Например 17 или Север-2" onIonInput={(event) => setSession(event.detail.value || '')} /></IonItem>
               <IonItem><IonInput label="Цвет" labelPlacement="stacked" value={color}
                 onIonInput={(event) => setColor(event.detail.value || '')} /></IonItem>
               <IonItem><IonInput label="Фасовка" labelPlacement="stacked" value={packing}
@@ -229,6 +235,7 @@ export default function App() {
           </IonCardContent></IonCard>
           {grouped && <IonCard><IonCardContent>
             <h2>Результат</h2>
+            {normalizedSession && <p className="session-summary">Сессия: <strong>{normalizedSession}</strong></p>}
             <div className="counts">
               <IonBadge color="success">Основные {grouped.main.length}</IonBadge>
               <IonBadge color="warning">Резерв {grouped.reserve.length}</IonBadge>
@@ -240,7 +247,7 @@ export default function App() {
           {rows.length > 0 && <IonCard><IonCardContent><h2>Фотографии</h2><IonList lines="full">
             {rows.map((photo) => <IonItem key={photo.id}><IonLabel className="photo-result">
               <strong>{photo.fileName}</strong>
-              <span>#{photo.indexFromOcr || '—'} · {photo.coordinates
+              <span>#{photo.indexFromOcr || '—'}{normalizedSession ? ` / ${normalizedSession}` : ''} · {photo.coordinates
                 ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'координаты не найдены'}</span>
               <span>{reviewById.has(photo.id) ? `Требует проверки: ${reviewLabels[reviewById.get(photo.id)] || reviewById.get(photo.id)}`
                 : !grouped ? 'Распознано' : reserveIds.has(photo.id) ? 'Резерв' : 'Основное'}</span>

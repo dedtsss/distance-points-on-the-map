@@ -6,6 +6,7 @@ import { findDistanceViolations, haversineDistanceMeters } from '../src/core/uti
 import { parseFixedOverlayIndex } from '../src/core/features/gps/fixedOverlayOcr.js';
 import { getOcrAssetRuntimeOptions, parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } from '../src/core/utils/ocrGpsReader.js';
 import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockFormatter.js';
+import { textFilename } from '../src/androidText.js';
 import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
 import { selectUpdate } from '../src/update.js';
 import { handleNinjaboxRelay, isSanitizedJpeg } from '../relay/worker.js';
@@ -57,6 +58,9 @@ test('25 m boundary and minimum conflict cover are deterministic', () => {
 
 test('result fields retain donor order and onion publisher refuses clearnet', async () => {
   assert.equal(formatPhotoResultBlock({ indexFromOcr: '0123', coordinates: { latitude: 64, longitude: 30 } }, { description: 'x' }).split('\n')[0], '#0123');
+  assert.equal(formatPhotoResultBlock({ indexFromOcr: '6301', coordinates: { latitude: 64, longitude: 30 } }, { session: '17 Север' }).split('\n')[0], '#6301 / 17 Север');
+  assert.equal(textFilename('17 Север'), 'DarkFotoResult_17_Север.txt');
+  assert.equal(textFilename('  /опасно:*?  '), 'DarkFotoResult_опасно.txt');
   assert.throws(() => onionBaseUrl('https://example.com'));
   assert.throws(() => onionBaseUrl('http://abc.onion'));
   const onion = `http://${'a'.repeat(56)}.onion/`;

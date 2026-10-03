@@ -3,6 +3,7 @@ import { photoLinksInRequestedOrder } from '../links/linkFormatter.js';
 const normalizeExportDescription = (value) => String(value || '').replace(/\r\n?/g, '\n').slice(0, 4000);
 const normalizeSessionColor = (value) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
 const normalizeSessionPacking = (value) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+const normalizeSessionName = (value) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120);
 
 export const RESULT_BLOCK_SEPARATOR = '==========';
 
@@ -27,12 +28,13 @@ export function formatPhotoResultBlock(photo, options = {}) {
   const description = compactComment(options.description);
   const color = normalizeSessionColor(options.color);
   const packing = normalizeSessionPacking(options.packing);
+  const session = normalizeSessionName(options.session);
   const index = String(photo?.indexFromOcr || '').trim() || 'не распознан';
   const links = photoLinksInRequestedOrder(photo);
   const photoText = links.length > 0 ? links.join(' ') : 'ссылка отсутствует';
 
   return [
-    `#${index}`,
+    `#${index}${session ? ` / ${session}` : ''}`,
     `Координаты: ${coordinatesText(photo)}`,
     `Цвет: ${color || 'не указан'}`,
     `Фасовка: ${packing || 'не указана'}`,
