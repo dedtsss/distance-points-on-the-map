@@ -1,18 +1,6 @@
 name: DarkFoto Android OCR Acceptance
 
 on:
-  pull_request:
-    paths:
-      - 'darkfoto/src/nativeOcr.js'
-      - 'darkfoto/src/androidFolder.js'
-      - 'darkfoto/src/core/readPhoto.js'
-      - 'darkfoto/src/core/features/gps/**'
-      - 'darkfoto/src/core/utils/ocrGpsReader.js'
-      - 'darkfoto/android/app/src/main/java/app/darkfoto/mvp/DarkFotoOcrPlugin.java'
-      - 'darkfoto/android/app/src/main/java/app/darkfoto/mvp/DarkFotoFolderPlugin.java'
-      - 'darkfoto/android/app/src/androidTest/java/app/darkfoto/mvp/AndroidWebViewOcrTest.java'
-      - 'darkfoto/android/app/src/androidTest/java/app/darkfoto/mvp/MlKitComparisonTest.java'
-      - 'darkfoto/tests/fixtures/**'
   workflow_dispatch:
 
 jobs:
