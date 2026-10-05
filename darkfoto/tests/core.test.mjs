@@ -8,7 +8,7 @@ import { getOcrAssetRuntimeOptions, parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } 
 import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockFormatter.js';
 import { textFilename } from '../src/androidText.js';
 import { buildDistancePairs, buildResultText } from '../src/resultSummary.js';
-import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
+import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
 import { selectUpdate } from '../src/update.js';
 import { handleNinjaboxRelay, isSanitizedJpeg } from '../relay/worker.js';
 import { parseNativeStamp, mergeNativePasses } from '../src/nativeOcr.js';
@@ -126,6 +126,7 @@ test('explicit NinjaBox route accepts only per-photo viewer links and never fall
   assert.equal(isSanitizedJpeg(new Uint8Array(await jpeg.arrayBuffer())), true);
   assert.equal(isSanitizedJpeg(new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 2, 0xff, 0xda, 0, 0, 0])), false);
   assert.equal(ninjaboxRelayUrl('https://relay.example/v1/ninjabox'), 'https://relay.example/v1/ninjabox');
+  assert.equal(ninjaboxRelayUrl(DEFAULT_NINJABOX_RELAY_URL), DEFAULT_NINJABOX_RELAY_URL);
   assert.throws(() => ninjaboxRelayUrl('http://relay.example/v1/ninjabox'));
   let calls = 0;
   const fetchMock = async (_url, request) => {
