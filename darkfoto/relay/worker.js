@@ -47,4 +47,8 @@ export async function handleNinjaboxRelay(request, uploader = uploadNinjabox) {
   }
 }
 
-export default { fetch: handleNinjaboxRelay };
+export default {
+  fetch(request) {
+    return handleNinjaboxRelay(request);
+  },
+};
