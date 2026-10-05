@@ -149,6 +149,7 @@ test('result summary exposes pairwise distances and session text', () => {
     indexFromOcr: index, indexStatus: 'found',
     coordinates: { latitude: 64.581207, longitude: 30.597531 },
     gpsStatus: 'done', gpsSource: 'ocr', coordinateQuality: 'confident',
+    ocrStatus: 'confident', gpsConfidence: 0.99,
   }));
   const grouped = splitBatch(photos);
   const pairs = buildDistancePairs([...grouped.main, ...grouped.reserve], 25);
