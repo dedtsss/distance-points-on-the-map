@@ -2,6 +2,8 @@ package app.darkfoto.mvp;
 
 import android.app.Activity;
 import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import androidx.core.content.FileProvider;
@@ -41,6 +43,16 @@ public class DarkFotoTextPlugin extends Plugin {
         if (name.length() > 120) name = name.substring(0, 120);
         if (!name.toLowerCase(Locale.ROOT).endsWith(".txt")) name += ".txt";
         return name;
+    }
+
+    @PluginMethod
+    public void copyText(PluginCall call) {
+        try {
+            ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) throw new IllegalStateException("Clipboard unavailable");
+            clipboard.setPrimaryClip(ClipData.newPlainText("DarkFoto TXT", content(call)));
+            call.resolve();
+        } catch (Exception error) { call.reject("TXT copy failed", error); }
     }
 
     @PluginMethod
