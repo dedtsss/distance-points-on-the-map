@@ -56,3 +56,40 @@ jobs:
         with:
           name: DarkFoto-unsigned-release-apk
           path: darkfoto/android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+
+  deploy-ninjabox-relay:
+    if: github.event_name == 'pull_request' && github.head_ref == 'manual/darkfoto-mvp-550'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: darkfoto/package-lock.json
+      - name: Validate Cloudflare deployment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - name: Deploy dedicated DarkFoto NinjaBox relay
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config darkfoto/relay/wrangler.jsonc
+      - name: Show relay URL
+        run: echo "DARKFOTO_RELAY_URL=${{ steps.deploy.outputs.deployment-url }}"
+      - name: Live cleaned-JPEG NinjaBox smoke
+        working-directory: darkfoto
+        env:
+          DARKFOTO_NINJABOX_RELAY_URL: ${{ steps.deploy.outputs.deployment-url }}/v1/ninjabox
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run smoke:ninjabox
