@@ -3,7 +3,7 @@ import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
 import { buildDistancePairs, buildResultText, formatDistancePair } from './resultSummary.js';
-import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from './core/publisher.js';
+import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from './core/publisher.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto, clearAndroidPhotoCache } from './androidFolder.js';
 import { checkForUpdate, installRelease, installedVersion, isAndroidUpdateAvailable } from './update.js';
 import { recognizeAndroidStamp } from './nativeOcr.js';
@@ -20,7 +20,7 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const [onion, setOnion] = useState('');
   const [publisher, setPublisher] = useState('none');
-  const [ninjaboxRelay, setNinjaboxRelay] = useState(import.meta.env.VITE_NINJABOX_RELAY_URL || '');
+  const ninjaboxRelay = import.meta.env.VITE_NINJABOX_RELAY_URL || DEFAULT_NINJABOX_RELAY_URL;
   const [screen, setScreen] = useState('photos');
   const [version, setVersion] = useState(null);
   const [candidate, setCandidate] = useState(null);
@@ -231,8 +231,9 @@ export default function App() {
               </IonSelect></IonItem>
               {publisher === 'onion' && <IonItem><IonInput label="Onion адрес" labelPlacement="stacked" type="url"
                 value={onion} onIonInput={(event) => setOnion(event.detail.value || '')} disabled={busy} /></IonItem>}
-              {publisher === 'ninjabox' && <IonItem><IonInput label="NinjaBox relay HTTPS" labelPlacement="stacked" type="url"
-                value={ninjaboxRelay} onIonInput={(event) => setNinjaboxRelay(event.detail.value || '')} disabled={busy} /></IonItem>}
+              {publisher === 'ninjabox' && <IonItem><IonLabel className="publisher-note">
+                NinjaBox: публичная публикация через встроенный relay. Для анонимного режима используйте Onion.
+              </IonLabel></IonItem>}
               <IonItem><IonInput label="Сессия" labelPlacement="stacked" value={session}
                 placeholder="Например 17 или Север-2" onIonInput={(event) => setSession(event.detail.value || '')} /></IonItem>
               <IonItem><IonInput label="Цвет" labelPlacement="stacked" value={color}
