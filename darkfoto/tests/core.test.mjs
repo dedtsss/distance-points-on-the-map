@@ -7,6 +7,7 @@ import { parseFixedOverlayIndex } from '../src/core/features/gps/fixedOverlayOcr
 import { getOcrAssetRuntimeOptions, parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } from '../src/core/utils/ocrGpsReader.js';
 import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockFormatter.js';
 import { textFilename } from '../src/androidText.js';
+import { buildDistancePairs, buildResultText } from '../src/resultSummary.js';
 import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
 import { selectUpdate } from '../src/update.js';
 import { handleNinjaboxRelay, isSanitizedJpeg } from '../relay/worker.js';
@@ -140,6 +141,28 @@ test('explicit NinjaBox route accepts only per-photo viewer links and never fall
   const response = await handleNinjaboxRelay(new Request('https://relay.example/v1/ninjabox', { method: 'POST', body: form }),
     async () => ({ ok: true, items: [{ url: 'https://ninjabox.org/i/test123' }] }));
   assert.deepEqual(await response.json(), { ok: true, url: 'https://ninjabox.org/i/test123' });
+});
+
+test('result summary exposes pairwise distances and session text', () => {
+  const photos = ['6300', '6301', '6302'].map((index, position) => ({
+    id: String(position + 1), number: position + 1, fileName: `${index}.jpg`,
+    indexFromOcr: index, indexStatus: 'found',
+    coordinates: { latitude: 64.581207, longitude: 30.597531 },
+    gpsStatus: 'done', gpsSource: 'ocr', coordinateQuality: 'confident',
+  }));
+  const grouped = splitBatch(photos);
+  const pairs = buildDistancePairs([...grouped.main, ...grouped.reserve], 25);
+  assert.equal(pairs.length, 3);
+  assert.ok(pairs.every((pair) => pair.distanceMeters === 0 && pair.tooClose));
+  const text = buildResultText({
+    grouped,
+    session: '17',
+    formatOptions: { session: '17' },
+    reviewLabels: {},
+  });
+  assert.match(text, /^Сессия: 17/);
+  assert.match(text, /Расстояния между точками/);
+  assert.match(text, /#6300 ↔ #6301: 0\.0 м · ближе 25\.0 м/);
 });
 
 test('About picks only a newer public DarkFoto APK release', () => {
