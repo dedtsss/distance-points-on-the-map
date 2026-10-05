@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
-import { formatAllPhotoResultBlocks } from './core/features/export/resultBlockFormatter.js';
+import { buildDistancePairs, buildResultText, formatDistancePair } from './resultSummary.js';
 import { onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from './core/publisher.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto, clearAndroidPhotoCache } from './androidFolder.js';
 import { checkForUpdate, installRelease, installedVersion, isAndroidUpdateAvailable } from './update.js';
 import { recognizeAndroidStamp } from './nativeOcr.js';
-import { exportText, isNativeTextExport } from './androidText.js';
+import { copyText, exportText, isNativeTextExport } from './androidText.js';
 import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
   IonCardContent, IonItem, IonLabel, IonInput, IonTextarea, IonSelect, IonSelectOption,
-  IonSegment, IonSegmentButton, IonBadge, IonList, IonText } from '@ionic/react';
+  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal } from '@ionic/react';
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
   .sort((left, right) => (left.webkitRelativePath || left.name).localeCompare(right.webkitRelativePath || right.name));
@@ -33,6 +33,8 @@ export default function App() {
   const [split, setSplit] = useState(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [txtOpen, setTxtOpen] = useState(false);
+  const [copyStatus, setCopyStatus] = useState('');
 
   const showAbout = async () => {
     setScreen('about');
@@ -157,27 +159,39 @@ export default function App() {
     }
   };
 
-  const grouped = split ? splitBatch(rows) : null;
-  const normalizedSession = session.trim();
-  const formatOptions = { description: comment, color, packing, session: normalizedSession };
-  const download = async (action = 'save') => {
-    const main = formatAllPhotoResultBlocks(grouped?.main || [], formatOptions);
-    const reserve = formatAllPhotoResultBlocks(grouped?.reserve || [], formatOptions);
-    const review = grouped?.unresolved.map((photo) => `${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`).join('\n') || '';
-    const sessionHeader = normalizedSession ? `Сессия: ${normalizedSession}\n\n` : '';
-    const text = `${sessionHeader}Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nТребует проверки\n\n${review}\n`;
-    try { await exportText(text, action, normalizedSession); setStatus('TXT готов.'); }
-    catch (error) { setStatus(`TXT: ${errorText(error)}`); }
-  };
-
   const reviewLabels = {
     coordinates_missing: 'Координаты не найдены', index_missing: 'Индекс не найден',
     index_low_confidence: 'Индекс распознан неуверенно', coordinates_low_precision: 'Недостаточная точность координат',
     coordinates_low_confidence: 'Координаты требуют проверки', low_confidence: 'Координаты распознаны неуверенно',
     batch_outlier: 'Координаты отличаются от партии', outside_expected_region: 'Координаты вне ожидаемого региона',
   };
+  const grouped = split ? splitBatch(rows) : null;
+  const normalizedSession = session.trim();
+  const formatOptions = { description: comment, color, packing, session: normalizedSession };
+  const thresholdMeters = grouped?.recommendation?.thresholdMeters || 25;
+  const distancePairs = grouped
+    ? buildDistancePairs([...(grouped.main || []), ...(grouped.reserve || [])], thresholdMeters)
+    : [];
+  const txtText = grouped ? buildResultText({
+    grouped, formatOptions, session: normalizedSession, reviewLabels,
+  }) : '';
+  const download = async (action = 'save') => {
+    try { await exportText(txtText, action, normalizedSession); setStatus('TXT готов.'); }
+    catch (error) { setStatus(`TXT: ${errorText(error)}`); }
+  };
+  const copyPreview = async () => {
+    try {
+      await copyText(txtText);
+      setCopyStatus('Скопировано.');
+    } catch (error) { setCopyStatus(`Не удалось скопировать: ${errorText(error)}`); }
+  };
   const reviewById = new Map((grouped?.unresolved || []).map((photo) => [photo.id, photo.reviewReason]));
   const reserveIds = new Set((grouped?.reserve || []).map((photo) => photo.id));
+  const photoStatus = (photo) => reviewById.has(photo.id)
+    ? { kind: 'review', text: `Требует проверки: ${reviewLabels[reviewById.get(photo.id)] || reviewById.get(photo.id)}` }
+    : !grouped ? { kind: 'recognized', text: 'Распознано' }
+      : reserveIds.has(photo.id) ? { kind: 'reserve', text: 'Резерв' }
+        : { kind: 'main', text: 'Основное' };
 
   return <IonApp><IonPage>
     <IonHeader><IonToolbar><IonTitle>DarkFoto</IonTitle></IonToolbar></IonHeader>
@@ -241,22 +255,51 @@ export default function App() {
               <IonBadge color="warning">Резерв {grouped.reserve.length}</IonBadge>
               <IonBadge color="danger">Требует проверки {grouped.unresolved.length}</IonBadge>
             </div>
-            <div className="action-row"><IonButton expand="block" fill="outline" onClick={() => download('save')}>Сохранить TXT</IonButton>
-              {isNativeTextExport() && <IonButton expand="block" fill="outline" onClick={() => download('share')}>Поделиться TXT</IonButton>}</div>
+            {distancePairs.length > 0 && <div className="distance-block">
+              <h3>Расстояния между точками</h3>
+              <div className="distance-list">
+                {distancePairs.map((pair) => <div key={`${pair.pointA.id}-${pair.pointB.id}`}
+                  className={pair.tooClose ? 'distance-row distance-warning' : 'distance-row'}>
+                  {formatDistancePair(pair)}
+                </div>)}
+              </div>
+            </div>}
+            <div className="action-row">
+              <IonButton expand="block" fill="outline" onClick={() => { setCopyStatus(''); setTxtOpen(true); }}>Посмотреть TXT</IonButton>
+              <IonButton expand="block" fill="outline" onClick={() => download('save')}>Сохранить TXT</IonButton>
+              {isNativeTextExport() && <IonButton expand="block" fill="outline" onClick={() => download('share')}>Поделиться TXT</IonButton>}
+            </div>
           </IonCardContent></IonCard>}
           {rows.length > 0 && <IonCard><IonCardContent><h2>Фотографии</h2><IonList lines="full">
-            {rows.map((photo) => <IonItem key={photo.id}><IonLabel className="photo-result">
-              <strong>{photo.fileName}</strong>
-              <span>#{photo.indexFromOcr || '—'}{normalizedSession ? ` / ${normalizedSession}` : ''} · {photo.coordinates
-                ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'координаты не найдены'}</span>
-              <span>{reviewById.has(photo.id) ? `Требует проверки: ${reviewLabels[reviewById.get(photo.id)] || reviewById.get(photo.id)}`
-                : !grouped ? 'Распознано' : reserveIds.has(photo.id) ? 'Резерв' : 'Основное'}</span>
-              {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: {link.url}</a>)}
-              {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
-            </IonLabel></IonItem>)}
+            {rows.map((photo) => {
+              const state = photoStatus(photo);
+              return <IonItem key={photo.id}><IonLabel className="photo-result">
+                <strong>{photo.fileName}</strong>
+                <div className="photo-index">Индекс: #{photo.indexFromOcr || '—'}{normalizedSession ? ` / ${normalizedSession}` : ''}</div>
+                <div className="photo-coordinates">Координаты: {photo.coordinates
+                  ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'не найдены'}</div>
+                <div className={`photo-state photo-state-${state.kind}`}>{state.text}</div>
+                {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: {link.url}</a>)}
+                {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
+              </IonLabel></IonItem>;
+            })}
           </IonList></IonCardContent></IonCard>}
         </>}
       </div>
     </IonContent>
+    <IonModal isOpen={txtOpen} onDidDismiss={() => setTxtOpen(false)}>
+      <IonHeader><IonToolbar><IonTitle>TXT результат</IonTitle></IonToolbar></IonHeader>
+      <IonContent>
+        <div className="txt-preview-wrap">
+          <IonTextarea className="txt-preview" value={txtText} readonly autoGrow
+            aria-label="TXT результат" />
+          <div className="action-row">
+            <IonButton expand="block" onClick={copyPreview}>Скопировать</IonButton>
+            <IonButton expand="block" fill="outline" onClick={() => setTxtOpen(false)}>Закрыть</IonButton>
+          </div>
+          {copyStatus && <IonText><p role="status">{copyStatus}</p></IonText>}
+        </div>
+      </IonContent>
+    </IonModal>
   </IonPage></IonApp>;
 }
