@@ -81,7 +81,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: 977cf45e04d4066ca0b8288de1a337ed
           command: deploy --config darkfoto/relay/wrangler.jsonc
       - name: Show relay URL
         run: echo "DARKFOTO_RELAY_URL=${{ steps.deploy.outputs.deployment-url }}"
