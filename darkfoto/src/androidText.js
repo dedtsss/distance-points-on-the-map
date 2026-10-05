@@ -13,6 +13,21 @@ export const textFilename = (session = '') => {
   return safe ? `DarkFotoResult_${safe}.txt` : 'DarkFotoResult.txt';
 };
 
+export async function copyText(text) {
+  const value = String(text || '');
+  if (isNativeTextExport()) return textPlugin.copyText({ text: value });
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
+  const area = document.createElement('textarea');
+  area.value = value;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand('copy');
+  area.remove();
+}
+
 export async function exportText(text, action = 'save', session = '') {
   const filename = textFilename(session);
   if (isNativeTextExport()) {
