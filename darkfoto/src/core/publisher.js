@@ -43,7 +43,11 @@ export async function publishCleanImageToNinjabox(cleanedFile, relay, options = 
   const response = await (options.fetch || fetch)(ninjaboxRelayUrl(relay), {
     method: 'POST', body: form, cache: 'no-store', redirect: 'error',
   });
-  if (!response.ok) throw new Error(`NinjaBox relay: HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.clone().json())?.error || ''; } catch { /* ignore non-JSON relay errors */ }
+    throw new Error(`NinjaBox relay: ${detail || `HTTP ${response.status}`} (HTTP ${response.status})`);
+  }
   const result = await response.json();
   const link = result?.url;
   if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
