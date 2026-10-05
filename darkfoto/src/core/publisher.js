@@ -1,3 +1,5 @@
+export const DEFAULT_NINJABOX_RELAY_URL = 'https://darkfoto-ninjabox-relay.dvabobra2014.workers.dev/v1/ninjabox';
+
 export function onionBaseUrl(value) {
   const parsed = new URL(String(value || '').trim());
   if (!['http:', 'https:'].includes(parsed.protocol)
