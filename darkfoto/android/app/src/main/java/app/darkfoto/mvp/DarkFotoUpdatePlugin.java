@@ -3,7 +3,7 @@ package app.darkfoto.mvp;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.Signature;
+import com.android.apksig.ApkVerifier;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -19,6 +19,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.security.cert.X509Certificate;
+import java.util.List;
 
 @CapacitorPlugin(name = "DarkFotoUpdate")
 public class DarkFotoUpdatePlugin extends Plugin {
@@ -55,9 +57,14 @@ public class DarkFotoUpdatePlugin extends Plugin {
         return Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
     }
 
-    static Signature[] signatures(PackageInfo info) {
-        if (Build.VERSION.SDK_INT >= 28) return info.signingInfo == null ? null : info.signingInfo.getApkContentsSigners();
-        return info.signatures;
+    static String verifiedSignerDigest(File apk) throws Exception {
+        ApkVerifier.Result verification = new ApkVerifier.Builder(apk).build().verify();
+        if (!verification.isVerified())
+            throw new IllegalArgumentException("APK signature verification failed");
+        List<X509Certificate> certificates = verification.getSignerCertificates();
+        if (certificates == null || certificates.size() != 1)
+            throw new IllegalArgumentException("APK signing certificate unavailable");
+        return hex(MessageDigest.getInstance("SHA-256").digest(certificates.get(0).getEncoded()));
     }
 
     @PluginMethod
@@ -92,14 +99,10 @@ public class DarkFotoUpdatePlugin extends Plugin {
                 } finally { connection.disconnect(); }
                 if (size == 0) throw new IllegalArgumentException("Empty APK");
                 PackageManager manager = getContext().getPackageManager();
-                int signatureFlag = Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
-                PackageInfo candidate = manager.getPackageArchiveInfo(target.getAbsolutePath(), signatureFlag);
+                PackageInfo candidate = manager.getPackageArchiveInfo(target.getAbsolutePath(), 0);
                 PackageInfo installed = manager.getPackageInfo(PACKAGE_ID, 0);
-                Signature[] signers = candidate == null ? null : signatures(candidate);
-                if (signers == null || signers.length != 1)
-                    throw new IllegalArgumentException("APK signing certificate unavailable");
-                Signature signer = signers[0];
-                String signerDigest = hex(MessageDigest.getInstance("SHA-256").digest(signer.toByteArray()));
+                if (candidate == null) throw new IllegalArgumentException("APK package metadata unavailable");
+                String signerDigest = verifiedSignerDigest(target);
                 String actualDigest = hex(sha.digest());
                 if (!acceptedCandidate(candidate.packageName, code(candidate), code(installed),
                                        actualDigest, expectedDigest, signerDigest))
