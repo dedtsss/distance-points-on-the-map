@@ -123,6 +123,16 @@ try {
   assert.ok(oriented.top[0] > oriented.top[2], JSON.stringify(oriented));
   assert.ok(oriented.bottom[2] > oriented.bottom[0], JSON.stringify(oriented));
   assert.equal(oriented.hasExif, false);
+  const gpx = await page.evaluate(async (baseUrl) => {
+    const { buildGpx } = await import(`${baseUrl}src/resultExports.js`);
+    const point = { id: '1', number: 1, indexFromOcr: '6301', fileName: 'a&b.jpg',
+      coordinates: { latitude: 64.581207, longitude: 30.597531 } };
+    const document = new DOMParser().parseFromString(buildGpx({ main: [point], reserve: [], unresolved: [] }, '17 & Север'), 'application/xml');
+    return { errors: document.getElementsByTagName('parsererror').length,
+      name: document.getElementsByTagName('name')[0]?.textContent,
+      latitude: document.getElementsByTagName('wpt')[0]?.getAttribute('lat') };
+  }, base);
+  assert.deepEqual(gpx, { errors: 0, name: '#6301 / 17 & Север', latitude: '64.581207' });
 } finally {
   await browser.close();
   await server.close();

@@ -1,4 +1,17 @@
 export const DEFAULT_NINJABOX_RELAY_URL = 'https://darkfoto-ninjabox-relay.dvabobra2014.workers.dev/v1/ninjabox';
+export const NINJABOX_TIMEOUT_MS = 90_000;
+
+export async function withTimeout(operation, milliseconds, label, onTimeout = () => {}) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(new Error(`${label}: тайм-аут ${Math.ceil(milliseconds / 1000)} с`));
+    }, milliseconds);
+  });
+  try { return await Promise.race([Promise.resolve().then(operation), timeout]); }
+  finally { clearTimeout(timer); }
+}
 
 export function onionBaseUrl(value) {
   const parsed = new URL(String(value || '').trim());
@@ -42,18 +55,21 @@ export async function publishCleanImageToNinjabox(cleanedFile, relay, options = 
   if (!cleanedFile || cleanedFile.type !== 'image/jpeg') throw new Error('Нужна очищенная JPEG-копия');
   const form = new FormData();
   form.append('file', cleanedFile, cleanedFile.name);
-  const response = await (options.fetch || fetch)(ninjaboxRelayUrl(relay), {
-    method: 'POST', body: form, cache: 'no-store', redirect: 'error',
-  });
-  if (!response.ok) {
-    let detail = '';
-    try { detail = (await response.clone().json())?.error || ''; } catch { /* ignore non-JSON relay errors */ }
-    throw new Error(`NinjaBox relay: ${detail || `HTTP ${response.status}`} (HTTP ${response.status})`);
-  }
-  const result = await response.json();
-  const link = result?.url;
-  if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
-    throw new Error('NinjaBox relay вернул неверную ссылку');
-  }
-  return link;
+  const controller = new AbortController();
+  return withTimeout(async () => {
+    const response = await (options.fetch || fetch)(ninjaboxRelayUrl(relay), {
+      method: 'POST', body: form, cache: 'no-store', redirect: 'error', signal: controller.signal,
+    });
+    if (!response.ok) {
+      let detail = '';
+      try { detail = (await response.clone().json())?.error || ''; } catch { /* ignore non-JSON relay errors */ }
+      throw new Error(`NinjaBox relay: ${detail || `HTTP ${response.status}`} (HTTP ${response.status})`);
+    }
+    const result = await response.json();
+    const link = result?.url;
+    if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
+      throw new Error('NinjaBox relay вернул неверную ссылку');
+    }
+    return link;
+  }, options.timeoutMs || NINJABOX_TIMEOUT_MS, 'NinjaBox', () => controller.abort());
 }

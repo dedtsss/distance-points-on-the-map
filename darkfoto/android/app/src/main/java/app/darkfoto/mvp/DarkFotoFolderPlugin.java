@@ -169,6 +169,14 @@ public class DarkFotoFolderPlugin extends Plugin {
         String id = call.getString("id");
         Uri uri = selected.get(id);
         if (uri == null) { call.reject("Photo selection expired"); return; }
+        File existing = cached.get(id);
+        if (existing != null && existing.isFile() && existing.length() > 0 && existing.length() <= MAX_BYTES) {
+            JSObject data = new JSObject();
+            data.put("uri", Uri.fromFile(existing).toString());
+            data.put("size", existing.length());
+            call.resolve(data);
+            return;
+        }
         File directory = new File(getContext().getCacheDir(), "darkfoto-selected");
         if (!directory.exists() && !directory.mkdirs()) { call.reject("Photo cache unavailable"); return; }
         File target = new File(directory, id + ".jpg");

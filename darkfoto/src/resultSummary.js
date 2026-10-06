@@ -40,9 +40,6 @@ export function buildResultText({ grouped, formatOptions = {}, session = '', rev
   const review = (grouped.unresolved || [])
     .map((photo) => `${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`)
     .join('\n');
-  const threshold = grouped.recommendation?.thresholdMeters || 25;
-  const pairs = buildDistancePairs([...(grouped.main || []), ...(grouped.reserve || [])], threshold);
-  const distances = pairs.length ? pairs.map(formatDistancePair).join('\n') : 'Недостаточно точек для расчёта';
   const sessionHeader = String(session || '').trim() ? `Сессия: ${String(session).trim()}\n\n` : '';
-  return `${sessionHeader}Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nРасстояния между точками\n\n${distances}\n\nТребует проверки\n\n${review}\n`;
+  return `${sessionHeader}Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nТребует проверки\n\n${review}\n`;
 }

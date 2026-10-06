@@ -13,23 +13,19 @@ const page = await browser.newPage();
 
 try {
   await page.goto(base);
-  const link = await page.evaluate(async ({ baseUrl, relayUrl }) => {
+  const result = await page.evaluate(async ({ baseUrl, relayUrl }) => {
     const { cleanImageForUpload } = await import(`${baseUrl}src/core/features/cleanup/cleanImageForUpload.js`);
     const { publishCleanImageToNinjabox } = await import(`${baseUrl}src/core/publisher.js`);
-    const canvas = document.createElement('canvas');
-    canvas.width = 640; canvas.height = 480;
-    const context = canvas.getContext('2d');
-    context.fillStyle = '#233e5a'; context.fillRect(0, 0, 640, 480);
-    context.fillStyle = '#fff'; context.font = 'bold 36px sans-serif';
-    context.fillText('DarkFoto synthetic smoke', 40, 240);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-    const source = new File([blob], 'synthetic.jpg', { type: 'image/jpeg' });
+    const response = await fetch(`${baseUrl}tests/fixtures/representative-6301.jpg`);
+    if (!response.ok) throw new Error(`Fixture HTTP ${response.status}`);
+    const source = new File([await response.blob()], 'representative-6301.jpg', { type: 'image/jpeg' });
     const clean = await cleanImageForUpload(source, { preferredFilename: 'darkfoto-smoke', orientation: 1 });
     if (!clean.ok) throw new Error(`Cleanup failed: ${clean.error}`);
-    return publishCleanImageToNinjabox(clean.file, relayUrl);
+    const link = await publishCleanImageToNinjabox(clean.file, relayUrl);
+    return { link, bytes: clean.file.size, method: clean.method };
   }, { baseUrl: base, relayUrl: relay });
-  assert.match(link, /^https:\/\/ninjabox\.org\/i\//);
-  console.log(`NinjaBox synthetic cleaned upload: ${link}`);
+  assert.match(result.link, /^https:\/\/ninjabox\.org\/i\//);
+  console.log(`NinjaBox cleaned representative JPEG (${result.bytes} bytes, ${result.method}): ${result.link}`);
 } finally {
   await browser.close();
   await server.close();

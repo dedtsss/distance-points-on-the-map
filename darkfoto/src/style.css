@@ -36,11 +36,6 @@ ion-button { min-height: 48px; }
 ion-action-sheet.publication-sheet { --background: #1b2530; --button-color: #eef1f5; --color: #eef1f5; }
 ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 
-.distance-block { margin: 8px 0 18px; }
-.distance-block h3 { margin: 0 0 8px; font-size: 1rem; color: #eef1f5; }
-.distance-list { display: flex; flex-direction: column; gap: 6px; }
-.distance-row { padding: 8px 10px; border-radius: 8px; background: #121a22; color: #cbd6e1; font-size: .9rem; }
-.distance-warning { border-left: 3px solid #f2b84b; color: #ffe3a4; }
 .photo-result .photo-index,
 .photo-result .photo-coordinates { display: block; font-size: .9rem; overflow-wrap: anywhere; color: #cbd6e1; }
 .photo-state { display: inline-flex; align-self: flex-start; margin-top: 5px; padding: 5px 9px; border-radius: 999px; font-size: .82rem; font-weight: 700; }

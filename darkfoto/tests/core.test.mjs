@@ -6,8 +6,10 @@ import { findDistanceViolations, haversineDistanceMeters } from '../src/core/uti
 import { parseFixedOverlayIndex } from '../src/core/features/gps/fixedOverlayOcr.js';
 import { getOcrAssetRuntimeOptions, parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } from '../src/core/utils/ocrGpsReader.js';
 import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockFormatter.js';
-import { textFilename } from '../src/androidText.js';
+import { gpxFilename, textFilename } from '../src/androidText.js';
 import { buildDistancePairs, buildResultText } from '../src/resultSummary.js';
+import { buildGpx, resultBlocksForCopy } from '../src/resultExports.js';
+import { publishBatch } from '../src/publishBatch.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
 import { selectUpdate } from '../src/update.js';
 import { handleNinjaboxRelay, isSanitizedJpeg } from '../relay/worker.js';
@@ -144,7 +146,7 @@ test('explicit NinjaBox route accepts only per-photo viewer links and never fall
   assert.deepEqual(await response.json(), { ok: true, url: 'https://ninjabox.org/i/test123' });
 });
 
-test('result summary exposes pairwise distances and session text', () => {
+test('result TXT omits pairwise distances but conflict grouping remains', () => {
   const photos = ['6300', '6301', '6302'].map((index, position) => ({
     id: String(position + 1), number: position + 1, fileName: `${index}.jpg`,
     indexFromOcr: index, indexStatus: 'found',
@@ -163,8 +165,79 @@ test('result summary exposes pairwise distances and session text', () => {
     reviewLabels: {},
   });
   assert.match(text, /^Сессия: 17/);
-  assert.match(text, /Расстояния между точками/);
-  assert.match(text, /#6300 ↔ #6301: 0\.0 м · ближе 25\.0 м/);
+  assert.doesNotMatch(text, /Расстояния между точками|↔/);
+  assert.match(text, /Основные[\s\S]*Резерв[\s\S]*Требует проверки/);
+  assert.deepEqual([grouped.main.length, grouped.reserve.length], [1, 2]);
+});
+
+test('GPX and copy blocks include valid Main and Reserve in photo order', () => {
+  const photo = (id, number, index, fileName) => ({ id, number, indexFromOcr: index,
+    fileName, coordinates: { latitude: 64.581207, longitude: 30.597531 } });
+  const grouped = {
+    main: [photo('3', 3, '6302', 'three.jpg'), photo('1', 1, '6300', 'one.jpg')],
+    reserve: [photo('2', 2, '6301', 'two & <bad>.jpg')],
+    unresolved: [photo('4', 4, '6303', 'review.jpg')],
+  };
+  const blocks = resultBlocksForCopy(grouped, { session: '17 & Север' });
+  assert.deepEqual(blocks.map((block) => block.split('\n')[0]),
+    ['#6300 / 17 & Север', '#6301 / 17 & Север', '#6302 / 17 & Север']);
+  const gpx = buildGpx(grouped, '17 & Север');
+  assert.deepEqual([...gpx.matchAll(/<name>(.*?)<\/name>/g)].map((match) => match[1]),
+    ['#6300 / 17 &amp; Север', '#6301 / 17 &amp; Север', '#6302 / 17 &amp; Север']);
+  assert.equal((gpx.match(/<wpt /g) || []).length, 3);
+  assert.match(gpx, /<wpt lat="64\.581207" lon="30\.597531">/);
+  assert.match(gpx, /two &amp; &lt;bad&gt;\.jpg/);
+  assert.doesNotMatch(gpx, /review\.jpg/);
+  assert.match(buildGpx({ main: [photo('1', 1, '6300', 'one.jpg')], reserve: [] }), /<name>#6300<\/name>/);
+  assert.equal(gpxFilename('17 Север'), 'DarkFotoResult_17_Север.gpx');
+});
+
+test('NinjaBox timeout aborts even if transport does not settle', async () => {
+  const jpeg = new File(['jpeg'], 'clean.jpg', { type: 'image/jpeg' });
+  let signal;
+  await assert.rejects(publishCleanImageToNinjabox(jpeg, DEFAULT_NINJABOX_RELAY_URL, {
+    timeoutMs: 15,
+    fetch: (_url, request) => { signal = request.signal; return new Promise(() => {}); },
+  }), /тайм-аут/);
+  assert.equal(signal.aborted, true);
+});
+
+test('publication stages and links map to source photos; failure stops with visible errors', async () => {
+  const rows = [1, 2, 3, 4].map((number) => ({ id: String(number), number,
+    uploadResult: { links: [] } }));
+  const stages = [];
+  let visibleRows = [];
+  const result = await publishBatch(rows, new Set(['4']), {
+    publisher: 'ninjabox', destination: DEFAULT_NINJABOX_RELAY_URL,
+    fileAt: async (index) => new File(['source'], `${index}.jpg`, { type: 'image/jpeg' }),
+    clean: async (_file, options) => ({ ok: true, file: new File(['clean'], options.preferredFilename, { type: 'image/jpeg' }) }),
+    publishNinjabox: async (_file) => {
+      if (stages.at(-1) === 'NinjaBox 2/4') throw new Error('NinjaBox: тайм-аут 90 с');
+      return 'https://ninjabox.org/i/first';
+    },
+    onStatus: (stage) => stages.push(stage),
+    onRows: (updated) => { visibleRows = updated; },
+  });
+  assert.deepEqual(stages, ['Очистка 1/4', 'NinjaBox 1/4', 'Очистка 2/4', 'NinjaBox 2/4']);
+  assert.equal(rows[0].uploadResult.links[0].url, 'https://ninjabox.org/i/first');
+  assert.match(rows[1].publishError, /тайм-аут/);
+  assert.match(rows[2].publishError, /остановлен/);
+  assert.equal(rows[3].publishError, undefined);
+  assert.deepEqual(visibleRows, rows);
+  assert.deepEqual(result, { failures: 1, stopped: true });
+});
+
+test('successful NinjaBox responses map to each eligible photo', async () => {
+  const rows = [1, 2].map((number) => ({ id: String(number), number, uploadResult: { links: [] } }));
+  const result = await publishBatch(rows, new Set(), {
+    publisher: 'ninjabox', destination: DEFAULT_NINJABOX_RELAY_URL,
+    fileAt: async () => new File(['source'], 'source.jpg', { type: 'image/jpeg' }),
+    clean: async () => ({ ok: true, file: new File(['clean'], 'clean.jpg', { type: 'image/jpeg' }) }),
+    publishNinjabox: async () => `https://ninjabox.org/i/${rows.find((row) => !row.uploadResult.links.length).id}`,
+  });
+  assert.deepEqual(rows.map((row) => row.uploadResult.links[0].url),
+    ['https://ninjabox.org/i/1', 'https://ninjabox.org/i/2']);
+  assert.deepEqual(result, { failures: 0, stopped: false });
 });
 
 test('About picks only a newer public DarkFoto APK release', () => {
