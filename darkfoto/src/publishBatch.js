@@ -5,6 +5,7 @@ const message = (error) => error instanceof Error ? error.message : String(error
 
 export async function publishBatch(rows, unresolvedIds, options) {
   const { publisher, destination, fileAt, onStatus = () => {}, onRows = () => {},
+    onProgress = () => {},
     clean = cleanImageForUpload, publishOnion = publishCleanImage,
     publishNinjabox = publishCleanImageToNinjabox, cleanupTimeoutMs = 35_000 } = options;
   let failures = 0;
@@ -12,6 +13,7 @@ export async function publishBatch(rows, unresolvedIds, options) {
     .filter(({ row }) => !unresolvedIds.has(row.id));
   for (const [position, { row, index }] of eligible.entries()) {
     onStatus(`Очистка ${index + 1}/${rows.length}`);
+    onProgress('cleanup', index, rows.length);
     let cleaned;
     try {
       cleaned = await withTimeout(async () => {
@@ -30,10 +32,14 @@ export async function publishBatch(rows, unresolvedIds, options) {
       continue;
     }
     onStatus(`${publisher === 'ninjabox' ? 'NinjaBox' : 'Onion'} ${index + 1}/${rows.length}`);
+    onProgress(publisher, index, rows.length);
     try {
       const url = publisher === 'onion'
         ? await publishOnion(cleaned, destination)
-        : await publishNinjabox(cleaned, destination);
+        : await publishNinjabox(cleaned, destination, {
+          onProgress: (loaded, total) => onProgress('ninjabox', index, rows.length,
+            total > 0 ? loaded / total : null),
+        });
       row.uploadResult.links = [{ provider: publisher, url }];
     } catch (error) {
       row.publishError = message(error);
@@ -47,6 +53,7 @@ export async function publishBatch(rows, unresolvedIds, options) {
       }
     }
     onRows([...rows]);
+    onProgress(publisher, index + 1, rows.length);
   }
   return { failures, stopped: false };
 }

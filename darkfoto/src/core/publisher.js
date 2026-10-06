@@ -53,11 +53,36 @@ export function ninjaboxRelayUrl(value) {
 
 export async function publishCleanImageToNinjabox(cleanedFile, relay, options = {}) {
   if (!cleanedFile || cleanedFile.type !== 'image/jpeg') throw new Error('Нужна очищенная JPEG-копия');
+  const url = ninjaboxRelayUrl(relay);
   const form = new FormData();
   form.append('file', cleanedFile, cleanedFile.name);
+  if (options.onProgress && typeof XMLHttpRequest !== 'undefined' && !options.fetch) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open('POST', url);
+      request.timeout = options.timeoutMs || NINJABOX_TIMEOUT_MS;
+      request.withCredentials = false;
+      request.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) options.onProgress(event.loaded, event.total);
+      };
+      request.onerror = () => reject(new Error('NinjaBox relay: ошибка сети'));
+      request.ontimeout = () => reject(new Error(`NinjaBox: тайм-аут ${Math.ceil(request.timeout / 1000)} с`));
+      request.onload = () => {
+        if (request.responseURL !== url) { reject(new Error('NinjaBox relay: неожиданный адрес ответа')); return; }
+        let body;
+        try { body = JSON.parse(request.responseText); } catch { body = null; }
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(`NinjaBox relay: ${body?.error || `HTTP ${request.status}`} (HTTP ${request.status})`));
+          return;
+        }
+        try { resolve(validNinjaboxLink(body)); } catch (error) { reject(error); }
+      };
+      request.send(form);
+    });
+  }
   const controller = new AbortController();
   return withTimeout(async () => {
-    const response = await (options.fetch || fetch)(ninjaboxRelayUrl(relay), {
+    const response = await (options.fetch || fetch)(url, {
       method: 'POST', body: form, cache: 'no-store', redirect: 'error', signal: controller.signal,
     });
     if (!response.ok) {
@@ -65,11 +90,14 @@ export async function publishCleanImageToNinjabox(cleanedFile, relay, options = 
       try { detail = (await response.clone().json())?.error || ''; } catch { /* ignore non-JSON relay errors */ }
       throw new Error(`NinjaBox relay: ${detail || `HTTP ${response.status}`} (HTTP ${response.status})`);
     }
-    const result = await response.json();
-    const link = result?.url;
-    if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
-      throw new Error('NinjaBox relay вернул неверную ссылку');
-    }
-    return link;
+    return validNinjaboxLink(await response.json());
   }, options.timeoutMs || NINJABOX_TIMEOUT_MS, 'NinjaBox', () => controller.abort());
+}
+
+function validNinjaboxLink(result) {
+  const link = result?.url;
+  if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
+    throw new Error('NinjaBox relay вернул неверную ссылку');
+  }
+  return link;
 }

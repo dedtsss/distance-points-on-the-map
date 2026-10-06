@@ -229,15 +229,25 @@ test('publication stages and links map to source photos; failure stops with visi
 
 test('successful NinjaBox responses map to each eligible photo', async () => {
   const rows = [1, 2].map((number) => ({ id: String(number), number, uploadResult: { links: [] } }));
+  const progress = [];
   const result = await publishBatch(rows, new Set(), {
     publisher: 'ninjabox', destination: DEFAULT_NINJABOX_RELAY_URL,
     fileAt: async () => new File(['source'], 'source.jpg', { type: 'image/jpeg' }),
     clean: async () => ({ ok: true, file: new File(['clean'], 'clean.jpg', { type: 'image/jpeg' }) }),
-    publishNinjabox: async () => `https://ninjabox.org/i/${rows.find((row) => !row.uploadResult.links.length).id}`,
+    publishNinjabox: async (_file, _destination, options) => {
+      options.onProgress(5, 10);
+      return `https://ninjabox.org/i/${rows.find((row) => !row.uploadResult.links.length).id}`;
+    },
+    onProgress: (...values) => progress.push(values),
   });
   assert.deepEqual(rows.map((row) => row.uploadResult.links[0].url),
     ['https://ninjabox.org/i/1', 'https://ninjabox.org/i/2']);
   assert.deepEqual(result, { failures: 0, stopped: false });
+  assert.deepEqual(progress, [
+    ['cleanup', 0, 2], ['ninjabox', 0, 2], ['ninjabox', 0, 2, .5],
+    ['ninjabox', 1, 2], ['cleanup', 1, 2],
+    ['ninjabox', 1, 2], ['ninjabox', 1, 2, .5], ['ninjabox', 2, 2],
+  ]);
 });
 
 test('About picks only a newer public DarkFoto APK release', () => {
@@ -248,4 +258,5 @@ test('About picks only a newer public DarkFoto APK release', () => {
     sha256: 'a'.repeat(64),
   });
   assert.equal(selectUpdate([release('0.1.2')], '0.2.0'), null);
+  assert.equal(selectUpdate([release('0.3.6')], '0.3.5'), null);
 });

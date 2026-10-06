@@ -47,3 +47,5 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 .txt-preview { min-height: 55vh; --background: #121a22; --padding-start: 14px; --padding-end: 14px; --padding-top: 14px; --padding-bottom: 14px; border: 1px solid #344352; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 .publisher-note { display: block; white-space: normal; color: #c4d0dc; font-size: .9rem; line-height: 1.4; padding: 4px 0; }
+.progress-area { display: grid; gap: 8px; margin: 10px 0 16px; color: #eef1f5; font-size: .92rem; }
+.progress-area ion-progress-bar { height: 8px; border-radius: 6px; --background: #344352; --progress-background: #7be0ac; --buffer-background: #344352; }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
 import { buildResultText } from './resultSummary.js';
@@ -7,16 +7,23 @@ import { publishBatch } from './publishBatch.js';
 import { buildGpx, resultBlocksForCopy, validResultPhotos } from './resultExports.js';
 import { formatPhotoResultBlock } from './core/features/export/resultBlockFormatter.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto, clearAndroidPhotoCache } from './androidFolder.js';
-import { checkForUpdate, installRelease, installedVersion, isAndroidUpdateAvailable } from './update.js';
+import { checkForUpdate, clearUpdateState, installRelease, installedVersion, isAndroidUpdateAvailable, startUpdateDownload, updateState } from './update.js';
+import { actionProgress, updateButton, updateProgress } from './progress.js';
 import { recognizeAndroidStamp } from './nativeOcr.js';
 import { copyResultBlocks, copyText, exportGpx, exportText, isNativeTextExport } from './androidText.js';
 import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
   IonCardContent, IonItem, IonLabel, IonInput, IonTextarea, IonSelect, IonSelectOption,
-  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal } from '@ionic/react';
+  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar } from '@ionic/react';
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
   .sort((left, right) => (left.webkitRelativePath || left.name).localeCompare(right.webkitRelativePath || right.name));
 const errorText = (error) => error instanceof Error ? error.message : String(error);
+const WorkProgress = ({ progress }) => progress && <div className="progress-area" role="status" aria-live="polite">
+  <span>{progress.label}{progress.itemPercent !== null
+    ? ` · ${progress.itemPercent}% ${progress.kind === 'ninjabox' ? 'загрузки' : 'текущего фото'}` : ''}</span>
+  <IonProgressBar type={progress.type} value={progress.value} buffer={progress.buffer}
+    aria-label={progress.label} />
+</div>;
 
 export default function App() {
   const [files, setFiles] = useState([]);
@@ -27,6 +34,7 @@ export default function App() {
   const [version, setVersion] = useState(null);
   const [candidate, setCandidate] = useState(null);
   const [updateStatus, setUpdateStatus] = useState('');
+  const [nativeUpdate, setNativeUpdate] = useState(null);
   const [session, setSession] = useState('');
   const [comment, setComment] = useState('');
   const [color, setColor] = useState('');
@@ -38,6 +46,29 @@ export default function App() {
   const [txtOpen, setTxtOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
   const [copyBusy, setCopyBusy] = useState(false);
+  const [workProgress, setWorkProgress] = useState(null);
+
+  useEffect(() => {
+    if (screen !== 'about' || !isAndroidUpdateAvailable()) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const state = await updateState();
+        if (!active) return;
+        setNativeUpdate(state);
+        if (state.state === 'ready_to_install')
+          setUpdateStatus((current) => current.includes('Разрешите установку') ? '' : current);
+        if (state.state === 'failed') setUpdateStatus('');
+        setCandidate(state.url && state.version
+          ? { version: state.version, url: state.url, sha256: state.sha256 } : null);
+      } catch (error) { if (active) setUpdateStatus(errorText(error)); }
+    };
+    poll();
+    const timer = setInterval(() => { if (!document.hidden) poll(); }, 1000);
+    const resume = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', resume);
+    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', resume); };
+  }, [screen]);
 
   const showAbout = async () => {
     setScreen('about');
@@ -51,17 +82,20 @@ export default function App() {
     try {
       const next = await checkForUpdate(version.versionName);
       setCandidate(next);
-      setUpdateStatus(next ? `Доступна версия ${next.version}` : 'Обновлений нет.');
+      setNativeUpdate(await (next ? updateState(next) : clearUpdateState()));
+      setUpdateStatus(next ? '' : 'Обновлений нет.');
     } catch (error) { setUpdateStatus(`Проверка не удалась: ${errorText(error)}`); }
   };
 
   const downloadUpdate = async () => {
-    setUpdateStatus('Загрузка и проверка APK…');
+    setUpdateStatus('');
     try {
-      const result = await installRelease(candidate);
-      setUpdateStatus(result.permissionRequired
-        ? 'Разрешите установку из DarkFoto в Android, затем нажмите «Скачать / Установить» снова.'
-        : 'APK проверен. Подтвердите установку в Android.');
+      const current = await updateState(candidate);
+      const result = ['ready_to_install', 'permission_required'].includes(current.state)
+        ? await installRelease() : await startUpdateDownload(candidate);
+      setNativeUpdate(result);
+      if (result.state === 'permission_required') setUpdateStatus('Разрешите установку из DarkFoto в Android. APK сохранён.');
+      else if (result.state === 'ready_to_install') setUpdateStatus('APK проверен. Подтвердите установку в Android.');
     } catch (error) { setUpdateStatus(`Обновление отклонено: ${errorText(error)}`); }
   };
 
@@ -99,6 +133,7 @@ export default function App() {
         : publisher === 'ninjabox' ? ninjaboxRelayUrl(ninjaboxRelay) : null;
       for (let index = 0; index < files.length; index += 1) {
         setStatus(`Распознавание ${index + 1}/${files.length}`);
+        setWorkProgress(actionProgress('recognition', index, files.length));
         try {
           const nativeOcr = files[index].native ? await recognizeAndroidStamp(files[index]) : null;
           const file = await fileAt(index);
@@ -131,12 +166,15 @@ export default function App() {
           });
         }
         setRows([...current]);
+        setWorkProgress(actionProgress('recognition', index + 1, files.length));
       }
       const resolved = splitBatch(current);
       setSplit(resolved);
       if (destination) {
         const publication = await publishBatch(current, new Set(resolved.unresolved.map((photo) => photo.id)), {
           publisher, destination, fileAt, onStatus: setStatus, onRows: setRows,
+          onProgress: (stage, completed, total, fraction) =>
+            setWorkProgress(actionProgress(stage, completed, total, fraction)),
         });
         setStatus(publication.failures
           ? `Обработка завершена. Ошибок публикации: ${publication.failures}.${publication.stopped ? ' NinjaBox остановлен.' : ''}`
@@ -150,6 +188,7 @@ export default function App() {
         try { await clearAndroidPhotoCache(); } catch { /* Android cache is also cleared on plugin destroy. */ }
       }
       setBusy(false);
+      setWorkProgress(null);
     }
   };
 
@@ -179,13 +218,17 @@ export default function App() {
   };
   const copyBlocks = async () => {
     setCopyBusy(true);
+    setWorkProgress(actionProgress('clipboard', 0, resultBlocks.length));
     setCopyStatus(`Копирование блоков 0/${resultBlocks.length}`);
     try {
       const count = await copyResultBlocks(resultBlocks,
-        (copied, total) => setCopyStatus(`Копирование блоков ${copied}/${total}`));
+        (copied, total) => {
+          setCopyStatus(`Копирование блоков ${copied}/${total}`);
+          setWorkProgress(actionProgress('clipboard', copied, total));
+        });
       setCopyStatus(`Скопировано ${count} блоков. История буфера зависит от клавиатуры.`);
     } catch (error) { setCopyStatus(`Не удалось скопировать блоки: ${errorText(error)}`); }
-    finally { setCopyBusy(false); }
+    finally { setCopyBusy(false); setWorkProgress(null); }
   };
   const copyOne = async (photo) => {
     try {
@@ -207,6 +250,16 @@ export default function App() {
     : !grouped ? { kind: 'recognized', text: 'Распознано' }
       : reserveIds.has(photo.id) ? { kind: 'reserve', text: 'Резерв' }
         : { kind: 'main', text: 'Основное' };
+  const updateBar = updateProgress(nativeUpdate);
+  const updateAction = updateButton(nativeUpdate?.state, candidate?.version);
+  const nativeStatus = {
+    idle: candidate ? `Доступна версия ${candidate.version}` : 'Обновление не проверено.',
+    downloading: 'Загрузка обновления', paused: 'Загрузка приостановлена Android; ожидается возобновление',
+    completed: 'Загрузка завершена. Проверка APK…', verifying: 'Проверка APK…',
+    ready_to_install: 'APK проверен и готов к установке.',
+    permission_required: 'APK проверен. Разрешите установку из DarkFoto.',
+    failed: nativeUpdate?.error || 'Загрузка не удалась.',
+  }[nativeUpdate?.state];
 
   return <IonApp><IonPage>
     <IonHeader><IonToolbar><IonTitle>DarkFoto</IonTitle></IonToolbar></IonHeader>
@@ -219,9 +272,14 @@ export default function App() {
         {screen === 'about' ? <IonCard><IonCardContent>
           <h2>О приложении / Обновление</h2>
           <p>Установлена версия: {version ? `${version.versionName} (код ${version.versionCode})` : '—'}</p>
-          <p role="status">{updateStatus || 'Обновление не проверено.'}</p>
+          <p role="status">{updateStatus || nativeStatus || 'Обновление не проверено.'}</p>
+          {updateBar?.active && <div className="progress-area" role="status" aria-label="Загрузка обновления">
+            <span>{updateBar.label}</span>
+            <IonProgressBar type={updateBar.type} value={updateBar.value} aria-label={updateBar.label} />
+          </div>}
           {version && <IonButton expand="block" onClick={checkUpdate}>Проверить обновление</IonButton>}
-          {candidate && <><p>Новая версия: {candidate.version}</p><IonButton expand="block" onClick={downloadUpdate}>Скачать / Установить</IonButton></>}
+          {candidate && <><p>Новая версия: {candidate.version}</p>
+            {updateAction && <IonButton expand="block" onClick={downloadUpdate}>{updateAction}</IonButton>}</>}
         </IonCardContent></IonCard> : <>
           <p className="intro">Выберите фотографии и получите Основные / Резерв. Исходники остаются на устройстве.</p>
           <IonCard><IonCardContent>
@@ -262,6 +320,7 @@ export default function App() {
               {busy ? 'Обработка…' : 'Обработать фото'}
             </IonButton>
             <IonText><p role="status" aria-live="polite">{status}</p></IonText>
+            {workProgress?.kind !== 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>
           {grouped && <IonCard><IonCardContent>
             <h2>Результат</h2>
@@ -282,6 +341,7 @@ export default function App() {
                 disabled={!validPhotos.length}>Поделиться GPX</IonButton>}
             </div>
             {copyStatus && <IonText><p role="status" aria-live="polite">{copyStatus}</p></IonText>}
+            {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>}
           {rows.length > 0 && <IonCard><IonCardContent><h2>Фотографии</h2><IonList lines="full">
             {rows.map((photo) => {

@@ -5,7 +5,12 @@ const RELEASES = 'https://api.github.com/repos/dedtsss/distance-points-on-the-ma
 
 export const isAndroidUpdateAvailable = () => Capacitor.getPlatform() === 'android';
 export const installedVersion = () => update.installedVersion();
-export const installRelease = (release) => update.downloadAndInstall({ url: release.url, sha256: release.sha256 || '' });
+export const updateState = (release) => update.queryState(release
+  ? { version: release.version, url: release.url, sha256: release.sha256 || '' } : {});
+export const clearUpdateState = () => update.queryState({ clear: true });
+export const startUpdateDownload = (release) => update.startDownload({ version: release.version,
+  url: release.url, sha256: release.sha256 || '' });
+export const installRelease = () => update.installVerified();
 
 export function compareVersions(left, right) {
   const a = String(left).split('.').map(Number);
@@ -24,6 +29,7 @@ export function selectUpdate(releases, currentVersion) {
       && /^https:\/\/github\.com\/dedtsss\/distance-points-on-the-map\/releases\/download\//.test(item.browser_download_url || ''));
     if (!asset) return [];
     const sha256 = /^sha256:([0-9a-f]{64})$/i.exec(asset.digest || '')?.[1] || '';
+    if (!sha256) return [];
     return [{ version, url: asset.browser_download_url, sha256 }];
   }).sort((a, b) => compareVersions(b.version, a.version))[0] || null;
 }

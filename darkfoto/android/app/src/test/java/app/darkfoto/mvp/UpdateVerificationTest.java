@@ -12,6 +12,7 @@ public class UpdateVerificationTest {
         assertFalse(DarkFotoUpdatePlugin.acceptedCandidate("other.package", 4, 3, DIGEST, DIGEST, signer));
         assertFalse(DarkFotoUpdatePlugin.acceptedCandidate("app.darkfoto.mvp", 3, 3, DIGEST, DIGEST, signer));
         assertFalse(DarkFotoUpdatePlugin.acceptedCandidate("app.darkfoto.mvp", 4, 3, DIGEST, "bbbb", signer));
+        assertFalse(DarkFotoUpdatePlugin.acceptedCandidate("app.darkfoto.mvp", 4, 3, DIGEST, "", signer));
         assertFalse(DarkFotoUpdatePlugin.acceptedCandidate("app.darkfoto.mvp", 4, 3, DIGEST, DIGEST, "bbbb"));
     }
 }
