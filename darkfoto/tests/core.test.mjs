@@ -6,10 +6,10 @@ import { findDistanceViolations, haversineDistanceMeters } from '../src/core/uti
 import { parseFixedOverlayIndex } from '../src/core/features/gps/fixedOverlayOcr.js';
 import { getOcrAssetRuntimeOptions, parseGpsFromOcrText, OCR_ATTEMPT_VARIANTS } from '../src/core/utils/ocrGpsReader.js';
 import { formatPhotoResultBlock } from '../src/core/features/export/resultBlockFormatter.js';
-import { gpxFilename, textFilename } from '../src/androidText.js';
+import { copyResultBlocks, gpxFilename, textFilename } from '../src/androidText.js';
 import { buildDistancePairs, buildResultText } from '../src/resultSummary.js';
 import { buildGpx, resultBlocksForCopy } from '../src/resultExports.js';
-import { publishBatch } from '../src/publishBatch.js';
+import { outgoingName, publishBatch } from '../src/publishBatch.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, publishCleanImage, ninjaboxRelayUrl, publishCleanImageToNinjabox } from '../src/core/publisher.js';
 import { selectUpdate } from '../src/update.js';
 import { handleNinjaboxRelay, isSanitizedJpeg } from '../relay/worker.js';
@@ -222,7 +222,7 @@ test('publication stages and links map to source photos; failure stops with visi
   assert.equal(rows[0].uploadResult.links[0].url, 'https://ninjabox.org/i/first');
   assert.match(rows[1].publishError, /тайм-аут/);
   assert.match(rows[2].publishError, /остановлен/);
-  assert.equal(rows[3].publishError, undefined);
+  assert.match(rows[3].publishError, /остановлен/);
   assert.deepEqual(visibleRows, rows);
   assert.deepEqual(result, { failures: 1, stopped: true });
 });
@@ -248,6 +248,63 @@ test('successful NinjaBox responses map to each eligible photo', async () => {
     ['ninjabox', 1, 2], ['cleanup', 1, 2],
     ['ninjabox', 1, 2], ['ninjabox', 1, 2, .5], ['ninjabox', 2, 2],
   ]);
+});
+
+test('NinjaBox resumes a saved 8/14 manifest without uploading completed photos', async () => {
+  const rows = Array.from({ length: 14 }, (_, index) => ({ id: String(index + 1), number: index + 1,
+    indexFromOcr: String(6800 + index), indexStatus: 'found', uploadResult: { links: index < 8
+      ? [{ provider: 'ninjabox', url: `https://ninjabox.org/i/existing-${index}` }] : [] } }));
+  const restored = JSON.parse(JSON.stringify(rows));
+  const uploaded = [];
+  let manifest = JSON.stringify(restored);
+  await publishBatch(restored, new Set(), {
+    publisher: 'ninjabox', destination: DEFAULT_NINJABOX_RELAY_URL,
+    fileAt: async (index) => new File(['source'], `IMG_${index}.jpg`, { type: 'image/jpeg' }),
+    clean: async (_file, { preferredFilename }) => ({ ok: true,
+      file: new File(['clean'], preferredFilename, { type: 'image/jpeg' }) }),
+    publishNinjabox: async (file) => { uploaded.push(file.name); return `https://ninjabox.org/i/new-${uploaded.length}`; },
+    onRows: async (updated) => { manifest = JSON.stringify(updated); },
+  });
+  assert.deepEqual(uploaded, ['6808.jpg', '6809.jpg', '6810.jpg', '6811.jpg', '6812.jpg', '6813.jpg']);
+  assert.equal(JSON.parse(manifest).filter((row) => row.uploadResult.links.length).length, 14);
+  assert.equal(restored[0].uploadResult.links[0].url, 'https://ninjabox.org/i/existing-0');
+});
+
+test('unresolved photos publish with ordered NN names and stay in Review', async () => {
+  const rows = [
+    { id: '1', number: 1, indexFromOcr: '6886', indexStatus: 'found', uploadResult: { links: [] } },
+    { id: '2', number: 2, indexFromOcr: '6887', indexStatus: 'found', uploadResult: { links: [] } },
+    { id: '3', number: 3, indexFromOcr: null, indexStatus: 'missing', uploadResult: { links: [] } },
+    { id: '4', number: 4, indexFromOcr: null, indexStatus: 'missing', uploadResult: { links: [] } },
+  ];
+  assert.equal(outgoingName(rows[0], 0), '6886.jpg');
+  assert.equal(outgoingName(rows[2], 1), 'NN01.jpg');
+  assert.equal(outgoingName(rows[3], 101), 'NN101.jpg');
+  const names = [];
+  await publishBatch(rows, new Set(['2', '3', '4']), {
+    publisher: 'ninjabox', destination: DEFAULT_NINJABOX_RELAY_URL,
+    fileAt: async (index) => new File(['source'], `IMG_20261005_${index}.jpg`, { type: 'image/jpeg' }),
+    clean: async (_file, { preferredFilename }) => ({ ok: true,
+      file: new File(['clean'], preferredFilename, { type: 'image/jpeg' }) }),
+    publishNinjabox: async (file) => { names.push(file.name); return `https://ninjabox.org/i/${names.length}`; },
+  });
+  assert.deepEqual(names, ['6886.jpg', '6887.jpg', 'NN01.jpg', 'NN02.jpg']);
+  assert.equal(rows[3].uploadResult.links.length, 1);
+  assert.equal(splitBatch(rows).unresolved.length, 4);
+});
+
+test('Main and Reserve clipboard groups emit separate per-block writes', async () => {
+  const item = (id, number, indexFromOcr) => ({ id, number, indexFromOcr,
+    coordinates: { latitude: 64.581207, longitude: 30.597531 } });
+  const grouped = { main: [item('1', 1, '6300'), item('2', 2, '6301')],
+    reserve: [item('3', 3, '6302')] };
+  const writes = [];
+  const write = async (block) => { writes.push(block); };
+  await copyResultBlocks(resultBlocksForCopy({ main: grouped.main, reserve: [] }), () => {}, write);
+  assert.deepEqual(writes.map((block) => block.split('\n')[0]), ['#6300', '#6301']);
+  writes.length = 0;
+  await copyResultBlocks(resultBlocksForCopy({ main: [], reserve: grouped.reserve }), () => {}, write);
+  assert.deepEqual(writes.map((block) => block.split('\n')[0]), ['#6302']);
 });
 
 test('About picks only a newer public DarkFoto APK release', () => {

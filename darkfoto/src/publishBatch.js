@@ -2,16 +2,23 @@ import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload
 import { publishCleanImage, publishCleanImageToNinjabox, withTimeout } from './core/publisher.js';
 
 const message = (error) => error instanceof Error ? error.message : String(error);
+const hasRecognizedIndex = (row) => /^(?:\d{4}|\d{5})$/.test(String(row.indexFromOcr || ''))
+  && row.indexStatus === 'found';
+export const outgoingName = (row, unresolvedNumber) =>
+  hasRecognizedIndex(row)
+    ? `${row.indexFromOcr}.jpg` : `NN${String(unresolvedNumber).padStart(2, '0')}.jpg`;
 
-export async function publishBatch(rows, unresolvedIds, options) {
+export async function publishBatch(rows, _unresolvedIds, options) {
   const { publisher, destination, fileAt, onStatus = () => {}, onRows = () => {},
-    onProgress = () => {},
+    onProgress = () => {}, onCleaned = () => {},
     clean = cleanImageForUpload, publishOnion = publishCleanImage,
     publishNinjabox = publishCleanImageToNinjabox, cleanupTimeoutMs = 35_000 } = options;
   let failures = 0;
-  const eligible = rows.map((row, index) => ({ row, index }))
-    .filter(({ row }) => !unresolvedIds.has(row.id));
-  for (const [position, { row, index }] of eligible.entries()) {
+  let unresolvedNumber = 0;
+  const eligible = rows.map((row, index) => ({ row, index,
+    filename: outgoingName(row, hasRecognizedIndex(row) ? unresolvedNumber : ++unresolvedNumber) }))
+    .filter(({ row }) => !row.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
+  for (const [position, { row, index, filename }] of eligible.entries()) {
     onStatus(`Очистка ${index + 1}/${rows.length}`);
     onProgress('cleanup', index, rows.length);
     let cleaned;
@@ -20,7 +27,7 @@ export async function publishBatch(rows, unresolvedIds, options) {
         const file = await fileAt(index);
         const result = await clean(file, {
           orientation: row.orientation,
-          preferredFilename: `photo-${crypto.randomUUID()}`,
+          preferredFilename: filename,
         });
         if (!result.ok) throw new Error(result.error);
         return result.file;
@@ -28,9 +35,10 @@ export async function publishBatch(rows, unresolvedIds, options) {
     } catch (error) {
       row.publishError = `Очистка: ${message(error)}`;
       failures++;
-      onRows([...rows]);
+      await onRows([...rows]);
       continue;
     }
+    onCleaned(row, cleaned);
     onStatus(`${publisher === 'ninjabox' ? 'NinjaBox' : 'Onion'} ${index + 1}/${rows.length}`);
     onProgress(publisher, index, rows.length);
     try {
@@ -41,6 +49,7 @@ export async function publishBatch(rows, unresolvedIds, options) {
             total > 0 ? loaded / total : null),
         });
       row.uploadResult.links = [{ provider: publisher, url }];
+      delete row.publishError;
     } catch (error) {
       row.publishError = message(error);
       failures++;
@@ -48,11 +57,11 @@ export async function publishBatch(rows, unresolvedIds, options) {
         for (const pending of eligible.slice(position + 1)) {
           pending.row.publishError = 'NinjaBox остановлен после ошибки предыдущего фото';
         }
-        onRows([...rows]);
+        await onRows([...rows]);
         return { failures, stopped: true };
       }
     }
-    onRows([...rows]);
+    await onRows([...rows]);
     onProgress(publisher, index + 1, rows.length);
   }
   return { failures, stopped: false };

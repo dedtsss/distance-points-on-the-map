@@ -19,6 +19,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
+import java.io.FileInputStream;
+import java.io.OutputStreamWriter;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -34,6 +38,90 @@ public class DarkFotoFolderPlugin extends Plugin {
     private final Map<String, File> cached = new HashMap<>();
     private final ExecutorService ocrExecutor = Executors.newSingleThreadExecutor();
     private NativeStampOcr stampOcr;
+    private File recoveryDir() { return new File(getContext().getFilesDir(), "darkfoto-pending"); }
+
+    private static String readText(File file) throws IOException {
+        StringBuilder text = new StringBuilder();
+        try (InputStreamReader input = new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)) {
+            char[] buffer = new char[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) text.append(buffer, 0, count);
+        }
+        return text.toString();
+    }
+
+    private void deleteRecovery() {
+        File[] files = recoveryDir().listFiles();
+        if (files != null) for (File file : files) file.delete();
+        recoveryDir().delete();
+    }
+
+    @PluginMethod
+    public void saveRecovery(PluginCall call) {
+        String payload = call.getString("payload");
+        JSArray ids = call.getArray("ids");
+        if (payload == null || payload.length() > 512_000) { call.reject("Recovery manifest is invalid"); return; }
+        ocrExecutor.execute(() -> {
+            File directory = recoveryDir();
+            try {
+                if (!directory.exists() && !directory.mkdirs()) throw new IOException("Recovery cache unavailable");
+                if (ids != null) for (int index = 0; index < ids.length(); index++) {
+                    String id = ids.getString(index);
+                    if (id == null || !id.matches("[A-Za-z0-9-]{1,64}")) throw new IOException("Invalid photo ID");
+                    File target = new File(directory, id + ".jpg");
+                    if (target.isFile() && target.length() > 0) continue;
+                    Uri source = selected.get(id);
+                    if (source == null) throw new IOException("Selected photo expired");
+                    File temporary = new File(directory, id + ".part");
+                    try (InputStream input = getContext().getContentResolver().openInputStream(source)) {
+                        if (input == null) throw new IOException("Selected photo unavailable");
+                        copyPhoto(input, temporary);
+                    } catch (Exception error) { temporary.delete(); throw error; }
+                    if (!temporary.renameTo(target)) throw new IOException("Recovery photo could not be saved");
+                }
+                File temporary = new File(directory, "manifest.part");
+                try (OutputStreamWriter output = new OutputStreamWriter(new FileOutputStream(temporary), StandardCharsets.UTF_8)) {
+                    output.write(payload);
+                }
+                if (!temporary.renameTo(new File(directory, "manifest.json"))) throw new IOException("Recovery manifest could not be saved");
+                call.resolve();
+            } catch (Exception error) { call.reject("Recovery save failed", error); }
+        });
+    }
+
+    @PluginMethod
+    public void loadRecovery(PluginCall call) {
+        try {
+            File manifest = new File(recoveryDir(), "manifest.json");
+            JSObject result = new JSObject();
+            result.put("payload", manifest.isFile() ? readText(manifest) : "");
+            call.resolve(result);
+        } catch (Exception error) { call.reject("Recovery load failed", error); }
+    }
+
+    @PluginMethod
+    public void restoreRecoveryPhotos(PluginCall call) {
+        JSArray ids = call.getArray("ids");
+        if (ids == null || ids.length() > MAX_PHOTOS) { call.reject("Recovery photo list is invalid"); return; }
+        selected.clear();
+        cached.clear();
+        try {
+            for (int index = 0; index < ids.length(); index++) {
+                String id = ids.getString(index);
+                if (id == null || !id.matches("[A-Za-z0-9-]{1,64}")) throw new IOException("Invalid photo ID");
+                File file = new File(recoveryDir(), id + ".jpg");
+                if (!file.isFile() || file.length() <= 0 || file.length() > MAX_BYTES) throw new IOException("Recovery photo missing");
+                selected.put(id, Uri.fromFile(file));
+            }
+            call.resolve();
+        } catch (Exception error) { selected.clear(); call.reject("Recovery photos unavailable", error); }
+    }
+
+    @PluginMethod
+    public void clearRecovery(PluginCall call) {
+        deleteRecovery();
+        call.resolve();
+    }
 
     private void clearCached() {
         for (File file : cached.values()) file.delete();

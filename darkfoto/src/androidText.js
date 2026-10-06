@@ -29,11 +29,13 @@ export async function copyText(text) {
   area.remove();
 }
 
-export async function copyResultBlocks(blocks, onProgress = () => {}) {
+export async function copyResultBlocks(blocks, onProgress = () => {}, write = copyText) {
   if (!blocks.length) return 0;
   if (!isNativeTextExport()) {
-    await copyText(blocks.join('\n\n'));
-    onProgress(blocks.length, blocks.length);
+    for (const [index, block] of blocks.entries()) {
+      await write(block);
+      onProgress(index + 1, blocks.length);
+    }
     return blocks.length;
   }
   const listener = await textPlugin.addListener('copyProgress', ({ count, total }) => onProgress(count, total));

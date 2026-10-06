@@ -30,3 +30,24 @@ export async function readAndroidPhoto(item) {
 export async function clearAndroidPhotoCache() {
   await folder.clearPhotoCache();
 }
+
+export async function saveAndroidRecovery(state, includePhotos = false) {
+  if (!hasAndroidFolderPicker()) return;
+  await folder.saveRecovery({ payload: JSON.stringify(state),
+    ...(includePhotos ? { ids: state.files.map((file) => file.id) } : {}) });
+}
+
+export async function loadAndroidRecovery() {
+  if (!hasAndroidFolderPicker()) return null;
+  const { payload } = await folder.loadRecovery();
+  if (!payload) return null;
+  const state = JSON.parse(payload);
+  if (!Array.isArray(state.files) || !Array.isArray(state.rows)
+    || state.files.length !== state.rows.length || state.files.length > 100) throw new Error('Recovery manifest invalid');
+  await folder.restoreRecoveryPhotos({ ids: state.files.map((file) => file.id) });
+  return state;
+}
+
+export async function clearAndroidRecovery() {
+  if (hasAndroidFolderPicker()) await folder.clearRecovery();
+}
