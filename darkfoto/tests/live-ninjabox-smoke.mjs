@@ -18,14 +18,35 @@ try {
     const { publishCleanImageToNinjabox } = await import(`${baseUrl}src/core/publisher.js`);
     const response = await fetch(`${baseUrl}tests/fixtures/representative-6301.jpg`);
     if (!response.ok) throw new Error(`Fixture HTTP ${response.status}`);
-    const source = new File([await response.blob()], 'representative-6301.jpg', { type: 'image/jpeg' });
-    const clean = await cleanImageForUpload(source, { preferredFilename: 'darkfoto-smoke', orientation: 1 });
-    if (!clean.ok) throw new Error(`Cleanup failed: ${clean.error}`);
-    const link = await publishCleanImageToNinjabox(clean.file, relayUrl);
-    return { link, bytes: clean.file.size, method: clean.method };
+    const blob = await response.blob();
+
+    const clean = async (name) => {
+      const source = new File([blob], 'representative-6301.jpg', { type: 'image/jpeg' });
+      const cleaned = await cleanImageForUpload(source, { preferredFilename: name, orientation: 1 });
+      if (!cleaned.ok) throw new Error(`Cleanup failed: ${cleaned.error}`);
+      return cleaned;
+    };
+
+    const single = await clean('darkfoto-smoke-single');
+    const singleLink = await publishCleanImageToNinjabox(single.file, relayUrl);
+
+    const first = await clean('darkfoto-smoke-group-01');
+    const second = await clean('darkfoto-smoke-group-02');
+    const galleryLink = await publishCleanImageToNinjabox([first.file, second.file], relayUrl);
+
+    return {
+      singleLink,
+      galleryLink,
+      bytes: [single.file.size, first.file.size, second.file.size],
+      methods: [single.method, first.method, second.method],
+    };
   }, { baseUrl: base, relayUrl: relay });
-  assert.match(result.link, /^https:\/\/ninjabox\.org\/i\//);
-  console.log(`NinjaBox cleaned representative JPEG (${result.bytes} bytes, ${result.method}): ${result.link}`);
+
+  assert.match(result.singleLink, /^https:\/\/ninjabox\.org\/i\//);
+  assert.match(result.galleryLink, /^https:\/\/ninjabox\.org\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i);
+  console.log(`NinjaBox single link: ${result.singleLink}`);
+  console.log(`NinjaBox 2-photo gallery: ${result.galleryLink}`);
+  console.log(`Cleaned bytes: ${result.bytes.join(', ')}; methods: ${result.methods.join(', ')}`);
 } finally {
   await browser.close();
   await server.close();
