@@ -55,6 +55,9 @@ test('25 m boundary and minimum conflict cover are deterministic', () => {
   const first = splitBatch(photos);
   const second = splitBatch(photos);
   assert.equal(first.reserve.length, 1);
+  assert.ok(first.reserve[0].reserveConflicts.length >= 1);
+  assert.equal(first.reserve[0].reserveConflicts[0].otherStatus, 'main');
+  assert.ok(first.reserve[0].reserveConflicts[0].distanceMeters < 25);
   assert.equal(first.remainingConflicts.length, 0);
   assert.deepEqual(first.reserve.map((photo) => photo.id), second.reserve.map((photo) => photo.id));
 });
@@ -107,6 +110,22 @@ test('6301 single photo and same-coordinate 6300/6301/6302 are eligible', () => 
   const batch = splitBatch(rows);
   assert.deepEqual([batch.main.length, batch.reserve.length, batch.unresolved.length], [1, 2, 0]);
   assert.equal(batch.remainingConflicts.length, 0);
+});
+
+test('removing a logical point recomputes Main/Reserve and restoring it returns the prior split', () => {
+  const point = (id, number) => ({
+    id, number, indexFromOcr: String(7000 + number), indexStatus: 'found',
+    coordinates: { latitude: 64.6, longitude: 30.6 },
+    gpsStatus: 'done', gpsSource: 'exif', coordinateQuality: 'confident',
+  });
+  const rows = [point('a', 1), point('b', 2), point('c', 3)];
+  const full = splitBatch(rows);
+  assert.deepEqual([full.main.length, full.reserve.length], [1, 2]);
+  const removed = splitBatch(rows.filter((photo) => photo.id !== full.main[0].id));
+  assert.deepEqual([removed.main.length, removed.reserve.length], [1, 1]);
+  assert.notEqual(removed.main[0].id, full.main[0].id);
+  const restored = splitBatch(rows);
+  assert.deepEqual(restored.reserve.map((photo) => photo.id), full.reserve.map((photo) => photo.id));
 });
 
 test('native stamp index policy rejects date, time, coordinate fragments and multiple values', () => {

@@ -57,6 +57,7 @@ export default function App() {
   const previewsRef = useRef({});
   const restoredRef = useRef(false);
   const [viewer, setViewer] = useState(null);
+  const [lastRemoved, setLastRemoved] = useState(null);
 
   const rememberPreview = (id, file) => {
     const old = previewsRef.current[id];
@@ -161,6 +162,7 @@ export default function App() {
     setFiles(imageFiles(event.target.files || []));
     setRows([]);
     setSplit(null);
+    setLastRemoved(null);
     setResumeAvailable(false);
     setReviewing(false);
   };
@@ -174,6 +176,7 @@ export default function App() {
       restoredRef.current = false;
       setRows([]);
       setSplit(null);
+      setLastRemoved(null);
       setResumeAvailable(false);
       setReviewing(false);
     } catch (error) { setStatus(`Папка: ${errorText(error)}`); }
@@ -188,6 +191,7 @@ export default function App() {
       restoredRef.current = false;
       setRows([]);
       setSplit(null);
+      setLastRemoved(null);
       setResumeAvailable(false);
       setReviewing(false);
     } catch (error) { setStatus(`Фото: ${errorText(error)}`); }
@@ -201,7 +205,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    if ((!resumeAvailable && !reviewing) || busy || !files.length || files.length !== sourcePhotoCount(rows)) return undefined;
+    if ((!resumeAvailable && !reviewing) || busy || !files.length || !rows.length) return undefined;
     const timer = setTimeout(() => {
       saveAndroidRecovery(recoveryState(rows)).catch((error) => setStatus(`Сохранение состояния: ${errorText(error)}`));
     }, 300);
@@ -250,6 +254,7 @@ export default function App() {
     setBusy(true);
     setRows([]);
     setSplit(null);
+    setLastRemoved(null);
     clearPreviews();
     const current = [];
     try {
@@ -363,6 +368,34 @@ export default function App() {
     : !grouped ? { kind: 'recognized', text: 'Распознано' }
       : reserveIds.has(photo.id) ? { kind: 'reserve', text: 'Резерв' }
         : { kind: 'main', text: 'Основное' };
+  const pointLabel = (photo) => photo?.indexFromOcr ? `#${photo.indexFromOcr}`
+    : photo?.number ? `Точка ${photo.number}` : 'Точка';
+  const rowPosition = new Map(rows.map((photo, index) => [photo.id, index]));
+  const neighborOf = (photo, direction) => {
+    const position = rowPosition.get(photo.id);
+    return Number.isInteger(position) ? rows[position + direction] || null : null;
+  };
+  const displaySections = grouped ? [
+    { key: 'main', title: 'Основные', items: grouped.main },
+    { key: 'reserve', title: 'Резерв', items: grouped.reserve },
+    { key: 'review', title: 'Требует проверки', items: grouped.unresolved },
+  ].filter((section) => section.items.length) : [{ key: 'recognized', title: '', items: rows }];
+  const applyRegroup = (nextRows) => {
+    setLastRemoved(null);
+    setRows(nextRows);
+  };
+  const removePoint = (photo) => {
+    if (!reviewing || busy || hasPublishedPoints(rows)) return;
+    setLastRemoved({ rows: [...rows], label: pointLabel(photo) });
+    setRows(rows.filter((row) => row.id !== photo.id));
+    setStatus(`${pointLabel(photo)} убрана из текущего набора.`);
+  };
+  const undoRemove = () => {
+    if (!lastRemoved) return;
+    setRows(lastRemoved.rows);
+    setStatus(`${lastRemoved.label} возвращена.`);
+    setLastRemoved(null);
+  };
   const updateBar = updateProgress(nativeUpdate);
   const updateAction = updateButton(nativeUpdate?.state, candidate?.version);
   const nativeStatus = {
@@ -473,40 +506,72 @@ export default function App() {
             {copyStatus && <IonText><p role="status" aria-live="polite">{copyStatus}</p></IonText>}
             {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>}
-          {rows.length > 0 && <IonCard><IonCardContent><h2>{grouped ? 'Точки' : 'Распознавание'}</h2><div className="result-photo-list">
-            {rows.map((photo, position) => {
-              const state = photoStatus(photo);
-              return <article key={photo.id} className="result-photo-card">
-                <div className={`point-thumbnails ${pointMembers(photo).length > 1 ? 'multi-photo' : ''}`}>
-                  {pointMembers(photo).map((member) => <button key={member.id} type="button" className="photo-thumbnail"
-                    onClick={() => setViewer(member.id)} disabled={!previews[member.id]}
-                    aria-label={`Открыть фото ${member.fileName || member.number} точки ${photo.indexFromOcr || photo.number}`}>
-                    {previews[member.id] && <img src={previews[member.id]} alt="" loading="lazy" />}
-                  </button>)}
+          {rows.length > 0 && <IonCard><IonCardContent><h2>{grouped ? 'Точки' : 'Распознавание'}</h2>
+            {reviewing && lastRemoved && <div className="undo-row" role="status">
+              <span>{lastRemoved.label} убрана.</span>
+              <IonButton size="small" fill="clear" onClick={undoRemove}>Вернуть</IonButton>
+            </div>}
+            <div className="point-sections">
+              {displaySections.map((section) => <section key={section.key} className={`point-section point-section-${section.key}`}>
+                {section.title && <h3 className="point-section-title">{section.title}<span>{section.items.length}</span></h3>}
+                <div className="result-photo-list">
+                  {section.items.map((photo) => {
+                    const state = photoStatus(photo);
+                    const previous = neighborOf(photo, -1);
+                    const next = neighborOf(photo, 1);
+                    const statusLabel = state.kind === 'review' ? 'Требует проверки' : state.text;
+                    return <article key={photo.id} className="result-photo-card">
+                      <header className={`point-card-header point-card-header-${state.kind}`}>
+                        <div className="point-card-title-row">
+                          <strong className="photo-identity">{pointLabel(photo)}</strong>
+                          <span className={`photo-state photo-state-${state.kind}`}>{statusLabel}</span>
+                        </div>
+                        <div className="point-card-meta">
+                          <span>{pointMembers(photo).length} фото</span>
+                          <span className="photo-coordinates">{photo.coordinates
+                            ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
+                        </div>
+                      </header>
+                      <div className="point-card-body">
+                        <div className={`point-thumbnails ${pointMembers(photo).length > 1 ? 'multi-photo' : ''}`}>
+                          {pointMembers(photo).map((member) => <button key={member.id} type="button" className="photo-thumbnail"
+                            onClick={() => setViewer(member.id)} disabled={!previews[member.id]}
+                            aria-label={`Открыть фото ${member.fileName || member.number} точки ${photo.indexFromOcr || photo.number}`}>
+                            {previews[member.id] && <img src={previews[member.id]} alt="" loading="lazy" />}
+                          </button>)}
+                        </div>
+                        <div className="photo-detail">
+                          <span className="photo-filename">{pointMembers(photo).map((member) => member.fileName).join(', ')}</span>
+                          {state.kind === 'reserve' && (photo.reserveConflicts || []).length > 0 && <div className="reserve-reasons">
+                            <strong>Почему в резерве</strong>
+                            {photo.reserveConflicts.map((conflict) => <span key={`${photo.id}:${conflict.otherId}`}>
+                              {conflict.otherStatus === 'main' ? 'Конфликт' : 'Также рядом'}: {conflict.otherLabel} · {conflict.distanceMeters.toFixed(1)} м
+                            </span>)}
+                          </div>}
+                          {state.kind === 'review' && <span className="review-reason">{state.text}</span>}
+                          {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: открыть ссылку</a>)}
+                          {reviewing && !busy && !hasPublishedPoints(rows) && <div className="point-actions">
+                            {pointMembers(photo).length > 1 && <IonButton size="small" fill="outline"
+                              onClick={() => applyRegroup(splitPoint(rows, photo.id))}>Разделить</IonButton>}
+                            {previous && <IonButton size="small" fill="outline"
+                              onClick={() => applyRegroup(mergePoint(rows, photo.id, -1))}>С предыдущей {pointLabel(previous)}</IonButton>}
+                            {next && <IonButton size="small" fill="outline"
+                              onClick={() => applyRegroup(mergePoint(rows, photo.id, 1))}>Со следующей {pointLabel(next)}</IonButton>}
+                            {validById.has(photo.id) && <IonButton size="small" fill="outline"
+                              onClick={() => copyOne(validById.get(photo.id))}>Копировать</IonButton>}
+                            <IonButton size="small" fill="clear" color="danger" onClick={() => removePoint(photo)}>Убрать</IonButton>
+                          </div>}
+                          {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
+                          {!reviewing && validById.has(photo.id) && <IonButton size="small" fill="clear"
+                            onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}
+                        </div>
+                      </div>
+                    </article>;
+                  })}
                 </div>
-                <div className="photo-detail">
-                  <strong className="photo-identity">{photo.indexFromOcr ? `#${photo.indexFromOcr}` : `Точка ${position + 1}`}</strong>
-                  <span className="photo-count">{pointMembers(photo).length} фото</span>
-                  <span className="photo-filename">{pointMembers(photo).map((member) => member.fileName).join(', ')}</span>
-                  <span className="photo-coordinates">{photo.coordinates
-                    ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
-                  <span className={`photo-state photo-state-${state.kind}`}>{state.text}</span>
-                  {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: открыть ссылку</a>)}
-                  {reviewing && !busy && !hasPublishedPoints(rows) && <div className="regroup-actions">
-                    {pointMembers(photo).length > 1 && <IonButton fill="outline"
-                      onClick={() => setRows(splitPoint(rows, photo.id))}>Разделить</IonButton>}
-                    {position > 0 && <IonButton fill="clear"
-                      onClick={() => setRows(mergePoint(rows, photo.id, -1))}>Объединить с предыдущей</IonButton>}
-                    {position < rows.length - 1 && <IonButton fill="clear"
-                      onClick={() => setRows(mergePoint(rows, photo.id, 1))}>Объединить с следующей</IonButton>}
-                  </div>}
-                  {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
-                  {validById.has(photo.id) && <IonButton size="small" fill="clear"
-                    onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}
-                </div>
-              </article>;
-            })}
-          </div></IonCardContent></IonCard>}
+              </section>)}
+            </div>
+          </IonCardContent></IonCard>}
         </>}
       </div>
     </IonContent>
