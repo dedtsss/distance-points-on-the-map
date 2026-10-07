@@ -38,8 +38,8 @@ export function buildResultText({ grouped, formatOptions = {}, session = '', rev
   const main = formatAllPhotoResultBlocks(grouped.main || [], formatOptions);
   const reserve = formatAllPhotoResultBlocks(grouped.reserve || [], formatOptions);
   const review = (grouped.unresolved || [])
-    .map((photo) => `${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`)
-    .join('\n');
+    .map((photo) => `${formatAllPhotoResultBlocks([photo], formatOptions)}\n${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`)
+    .join('\n\n');
   const sessionHeader = String(session || '').trim() ? `Сессия: ${String(session).trim()}\n\n` : '';
   return `${sessionHeader}Основные\n\n${main}\n\nРезерв\n\n${reserve}\n\nТребует проверки\n\n${review}\n`;
 }

@@ -56,6 +56,7 @@ export const mergeNativePasses = (first, second) => {
     && first.indexFromOcr !== second.indexFromOcr;
   return {
     ...coordinates,
+    accuracyMeters: first.accuracyMeters ?? second.accuracyMeters ?? null,
     indexFromOcr: index.indexFromOcr,
     indexStatus: conflict ? 'uncertain' : index.indexStatus,
     warnings: [!coordinates.ok && 'coordinates_not_found', conflict ? 'index_conflict'

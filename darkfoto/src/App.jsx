@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
+import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { outgoingName, publishBatch } from './publishBatch.js';
@@ -51,6 +52,7 @@ export default function App() {
   const [copyBusy, setCopyBusy] = useState(false);
   const [workProgress, setWorkProgress] = useState(null);
   const [resumeAvailable, setResumeAvailable] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [previews, setPreviews] = useState({});
   const previewsRef = useRef({});
   const restoredRef = useRef(false);
@@ -84,15 +86,17 @@ export default function App() {
       setComment(saved.comment || '');
       setColor(saved.color || '');
       setPacking(saved.packing || '');
-      setResumeAvailable(true);
+      setReviewing(saved.phase === 'review');
+      setResumeAvailable(saved.phase !== 'review');
       const completed = saved.rows.filter((row) => row.uploadResult?.links?.some((link) => link.provider === saved.publisher)).length;
-      setStatus(`${completed} из ${saved.rows.length} готовы · продолжить с ${Math.min(completed + 1, saved.rows.length)}-й`);
-      for (const [index, row] of saved.rows.entries()) {
+      setStatus(saved.phase === 'review' ? 'Проверьте точки перед публикацией.'
+        : `${completed} из ${saved.rows.length} точек готовы · можно продолжить`);
+      for (const row of saved.rows.flatMap(pointMembers)) {
         if (!active) break;
         try {
-          const file = await readAndroidPhoto(saved.files[index]);
+          const file = await readAndroidPhoto(saved.files[row.number - 1]);
           const cleaned = await cleanImageForUpload(file, { orientation: row.orientation,
-            preferredFilename: outgoingName(row, index + 1) });
+            preferredFilename: outgoingName(row, row.number) });
           if (active) rememberPreview(row.id, cleaned.ok ? cleaned.file : file);
         } catch { /* A missing preview does not hide the recovered link. */ }
       }
@@ -158,6 +162,7 @@ export default function App() {
     setRows([]);
     setSplit(null);
     setResumeAvailable(false);
+    setReviewing(false);
   };
 
   const selectAndroidFolder = async () => {
@@ -170,6 +175,7 @@ export default function App() {
       setRows([]);
       setSplit(null);
       setResumeAvailable(false);
+      setReviewing(false);
     } catch (error) { setStatus(`Папка: ${errorText(error)}`); }
   };
 
@@ -183,6 +189,7 @@ export default function App() {
       setRows([]);
       setSplit(null);
       setResumeAvailable(false);
+      setReviewing(false);
     } catch (error) { setStatus(`Фото: ${errorText(error)}`); }
   };
 
@@ -190,25 +197,26 @@ export default function App() {
 
   const recoveryState = (current) => ({
     files: files.map(({ id, name, type, size, native }) => ({ id, name, type, size, native })),
-    rows: current, publisher, onion, session, comment, color, packing,
+    rows: current, publisher, onion, session, comment, color, packing, phase: reviewing ? 'review' : 'publishing',
   });
 
   useEffect(() => {
-    if (!resumeAvailable || busy || !files.length || files.length !== rows.length) return undefined;
+    if ((!resumeAvailable && !reviewing) || busy || !files.length || files.length !== sourcePhotoCount(rows)) return undefined;
     const timer = setTimeout(() => {
       saveAndroidRecovery(recoveryState(rows)).catch((error) => setStatus(`Сохранение состояния: ${errorText(error)}`));
     }, 300);
     return () => clearTimeout(timer);
-  }, [resumeAvailable, busy, files, rows, publisher, onion, session, comment, color, packing]);
+  }, [resumeAvailable, reviewing, busy, files, rows, publisher, onion, session, comment, color, packing]);
 
   const publishCurrent = async (current, destination, includePhotos) => {
-    await saveAndroidRecovery(recoveryState(current), includePhotos);
+    await saveAndroidRecovery({ ...recoveryState(current), phase: 'publishing' }, includePhotos);
+    setReviewing(false);
     setResumeAvailable(true);
     const publication = await publishBatch(current, new Set(splitBatch(current).unresolved.map((photo) => photo.id)), {
       publisher, destination, fileAt, onStatus: setStatus,
       onCleaned: (row, cleaned) => rememberPreview(row.id, cleaned),
       onRows: async (updated) => {
-        await saveAndroidRecovery(recoveryState(updated));
+        await saveAndroidRecovery({ ...recoveryState(updated), phase: 'publishing' });
         setRows(updated);
       },
       onProgress: (stage, completed, total, fraction) =>
@@ -217,6 +225,7 @@ export default function App() {
     const completed = current.filter((row) => row.uploadResult?.links?.some((link) => link.provider === publisher)).length;
     if (completed === current.length) {
       await clearAndroidRecovery();
+      if (hasAndroidFolderPicker()) await clearAndroidPhotoCache();
       setResumeAvailable(false);
       if (restoredRef.current) setFiles([]);
     }
@@ -229,7 +238,10 @@ export default function App() {
     setBusy(true);
     try {
       const destination = publisher === 'onion' ? onionBaseUrl(onion) : ninjaboxRelayUrl(ninjaboxRelay);
-      await publishCurrent([...rows], destination, false);
+      if (publisher === 'onion' && rows.some((point) => pointMembers(point).length > 1)) {
+        throw new Error('Onion публикует одно фото. Разделите многокадровые точки или выберите NinjaBox.');
+      }
+      await publishCurrent([...rows], destination, true);
     } catch (error) { setStatus(`Продолжение: ${errorText(error)}`); }
     finally { setBusy(false); setWorkProgress(null); }
   };
@@ -241,8 +253,6 @@ export default function App() {
     clearPreviews();
     const current = [];
     try {
-      const destination = publisher === 'onion' ? onionBaseUrl(onion)
-        : publisher === 'ninjabox' ? ninjaboxRelayUrl(ninjaboxRelay) : null;
       for (let index = 0; index < files.length; index += 1) {
         setStatus(`Распознавание ${index + 1}/${files.length}`);
         setWorkProgress(actionProgress('recognition', index, files.length));
@@ -281,18 +291,14 @@ export default function App() {
         setRows([...current]);
         setWorkProgress(actionProgress('recognition', index + 1, files.length));
       }
-      const resolved = splitBatch(current);
-      setSplit(resolved);
-      if (destination) {
-        await publishCurrent(current, destination, true);
-      } else {
-        setStatus('Обработка завершена.');
-      }
+      const points = groupPhotos(current);
+      setRows(points);
+      setSplit(splitBatch(points));
+      setReviewing(true);
+      await saveAndroidRecovery({ ...recoveryState(points), phase: 'review' }, true);
+      setStatus('Распознавание завершено. Проверьте точки перед публикацией.');
     } catch (error) { setStatus(`Ошибка: ${errorText(error)}`); }
     finally {
-      if (hasAndroidFolderPicker()) {
-        try { await clearAndroidPhotoCache(); } catch { /* Android cache is also cleared on plugin destroy. */ }
-      }
       setBusy(false);
       setWorkProgress(null);
     }
@@ -404,13 +410,13 @@ export default function App() {
             <IonList lines="inset">
               <IonItem><IonSelect label="Публикация" labelPlacement="stacked" value={publisher}
                 interface="action-sheet" interfaceOptions={{ header: 'Публикация', cssClass: 'publication-sheet' }}
-                onIonChange={(event) => setPublisher(event.detail.value)} disabled={busy || resumeAvailable}>
+                onIonChange={(event) => setPublisher(event.detail.value)} disabled={busy || resumeAvailable || hasPublishedPoints(rows)}>
                 <IonSelectOption value="none">Только локально</IonSelectOption>
                 <IonSelectOption value="onion">Onion</IonSelectOption>
                 <IonSelectOption value="ninjabox">NinjaBox</IonSelectOption>
               </IonSelect></IonItem>
               {publisher === 'onion' && <IonItem><IonInput label="Onion адрес" labelPlacement="stacked" type="url"
-                value={onion} onIonInput={(event) => setOnion(event.detail.value || '')} disabled={busy || resumeAvailable} /></IonItem>}
+                value={onion} onIonInput={(event) => setOnion(event.detail.value || '')} disabled={busy || resumeAvailable || hasPublishedPoints(rows)} /></IonItem>}
               {publisher === 'ninjabox' && <IonItem><IonLabel className="publisher-note">
                 NinjaBox: публичная публикация через встроенный relay. Для анонимного режима используйте Onion.
               </IonLabel></IonItem>}
@@ -424,14 +430,21 @@ export default function App() {
                 onIonInput={(event) => setComment(event.detail.value || '')} /></IonItem>
             </IonList>
             <IonButton className="primary-action" expand="block"
-              onClick={resumeAvailable ? resumePublication : run} disabled={busy || !files.length}>
-              {busy ? 'Обработка…' : resumeAvailable ? 'Продолжить публикацию' : 'Обработать фото'}
+              onClick={resumeAvailable || (reviewing && publisher !== 'none') ? resumePublication : run}
+              disabled={busy || !files.length || (reviewing && publisher === 'none')
+                || (!reviewing && hasPublishedPoints(rows) && !resumeAvailable)}>
+              {busy ? 'Обработка…' : resumeAvailable ? 'Продолжить публикацию'
+                : reviewing ? publisher === 'none' ? 'Точки готовы локально' : `Опубликовать ${rows.length} точек` : 'Обработать фото'}
             </IonButton>
             <IonText><p role="status" aria-live="polite">{status}</p></IonText>
             {workProgress?.kind !== 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>
           {grouped && <IonCard><IonCardContent>
-            <h2>Результат</h2>
+            <h2>{reviewing ? 'Проверка точек' : 'Результат'}</h2>
+            <p className="point-count">{sourcePhotoCount(rows)} фото → {rows.length} точек</p>
+            {reviewing && <p>Группы созданы автоматически. При необходимости разделите точку и объедините соседние.</p>}
+            {reviewing && publisher === 'onion' && rows.some((point) => pointMembers(point).length > 1)
+              && <p>Onion публикует одно фото. Разделите многокадровые точки или выберите NinjaBox для галерей.</p>}
             {normalizedSession && <p className="session-summary">Сессия: <strong>{normalizedSession}</strong></p>}
             <div className="counts">
               <IonBadge color="success">Основные {grouped.main.length}</IonBadge>
@@ -460,21 +473,33 @@ export default function App() {
             {copyStatus && <IonText><p role="status" aria-live="polite">{copyStatus}</p></IonText>}
             {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>}
-          {rows.length > 0 && <IonCard><IonCardContent><h2>Фотографии</h2><div className="result-photo-list">
-            {rows.map((photo) => {
+          {rows.length > 0 && <IonCard><IonCardContent><h2>{grouped ? 'Точки' : 'Распознавание'}</h2><div className="result-photo-list">
+            {rows.map((photo, position) => {
               const state = photoStatus(photo);
               return <article key={photo.id} className="result-photo-card">
-                <button type="button" className="photo-thumbnail" onClick={() => setViewer(photo.id)}
-                  disabled={!previews[photo.id]} aria-label={`Открыть фото ${photo.indexFromOcr || photo.fileName}`}>
-                  {previews[photo.id] && <img src={previews[photo.id]} alt="" />}
-                </button>
+                <div className={`point-thumbnails ${pointMembers(photo).length > 1 ? 'multi-photo' : ''}`}>
+                  {pointMembers(photo).map((member) => <button key={member.id} type="button" className="photo-thumbnail"
+                    onClick={() => setViewer(member.id)} disabled={!previews[member.id]}
+                    aria-label={`Открыть фото ${member.fileName || member.number} точки ${photo.indexFromOcr || photo.number}`}>
+                    {previews[member.id] && <img src={previews[member.id]} alt="" loading="lazy" />}
+                  </button>)}
+                </div>
                 <div className="photo-detail">
-                  <strong className="photo-identity">{photo.indexFromOcr ? `#${photo.indexFromOcr}` : `Фото ${photo.number}`}</strong>
-                  <span className="photo-filename">{photo.fileName}</span>
+                  <strong className="photo-identity">{photo.indexFromOcr ? `#${photo.indexFromOcr}` : `Точка ${position + 1}`}</strong>
+                  <span className="photo-count">{pointMembers(photo).length} фото</span>
+                  <span className="photo-filename">{pointMembers(photo).map((member) => member.fileName).join(', ')}</span>
                   <span className="photo-coordinates">{photo.coordinates
                     ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
                   <span className={`photo-state photo-state-${state.kind}`}>{state.text}</span>
                   {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: открыть ссылку</a>)}
+                  {reviewing && !busy && !hasPublishedPoints(rows) && <div className="regroup-actions">
+                    {pointMembers(photo).length > 1 && <IonButton fill="outline"
+                      onClick={() => setRows(splitPoint(rows, photo.id))}>Разделить</IonButton>}
+                    {position > 0 && <IonButton fill="clear"
+                      onClick={() => setRows(mergePoint(rows, photo.id, -1))}>Объединить с предыдущей</IonButton>}
+                    {position < rows.length - 1 && <IonButton fill="clear"
+                      onClick={() => setRows(mergePoint(rows, photo.id, 1))}>Объединить с следующей</IonButton>}
+                  </div>}
                   {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
                   {validById.has(photo.id) && <IonButton size="small" fill="clear"
                     onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}

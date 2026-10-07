@@ -1,12 +1,12 @@
 {
   "name": "darkfoto-mvp",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "test": "node --test tests/*.test.mjs && node tests/browser-ocr.mjs && node tests/real-jpeg-ocr.mjs",
+    "test": "node --test tests/*.test.mjs && node tests/browser-ocr.mjs && node tests/real-jpeg-ocr.mjs && node tests/browser-points.mjs",
     "test:browser": "node tests/browser-ocr.mjs",
     "smoke:ninjabox": "node tests/live-ninjabox-smoke.mjs",
     "android:sync": "npm run build && cap sync android"

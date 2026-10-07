@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { validateRecovery } from './recovery.js';
 
 const folder = registerPlugin('DarkFotoFolder');
 export const hasAndroidFolderPicker = () => Capacitor.getPlatform() === 'android';
@@ -24,7 +25,7 @@ export async function readAndroidPhoto(item) {
   if (!response.ok) throw new Error(`Android photo cache: HTTP ${response.status}`);
   const blob = await response.blob();
   if (blob.size !== size) throw new Error('Android photo cache size mismatch');
-  return new File([blob], item.name, { type: item.type || blob.type || 'image/jpeg' });
+  return new File([blob], item.name, { type: item.type || blob.type || 'image/jpeg', lastModified: item.lastModified || 0 });
 }
 
 export async function clearAndroidPhotoCache() {
@@ -41,9 +42,7 @@ export async function loadAndroidRecovery() {
   if (!hasAndroidFolderPicker()) return null;
   const { payload } = await folder.loadRecovery();
   if (!payload) return null;
-  const state = JSON.parse(payload);
-  if (!Array.isArray(state.files) || !Array.isArray(state.rows)
-    || state.files.length !== state.rows.length || state.files.length > 100) throw new Error('Recovery manifest invalid');
+  const state = validateRecovery(JSON.parse(payload));
   await folder.restoreRecoveryPhotos({ ids: state.files.map((file) => file.id) });
   return state;
 }

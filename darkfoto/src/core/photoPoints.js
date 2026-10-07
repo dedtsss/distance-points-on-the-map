@@ -36,7 +36,7 @@ function canJoin(members, candidate, rules) {
   if (distance === null || distance > rules.radiusMeters) return false;
   // Also remain near the best representative if accuracy changes its position.
   const resulting = makePoint([...members, candidate]);
-  if (members.some((photo) => haversineDistanceMeters(photo, resulting) > rules.radiusMeters)) return false;
+  if ([...members, candidate].some((photo) => haversineDistanceMeters(photo, resulting) > rules.radiusMeters)) return false;
   const times = [...members, candidate].map(trustedTime);
   const known = times.filter((time) => time !== null);
   const span = known.length ? Math.max(...known) - Math.min(...known) : 0;

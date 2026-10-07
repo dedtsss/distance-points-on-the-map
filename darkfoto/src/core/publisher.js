@@ -1,3 +1,5 @@
+import { validatePointFiles, validPhotoUrl, validGalleryUrl } from './ninjaboxContract.js';
+
 export const DEFAULT_NINJABOX_RELAY_URL = 'https://darkfoto-ninjabox-relay.dvabobra2014.workers.dev/v1/ninjabox';
 export const NINJABOX_TIMEOUT_MS = 90_000;
 
@@ -52,10 +54,11 @@ export function ninjaboxRelayUrl(value) {
 }
 
 export async function publishCleanImageToNinjabox(cleanedFile, relay, options = {}) {
-  if (!cleanedFile || cleanedFile.type !== 'image/jpeg') throw new Error('Нужна очищенная JPEG-копия');
+  const files = Array.isArray(cleanedFile) ? cleanedFile : [cleanedFile];
+  if (!validatePointFiles(files)) throw new Error('Нужны очищенные JPEG-копии: до 25 МБ на фото, 100 МБ на точку');
   const url = ninjaboxRelayUrl(relay);
   const form = new FormData();
-  form.append('file', cleanedFile, cleanedFile.name);
+  for (const file of files) form.append('file', file, file.name);
   if (options.onProgress && typeof XMLHttpRequest !== 'undefined' && !options.fetch) {
     return new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
@@ -75,7 +78,7 @@ export async function publishCleanImageToNinjabox(cleanedFile, relay, options = 
           reject(new Error(`NinjaBox relay: ${body?.error || `HTTP ${request.status}`} (HTTP ${request.status})`));
           return;
         }
-        try { resolve(validNinjaboxLink(body)); } catch (error) { reject(error); }
+        try { resolve(validNinjaboxLink(body, files.length)); } catch (error) { reject(error); }
       };
       request.send(form);
     });
@@ -90,13 +93,14 @@ export async function publishCleanImageToNinjabox(cleanedFile, relay, options = 
       try { detail = (await response.clone().json())?.error || ''; } catch { /* ignore non-JSON relay errors */ }
       throw new Error(`NinjaBox relay: ${detail || `HTTP ${response.status}`} (HTTP ${response.status})`);
     }
-    return validNinjaboxLink(await response.json());
+    return validNinjaboxLink(await response.json(), files.length);
   }, options.timeoutMs || NINJABOX_TIMEOUT_MS, 'NinjaBox', () => controller.abort());
 }
 
-function validNinjaboxLink(result) {
-  const link = result?.url;
-  if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(link || '')) {
+function validNinjaboxLink(result, count) {
+  const link = count === 1 ? result?.url : result?.galleryUrl;
+  if (!result?.ok || (count === 1 ? !validPhotoUrl(link)
+    : !validGalleryUrl(link) || result.itemCount !== count)) {
     throw new Error('NinjaBox relay вернул неверную ссылку');
   }
   return link;

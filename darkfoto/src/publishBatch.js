@@ -1,4 +1,5 @@
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
+import { pointMembers } from './core/photoPoints.js';
 import { publishCleanImage, publishCleanImageToNinjabox, withTimeout } from './core/publisher.js';
 
 const message = (error) => error instanceof Error ? error.message : String(error);
@@ -19,35 +20,45 @@ export async function publishBatch(rows, _unresolvedIds, options) {
     filename: outgoingName(row, hasRecognizedIndex(row) ? unresolvedNumber : ++unresolvedNumber) }))
     .filter(({ row }) => !row.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
   for (const [position, { row, index, filename }] of eligible.entries()) {
-    onStatus(`Очистка ${index + 1}/${rows.length}`);
-    onProgress('cleanup', index, rows.length);
-    let cleaned;
+    const members = pointMembers(row);
+    if (publisher === 'onion' && members.length > 1) {
+      throw new Error('Onion публикует одно фото. Разделите многокадровые точки или выберите NinjaBox.');
+    }
+    const cleaned = [];
     try {
-      cleaned = await withTimeout(async () => {
-        const file = await fileAt(index);
-        const result = await clean(file, {
-          orientation: row.orientation,
-          preferredFilename: filename,
-        });
-        if (!result.ok) throw new Error(result.error);
-        return result.file;
-      }, cleanupTimeoutMs, 'Очистка');
+      for (const [memberPosition, member] of members.entries()) {
+        onStatus(members.length === 1 ? `Очистка ${index + 1}/${rows.length}`
+          : `Очистка точки ${index + 1}/${rows.length} · фото ${memberPosition + 1}/${members.length}`);
+        onProgress('cleanup', index, rows.length);
+        const memberName = members.length === 1 ? filename
+          : filename.replace(/\.jpg$/, `-${String(memberPosition + 1).padStart(2, '0')}.jpg`);
+        const file = await withTimeout(async () => {
+          const source = await fileAt(row.members ? member.number - 1 : index);
+          const result = await clean(source, {
+            orientation: member.orientation, preferredFilename: memberName,
+          });
+          if (!result.ok) throw new Error(result.error);
+          return result.file;
+        }, cleanupTimeoutMs, 'Очистка');
+        cleaned.push(file);
+        onCleaned(member, file);
+      }
     } catch (error) {
       row.publishError = `Очистка: ${message(error)}`;
       failures++;
       await onRows([...rows]);
       continue;
     }
-    onCleaned(row, cleaned);
     onStatus(`${publisher === 'ninjabox' ? 'NinjaBox' : 'Onion'} ${index + 1}/${rows.length}`);
     onProgress(publisher, index, rows.length);
     try {
       const url = publisher === 'onion'
-        ? await publishOnion(cleaned, destination)
-        : await publishNinjabox(cleaned, destination, {
+        ? await publishOnion(cleaned[0], destination)
+        : await publishNinjabox(cleaned.length === 1 ? cleaned[0] : cleaned, destination, {
           onProgress: (loaded, total) => onProgress('ninjabox', index, rows.length,
             total > 0 ? loaded / total : null),
         });
+      row.uploadResult ||= { links: [] };
       row.uploadResult.links = [{ provider: publisher, url }];
       delete row.publishError;
     } catch (error) {
@@ -55,7 +66,7 @@ export async function publishBatch(rows, _unresolvedIds, options) {
       failures++;
       if (publisher === 'ninjabox') {
         for (const pending of eligible.slice(position + 1)) {
-          pending.row.publishError = 'NinjaBox остановлен после ошибки предыдущего фото';
+          pending.row.publishError = 'NinjaBox остановлен после ошибки предыдущей точки';
         }
         await onRows([...rows]);
         return { failures, stopped: true };

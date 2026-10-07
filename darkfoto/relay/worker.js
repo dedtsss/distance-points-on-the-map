@@ -1,4 +1,5 @@
 import { uploadNinjabox } from '../../workers/host-proxy/ninjabox.js';
+import { MAX_POINT_BYTES, validatePointFiles, validPhotoUrl, validGalleryUrl } from '../src/core/ninjaboxContract.js';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -30,18 +31,29 @@ export async function handleNinjaboxRelay(request, uploader = uploadNinjabox) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (request.method !== 'POST') return json({ ok: false, error: 'POST required' }, 405);
   try {
+    const contentLength = Number(request.headers.get('content-length'));
+    if (contentLength > MAX_POINT_BYTES + 1024 * 1024) return json({ ok: false, error: 'Point too large' }, 413);
     const form = await request.formData();
-    const file = form.get('file');
-    if (!(file instanceof File) || file.type !== 'image/jpeg' || file.size === 0 || file.size > 25 * 1024 * 1024
-      || !isSanitizedJpeg(new Uint8Array(await file.arrayBuffer()))) {
-      return json({ ok: false, error: 'Sanitized JPEG required' }, 400);
+    const files = form.getAll('file');
+    if ([...form.keys()].some((key) => key !== 'file')
+      || !files.every((file) => file instanceof File) || !validatePointFiles(files)) {
+      return json({ ok: false, error: 'Bounded sanitized JPEG point required' }, 400);
     }
-    const result = await uploader([file]);
+    for (const file of files) {
+      if (!isSanitizedJpeg(new Uint8Array(await file.arrayBuffer()))) {
+        return json({ ok: false, error: 'Sanitized JPEG required' }, 400);
+      }
+    }
+    const result = await uploader(files);
     const url = result?.items?.[0]?.url;
-    if (!result?.ok || !/^https:\/\/ninjabox\.org\/i\/[a-zA-Z0-9/_-]+$/.test(url || '')) {
-      return json({ ok: false, error: 'NinjaBox did not return a photo link' }, 502);
+    if (!result?.ok || result?.items?.length !== files.length
+      || !result.items.every((item) => validPhotoUrl(item.url))
+      || new Set(result.items.map((item) => item.url)).size !== files.length
+      || (files.length > 1 && !validGalleryUrl(result.galleryUrl))) {
+      return json({ ok: false, error: 'NinjaBox did not return the expected point links' }, 502);
     }
-    return json({ ok: true, url });
+    return files.length === 1 ? json({ ok: true, url })
+      : json({ ok: true, galleryUrl: result.galleryUrl, itemCount: result.items.length });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : 'Upload failed' }, 502);
   }
