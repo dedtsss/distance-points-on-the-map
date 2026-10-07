@@ -90,6 +90,8 @@ export async function readPhotoExif(file) {
     orientation = await exifr.orientation(file).catch(() => 1);
 
     const gps = await exifr.gps(file).catch(() => null);
+    const dates = await exifr.parse(file, { pick: ['DateTimeOriginal', 'CreateDate'],
+      reviveValues: false }).catch(() => null);
     let coordinates = normalizeGps(gps);
 
     if (!coordinates) {
@@ -106,6 +108,7 @@ export async function readPhotoExif(file) {
 
     if (!coordinates) {
       return {
+        ...dates,
         gpsStatus: 'missing',
         gpsStatusText: 'GPS отсутствует или координаты не распознаны',
         coordinates: null,
@@ -115,6 +118,7 @@ export async function readPhotoExif(file) {
     }
 
     return {
+      ...dates,
       gpsStatus: 'found',
       gpsStatusText: 'GPS найден',
       coordinates,

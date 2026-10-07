@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { parseFixedOverlayCoordinates, parseFixedOverlayIndex } from './core/features/gps/fixedOverlayOcr.js';
 import { parseGpsFromOcrText } from './core/utils/ocrGpsReader.js';
+import { parseAccuracy } from './core/captureTime.js';
 
 const folder = registerPlugin('DarkFotoFolder');
 export const NATIVE_PASS_TIMEOUT_MS = 5500;
@@ -32,6 +33,7 @@ export function parseNativeStamp(pass) {
   }).filter(Boolean);
   const index = new Set(indexes).size === 1 ? indexes[0] : null;
   return {
+    accuracyMeters: parseAccuracy(pass?.text),
     ok: Boolean(coordinates),
     latitude: coordinates?.latitude ?? null,
     longitude: coordinates?.longitude ?? null,

@@ -1,6 +1,7 @@
 import { readPhotoExif } from './utils/exifReader.js';
 import { readCoordinatesWithOcr } from './features/gps/ocrReader.js';
 import { normalizeCoordinates } from './features/gps/coordinateParser.js';
+import { captureTime, availableOcrAccuracy } from './captureTime.js';
 
 // Keep the original File in browser memory only. The return value contains no binary data.
 export async function readPhoto(file, options = {}) {
@@ -22,6 +23,8 @@ export async function readPhoto(file, options = {}) {
       : ocr?.ocrStatus === 'confident' && Number(ocr.confidence) >= 0.68 ? 'confident'
         : coordinates ? 'suspicious' : 'missing';
   return {
+    ...captureTime(file, exif),
+    accuracyMeters: availableOcrAccuracy(ocr),
     indexFromOcr: ocr?.indexFromOcr || null,
     indexStatus: ocr?.indexStatus || 'missing',
     coordinates,
