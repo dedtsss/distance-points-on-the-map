@@ -1,4 +1,5 @@
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
+import { activePoints } from './pointState.js';
 import { pointMembers } from './core/photoPoints.js';
 import { publishCleanImage, publishCleanImageToNinjabox, withTimeout } from './core/publisher.js';
 
@@ -16,7 +17,8 @@ export async function publishBatch(rows, _unresolvedIds, options) {
     publishNinjabox = publishCleanImageToNinjabox, cleanupTimeoutMs = 35_000 } = options;
   let failures = 0;
   let unresolvedNumber = 0;
-  const eligible = rows.map((row, index) => ({ row, index,
+  const active = activePoints(rows);
+  const eligible = active.map((row, index) => ({ row, index,
     filename: outgoingName(row, hasRecognizedIndex(row) ? unresolvedNumber : ++unresolvedNumber) }))
     .filter(({ row }) => !row.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
   for (const [position, { row, index, filename }] of eligible.entries()) {
@@ -27,13 +29,13 @@ export async function publishBatch(rows, _unresolvedIds, options) {
     const cleaned = [];
     try {
       for (const [memberPosition, member] of members.entries()) {
-        onStatus(members.length === 1 ? `Очистка ${index + 1}/${rows.length}`
-          : `Очистка точки ${index + 1}/${rows.length} · фото ${memberPosition + 1}/${members.length}`);
-        onProgress('cleanup', index, rows.length);
+        onStatus(members.length === 1 ? `Очистка ${index + 1}/${active.length}`
+          : `Очистка точки ${index + 1}/${active.length} · фото ${memberPosition + 1}/${members.length}`);
+        onProgress('cleanup', index, active.length);
         const memberName = members.length === 1 ? filename
           : filename.replace(/\.jpg$/, `-${String(memberPosition + 1).padStart(2, '0')}.jpg`);
         const file = await withTimeout(async () => {
-          const source = await fileAt(row.members ? member.number - 1 : index);
+          const source = await fileAt(Number.isInteger(member.number) ? member.number - 1 : rows.indexOf(row));
           const result = await clean(source, {
             orientation: member.orientation, preferredFilename: memberName,
           });
@@ -49,13 +51,13 @@ export async function publishBatch(rows, _unresolvedIds, options) {
       await onRows([...rows]);
       continue;
     }
-    onStatus(`${publisher === 'ninjabox' ? 'NinjaBox' : 'Onion'} ${index + 1}/${rows.length}`);
-    onProgress(publisher, index, rows.length);
+    onStatus(`${publisher === 'ninjabox' ? 'NinjaBox' : 'Onion'} ${index + 1}/${active.length}`);
+    onProgress(publisher, index, active.length);
     try {
       const url = publisher === 'onion'
         ? await publishOnion(cleaned[0], destination)
         : await publishNinjabox(cleaned.length === 1 ? cleaned[0] : cleaned, destination, {
-          onProgress: (loaded, total) => onProgress('ninjabox', index, rows.length,
+          onProgress: (loaded, total) => onProgress('ninjabox', index, active.length,
             total > 0 ? loaded / total : null),
         });
       row.uploadResult ||= { links: [] };
@@ -73,7 +75,7 @@ export async function publishBatch(rows, _unresolvedIds, options) {
       }
     }
     await onRows([...rows]);
-    onProgress(publisher, index + 1, rows.length);
+    onProgress(publisher, index + 1, active.length);
   }
   return { failures, stopped: false };
 }

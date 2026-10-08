@@ -56,8 +56,6 @@ ion-button { min-height: 48px; }
 .reserve-reasons { display: grid; gap: 3px; padding: 8px 10px; border-radius: 8px; background: rgba(242, 184, 75, .08); color: #f4dda7; font-size: .82rem; }
 .reserve-reasons strong { color: #ffd882; font-size: .82rem; }
 .review-reason { padding: 8px 10px; border-radius: 8px; background: rgba(229, 80, 80, .08); color: #ffaaa3; font-size: .82rem; }
-.undo-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -2px 0 12px; padding: 7px 10px; border: 1px solid #344352; border-radius: 9px; background: #17212b; color: #c4d0dc; }
-.undo-row ion-button { min-height: 36px; margin: 0; }
 .web-pickers label { display: block; margin: 12px 0; font-weight: 600; color: #c4d0dc; }
 .web-pickers input { display: block; width: 100%; min-height: 48px; margin-top: 6px; color: #eef1f5; }
 [role=alert] { color: #ffb9a9; }
@@ -94,3 +92,13 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 .publisher-note { display: block; white-space: normal; color: #c4d0dc; font-size: .9rem; line-height: 1.4; padding: 4px 0; }
 .progress-area { display: grid; gap: 8px; margin: 10px 0 16px; color: #eef1f5; font-size: .92rem; }
 .progress-area ion-progress-bar { height: 8px; border-radius: 6px; --background: #344352; --progress-background: #7be0ac; --buffer-background: #344352; }
+
+.point-card-title-row { flex-wrap: wrap; }
+.point-card-meta .photo-coordinates { overflow-wrap: anywhere; min-width: 0; }
+.point-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.point-header-actions ion-button { margin: 0; min-height: 48px; --padding-start: 10px; --padding-end: 10px; }
+.point-removed { background: #20262c; }
+.point-card-header-removed { background: #20262c; border-bottom: 0; box-shadow: none; }
+.point-removed .photo-identity, .point-removed .point-card-meta { color: #b7c0c9; }
+.photo-state-removed { background: #692c2c; color: #ffe1de; }
+.txt-preview { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }

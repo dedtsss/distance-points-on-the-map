@@ -5,7 +5,7 @@ import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, ha
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { outgoingName, publishBatch } from './publishBatch.js';
-import { buildGpx, resultBlocksForCopy, validResultPhotos } from './resultExports.js';
+import { buildGpx, buildPointGpx, hasPointCoordinates, resultBlocksForCopy, validResultPhotos } from './resultExports.js';
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
 import { formatPhotoResultBlock } from './core/features/export/resultBlockFormatter.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto, clearAndroidPhotoCache,
@@ -18,6 +18,7 @@ import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton
   IonCardContent, IonItem, IonLabel, IonInput, IonTextarea, IonSelect, IonSelectOption,
   IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
+import { activePoints, setPointRemoved, establishReviewSlots, reviewSections } from './pointState.js';
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
   .sort((left, right) => (left.webkitRelativePath || left.name).localeCompare(right.webkitRelativePath || right.name));
@@ -57,7 +58,6 @@ export default function App() {
   const previewsRef = useRef({});
   const restoredRef = useRef(false);
   const [viewer, setViewer] = useState(null);
-  const [lastRemoved, setLastRemoved] = useState(null);
 
   const rememberPreview = (id, file) => {
     const old = previewsRef.current[id];
@@ -79,7 +79,8 @@ export default function App() {
       if (!saved || !active) return;
       setFiles(saved.files);
       restoredRef.current = true;
-      setRows(saved.rows);
+      setRows(saved.rows.every((point) => Number.isFinite(point.reviewSlot))
+        ? saved.rows : establishReviewSlots(saved.rows, splitBatch(saved.rows)));
       setSplit(splitBatch(saved.rows));
       setPublisher(saved.publisher);
       setOnion(saved.onion || '');
@@ -89,9 +90,9 @@ export default function App() {
       setPacking(saved.packing || '');
       setReviewing(saved.phase === 'review');
       setResumeAvailable(saved.phase !== 'review');
-      const completed = saved.rows.filter((row) => row.uploadResult?.links?.some((link) => link.provider === saved.publisher)).length;
+      const completed = activePoints(saved.rows).filter((row) => row.uploadResult?.links?.some((link) => link.provider === saved.publisher)).length;
       setStatus(saved.phase === 'review' ? 'Проверьте точки перед публикацией.'
-        : `${completed} из ${saved.rows.length} точек готовы · можно продолжить`);
+        : `${completed} из ${activePoints(saved.rows).length} точек готовы · можно продолжить`);
       for (const row of saved.rows.flatMap(pointMembers)) {
         if (!active) break;
         try {
@@ -162,7 +163,6 @@ export default function App() {
     setFiles(imageFiles(event.target.files || []));
     setRows([]);
     setSplit(null);
-    setLastRemoved(null);
     setResumeAvailable(false);
     setReviewing(false);
   };
@@ -176,7 +176,6 @@ export default function App() {
       restoredRef.current = false;
       setRows([]);
       setSplit(null);
-      setLastRemoved(null);
       setResumeAvailable(false);
       setReviewing(false);
     } catch (error) { setStatus(`Папка: ${errorText(error)}`); }
@@ -191,7 +190,6 @@ export default function App() {
       restoredRef.current = false;
       setRows([]);
       setSplit(null);
-      setLastRemoved(null);
       setResumeAvailable(false);
       setReviewing(false);
     } catch (error) { setStatus(`Фото: ${errorText(error)}`); }
@@ -205,7 +203,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    if ((!resumeAvailable && !reviewing) || busy || !files.length || !rows.length) return undefined;
+    if ((!resumeAvailable && !reviewing && !rows.some((point) => point.removed)) || busy || !files.length || !rows.length) return undefined;
     const timer = setTimeout(() => {
       saveAndroidRecovery(recoveryState(rows)).catch((error) => setStatus(`Сохранение состояния: ${errorText(error)}`));
     }, 300);
@@ -226,23 +224,25 @@ export default function App() {
       onProgress: (stage, completed, total, fraction) =>
         setWorkProgress(actionProgress(stage, completed, total, fraction)),
     });
-    const completed = current.filter((row) => row.uploadResult?.links?.some((link) => link.provider === publisher)).length;
-    if (completed === current.length) {
+    const active = activePoints(current);
+    const completed = active.filter((row) => row.uploadResult?.links?.some((link) => link.provider === publisher)).length;
+    if (completed === active.length) setResumeAvailable(false);
+    if (completed === active.length && !current.some((point) => point.removed)) {
       await clearAndroidRecovery();
       if (hasAndroidFolderPicker()) await clearAndroidPhotoCache();
       setResumeAvailable(false);
       if (restoredRef.current) setFiles([]);
     }
     setStatus(publication.failures
-      ? `Готово ${completed} из ${current.length}. Ошибок публикации: ${publication.failures}.${publication.stopped ? ' NinjaBox остановлен.' : ''}`
-      : completed === current.length ? 'Обработка завершена.' : `Готово ${completed} из ${current.length}. Можно продолжить публикацию.`);
+      ? `Готово ${completed} из ${active.length}. Ошибок публикации: ${publication.failures}.${publication.stopped ? ' NinjaBox остановлен.' : ''}`
+      : completed === active.length ? 'Обработка завершена.' : `Готово ${completed} из ${active.length}. Можно продолжить публикацию.`);
   };
 
   const resumePublication = async () => {
     setBusy(true);
     try {
       const destination = publisher === 'onion' ? onionBaseUrl(onion) : ninjaboxRelayUrl(ninjaboxRelay);
-      if (publisher === 'onion' && rows.some((point) => pointMembers(point).length > 1)) {
+      if (publisher === 'onion' && activePoints(rows).some((point) => pointMembers(point).length > 1)) {
         throw new Error('Onion публикует одно фото. Разделите многокадровые точки или выберите NinjaBox.');
       }
       await publishCurrent([...rows], destination, true);
@@ -254,7 +254,6 @@ export default function App() {
     setBusy(true);
     setRows([]);
     setSplit(null);
-    setLastRemoved(null);
     clearPreviews();
     const current = [];
     try {
@@ -296,7 +295,8 @@ export default function App() {
         setRows([...current]);
         setWorkProgress(actionProgress('recognition', index + 1, files.length));
       }
-      const points = groupPhotos(current);
+      const logical = groupPhotos(current);
+      const points = establishReviewSlots(logical, splitBatch(logical));
       setRows(points);
       setSplit(splitBatch(points));
       setReviewing(true);
@@ -315,7 +315,8 @@ export default function App() {
     coordinates_low_confidence: 'Координаты требуют проверки', low_confidence: 'Координаты распознаны неуверенно',
     batch_outlier: 'Координаты отличаются от партии', outside_expected_region: 'Координаты вне ожидаемого региона',
   };
-  const grouped = split ? splitBatch(rows) : null;
+  const active = activePoints(rows);
+  const grouped = split ? splitBatch(active) : null;
   const normalizedSession = session.trim();
   const formatOptions = { description: comment, color, packing, session: normalizedSession };
   const validPhotos = validResultPhotos(grouped);
@@ -360,10 +361,17 @@ export default function App() {
       setStatus('GPX готов.');
     } catch (error) { setStatus(`GPX: ${errorText(error)}`); }
   };
+  const pointGpx = async (photo) => {
+    try {
+      await exportGpx(buildPointGpx(photo, normalizedSession), 'share',
+        [normalizedSession, photo.indexFromOcr || photo.id].filter(Boolean).join('_'));
+      setStatus('GPX точки готов.');
+    } catch (error) { setStatus(`GPX: ${errorText(error)}`); }
+  };
   const validById = new Map(validPhotos.map((photo) => [photo.id, photo]));
   const reviewById = new Map((grouped?.unresolved || []).map((photo) => [photo.id, photo.reviewReason]));
   const reserveIds = new Set((grouped?.reserve || []).map((photo) => photo.id));
-  const photoStatus = (photo) => reviewById.has(photo.id)
+  const photoStatus = (photo) => photo.removed ? { kind: 'removed', text: 'Убрано' } : reviewById.has(photo.id)
     ? { kind: 'review', text: `Требует проверки: ${reviewLabels[reviewById.get(photo.id)] || reviewById.get(photo.id)}` }
     : !grouped ? { kind: 'recognized', text: 'Распознано' }
       : reserveIds.has(photo.id) ? { kind: 'reserve', text: 'Резерв' }
@@ -373,28 +381,24 @@ export default function App() {
   const rowPosition = new Map(rows.map((photo, index) => [photo.id, index]));
   const neighborOf = (photo, direction) => {
     const position = rowPosition.get(photo.id);
-    return Number.isInteger(position) ? rows[position + direction] || null : null;
+    const neighbor = Number.isInteger(position) ? rows[position + direction] || null : null;
+    return neighbor?.removed ? null : neighbor;
   };
-  const displaySections = grouped ? [
-    { key: 'main', title: 'Основные', items: grouped.main },
-    { key: 'reserve', title: 'Резерв', items: grouped.reserve },
-    { key: 'review', title: 'Требует проверки', items: grouped.unresolved },
-  ].filter((section) => section.items.length) : [{ key: 'recognized', title: '', items: rows }];
+  const displaySections = grouped ? reviewSections(rows, grouped)
+    : [{ key: 'recognized', title: '', items: rows }];
   const applyRegroup = (nextRows) => {
-    setLastRemoved(null);
-    setRows(nextRows);
+    setRows(establishReviewSlots(nextRows, splitBatch(nextRows)));
   };
   const removePoint = (photo) => {
     if (!reviewing || busy || hasPublishedPoints(rows)) return;
-    setLastRemoved({ rows: [...rows], label: pointLabel(photo) });
-    setRows(rows.filter((row) => row.id !== photo.id));
+    setRows((current) => setPointRemoved(current, photo.id, true));
     setStatus(`${pointLabel(photo)} убрана из текущего набора.`);
   };
-  const undoRemove = () => {
-    if (!lastRemoved) return;
-    setRows(lastRemoved.rows);
-    setStatus(`${lastRemoved.label} возвращена.`);
-    setLastRemoved(null);
+  const restorePoint = (photo) => {
+    if (busy) return;
+    setRows((current) => setPointRemoved(current, photo.id, false));
+    if (!reviewing && publisher !== 'none') setResumeAvailable(true);
+    setStatus(`${pointLabel(photo)} возвращена.`);
   };
   const updateBar = updateProgress(nativeUpdate);
   const updateAction = updateButton(nativeUpdate?.state, candidate?.version);
@@ -465,18 +469,19 @@ export default function App() {
             <IonButton className="primary-action" expand="block"
               onClick={resumeAvailable || (reviewing && publisher !== 'none') ? resumePublication : run}
               disabled={busy || !files.length || (reviewing && publisher === 'none')
+                || (reviewing && !active.length)
                 || (!reviewing && hasPublishedPoints(rows) && !resumeAvailable)}>
               {busy ? 'Обработка…' : resumeAvailable ? 'Продолжить публикацию'
-                : reviewing ? publisher === 'none' ? 'Точки готовы локально' : `Опубликовать ${rows.length} точек` : 'Обработать фото'}
+                : reviewing ? publisher === 'none' ? 'Точки готовы локально' : `Опубликовать ${active.length} точек` : 'Обработать фото'}
             </IonButton>
             <IonText><p role="status" aria-live="polite">{status}</p></IonText>
             {workProgress?.kind !== 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>
           {grouped && <IonCard><IonCardContent>
             <h2>{reviewing ? 'Проверка точек' : 'Результат'}</h2>
-            <p className="point-count">{sourcePhotoCount(rows)} фото → {rows.length} точек</p>
+            <p className="point-count">{sourcePhotoCount(active)} фото → {active.length} точек</p>
             {reviewing && <p>Группы созданы автоматически. При необходимости разделите точку и объедините соседние.</p>}
-            {reviewing && publisher === 'onion' && rows.some((point) => pointMembers(point).length > 1)
+            {reviewing && publisher === 'onion' && activePoints(rows).some((point) => pointMembers(point).length > 1)
               && <p>Onion публикует одно фото. Разделите многокадровые точки или выберите NinjaBox для галерей.</p>}
             {normalizedSession && <p className="session-summary">Сессия: <strong>{normalizedSession}</strong></p>}
             <div className="counts">
@@ -507,20 +512,16 @@ export default function App() {
             {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>}
           {rows.length > 0 && <IonCard><IonCardContent><h2>{grouped ? 'Точки' : 'Распознавание'}</h2>
-            {reviewing && lastRemoved && <div className="undo-row" role="status">
-              <span>{lastRemoved.label} убрана.</span>
-              <IonButton size="small" fill="clear" onClick={undoRemove}>Вернуть</IonButton>
-            </div>}
             <div className="point-sections">
               {displaySections.map((section) => <section key={section.key} className={`point-section point-section-${section.key}`}>
-                {section.title && <h3 className="point-section-title">{section.title}<span>{section.items.length}</span></h3>}
+                {section.title && <h3 className="point-section-title">{section.title}<span>{section.count}</span></h3>}
                 <div className="result-photo-list">
                   {section.items.map((photo) => {
                     const state = photoStatus(photo);
                     const previous = neighborOf(photo, -1);
                     const next = neighborOf(photo, 1);
                     const statusLabel = state.kind === 'review' ? 'Требует проверки' : state.text;
-                    return <article key={photo.id} className="result-photo-card">
+                    return <article key={photo.id} className={`result-photo-card${photo.removed ? ' point-removed' : ''}`} data-point-id={photo.id}>
                       <header className={`point-card-header point-card-header-${state.kind}`}>
                         <div className="point-card-title-row">
                           <strong className="photo-identity">{pointLabel(photo)}</strong>
@@ -531,8 +532,14 @@ export default function App() {
                           <span className="photo-coordinates">{photo.coordinates
                             ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
                         </div>
+                        <div className="point-header-actions">
+                          {hasPointCoordinates(photo) && <IonButton size="small" fill="clear"
+                            onClick={() => pointGpx(photo)}>GPX</IonButton>}
+                          {photo.removed && <IonButton size="small" fill="outline" disabled={busy}
+                            onClick={() => restorePoint(photo)}>Вернуть</IonButton>}
+                        </div>
                       </header>
-                      <div className="point-card-body">
+                      {!photo.removed && <div className="point-card-body">
                         <div className={`point-thumbnails ${pointMembers(photo).length > 1 ? 'multi-photo' : ''}`}>
                           {pointMembers(photo).map((member) => <button key={member.id} type="button" className="photo-thumbnail"
                             onClick={() => setViewer(member.id)} disabled={!previews[member.id]}
@@ -565,7 +572,7 @@ export default function App() {
                           {!reviewing && validById.has(photo.id) && <IonButton size="small" fill="clear"
                             onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}
                         </div>
-                      </div>
+                      </div>}
                     </article>;
                   })}
                 </div>
@@ -575,7 +582,7 @@ export default function App() {
         </>}
       </div>
     </IonContent>
-    <IonModal isOpen={txtOpen} onDidDismiss={() => setTxtOpen(false)}>
+    <IonModal className="txt-modal" isOpen={txtOpen} onDidDismiss={() => setTxtOpen(false)}>
       <IonHeader><IonToolbar><IonTitle>TXT результат</IonTitle></IonToolbar></IonHeader>
       <IonContent className="txt-modal-content">
         <div className="txt-preview-wrap">

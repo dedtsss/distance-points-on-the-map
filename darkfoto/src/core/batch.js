@@ -1,11 +1,13 @@
 import { recommendReserveForConflicts } from './features/session/conflictResolver.js';
 import { findDistanceViolations } from './utils/geoDistance.js';
 import { validateCoordinateBatch } from './features/gps/coordinateSanity.js';
+import { activePoints } from '../pointState.js';
 
 const pointLabel = (photo) => photo?.indexFromOcr ? `#${photo.indexFromOcr}`
   : photo?.number ? `Точка ${photo.number}` : 'Точка';
 
 export function splitBatch(photos, thresholdMeters = 25) {
+  photos = activePoints(photos);
   const indexed = photos.filter((photo) => photo.indexFromOcr && photo.indexStatus === 'found');
   const sanity = validateCoordinateBatch(indexed);
   const checked = photos.map((photo) => ({ ...photo, ...(sanity.byPhotoId.get(photo.id) || {}) }));

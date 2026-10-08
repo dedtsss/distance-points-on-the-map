@@ -1,3 +1,4 @@
+import { activePoints } from './pointState.js';
 import { formatAllPhotoResultBlocks } from './core/features/export/resultBlockFormatter.js';
 import { formatDistanceMeters, haversineDistanceMeters } from './core/utils/geoDistance.js';
 
@@ -35,9 +36,9 @@ export const formatDistancePair = (pair) => {
 
 export function buildResultText({ grouped, formatOptions = {}, session = '', reviewLabels = {} }) {
   if (!grouped) return '';
-  const main = formatAllPhotoResultBlocks(grouped.main || [], formatOptions);
-  const reserve = formatAllPhotoResultBlocks(grouped.reserve || [], formatOptions);
-  const review = (grouped.unresolved || [])
+  const main = formatAllPhotoResultBlocks(activePoints(grouped.main), formatOptions);
+  const reserve = formatAllPhotoResultBlocks(activePoints(grouped.reserve), formatOptions);
+  const review = activePoints(grouped.unresolved)
     .map((photo) => `${formatAllPhotoResultBlocks([photo], formatOptions)}\n${photo.fileName}: ${reviewLabels[photo.reviewReason] || photo.reviewReason}`)
     .join('\n\n');
   const sessionHeader = String(session || '').trim() ? `Сессия: ${String(session).trim()}\n\n` : '';

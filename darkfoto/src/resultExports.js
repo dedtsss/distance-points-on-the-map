@@ -1,3 +1,4 @@
+import { activePoints } from './pointState.js';
 import { buildPhotoResultBlocks, normalizeSessionName } from './core/features/export/resultBlockFormatter.js';
 
 const byPhotoOrder = (left, right) => (
@@ -6,7 +7,7 @@ const byPhotoOrder = (left, right) => (
 );
 
 export function validResultPhotos(grouped) {
-  return [...(grouped?.main || []), ...(grouped?.reserve || [])]
+  return activePoints([...(grouped?.main || []), ...(grouped?.reserve || [])])
     .filter((photo) => photo?.indexFromOcr && photo?.coordinates
       && Number.isFinite(Number(photo.coordinates.latitude))
       && Number.isFinite(Number(photo.coordinates.longitude))
@@ -36,4 +37,18 @@ export function buildGpx(grouped, session = '') {
   return ['<?xml version="1.0" encoding="UTF-8"?>',
     '<gpx version="1.1" creator="DarkFoto" xmlns="http://www.topografix.com/GPX/1/1">',
     ...points, '</gpx>', ''].join('\n');
+}
+
+// A separately shared point may be removed or awaiting index review.
+export const hasPointCoordinates = (point) => point?.coordinates
+  && point.coordinates.latitude !== null && point.coordinates.longitude !== null
+  && Number.isFinite(Number(point.coordinates.latitude))
+  && Number.isFinite(Number(point.coordinates.longitude))
+  && Math.abs(Number(point.coordinates.latitude)) <= 90
+  && Math.abs(Number(point.coordinates.longitude)) <= 180;
+
+export function buildPointGpx(point, session = '') {
+  if (!hasPointCoordinates(point)) throw new Error('Координаты не найдены');
+  const identity = point.indexFromOcr || point.id || point.number;
+  return buildGpx({ main: [{ ...point, removed: false, indexFromOcr: identity }], reserve: [] }, session);
 }

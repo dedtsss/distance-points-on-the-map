@@ -37,6 +37,17 @@ await page.route('https://*.workers.dev/v1/ninjabox', async (route) => {
   await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() });
 });
 
+const openTxt = async () => {
+  await page.evaluate(() => {
+    window.__txtPresented = false;
+    document.querySelector('.txt-modal').addEventListener('ionModalDidPresent', () => {
+      window.__txtPresented = true;
+    }, { once: true });
+  });
+  await page.getByRole('button', { name: 'Посмотреть', exact: true }).click();
+  await page.waitForFunction(() => window.__txtPresented);
+};
+
 try {
   await page.goto(server.resolvedUrls.local[0]);
   await page.locator('ion-select').evaluate((element) => element.dispatchEvent(new CustomEvent('ionChange', { detail: { value: 'ninjabox' }, bubbles: true })));
@@ -63,33 +74,101 @@ try {
   assert.equal(await cards.count(), 8);
   assert.equal(await cards.first().locator('.photo-identity').textContent(), '#6882');
   assert.equal(await page.locator('ion-badge').filter({ hasText: 'Резерв' }).textContent(), 'Резерв 0');
-  const removable = cards.filter({ has: page.locator('.photo-identity', { hasText: '#6884' }) });
-  await removable.getByRole('button', { name: 'Убрать', exact: true }).click();
-  assert.equal(await cards.count(), 7);
-  assert.equal(await page.locator('.point-count').textContent(), '9 фото → 7 точек');
-  await page.getByRole('button', { name: 'Вернуть', exact: true }).click();
-  assert.equal(await cards.count(), 8);
+  const initialOrder = await cards.locator('.photo-identity').allTextContents();
+  const card = (identity) => cards.filter({ has: page.locator('.photo-identity', { hasText: identity }) });
+  for (const identity of ['#6884', '#6886', '#6888']) {
+    await card(identity).getByRole('button', { name: 'Убрать', exact: true }).click();
+    assert.equal(await cards.count(), 8);
+    assert.deepEqual(await cards.locator('.photo-identity').allTextContents(), initialOrder);
+  }
+  assert.equal(await page.locator('.point-removed').count(), 3);
+  assert.equal(await page.locator('.point-count').textContent(), '7 фото → 5 точек');
+  for (const identity of ['#6884', '#6886', '#6888']) {
+    const removed = card(identity);
+    assert.equal(await removed.locator('.point-card-body').count(), 0);
+    assert.equal(await removed.locator('.photo-state-removed').textContent(), 'Убрано');
+    assert.equal(await removed.locator('.photo-coordinates').count(), 1);
+    assert.equal(await removed.getByRole('button', { name: 'Вернуть', exact: true }).count(), 1);
+    assert.equal(await removed.locator('header').evaluate((el) => getComputedStyle(el).boxShadow), 'none');
+  }
+  await openTxt();
+  await page.locator('.txt-preview').waitFor();
+  assert.doesNotMatch(await page.locator('.txt-preview').textContent(), /#688[468]/);
+  assert.equal(await page.locator('.txt-preview').evaluate((el) => getComputedStyle(el).userSelect), 'text');
+  // Select an arbitrary substring with pointer input, then use the normal browser copy command.
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+      .map((animation) => animation.finished.catch(() => {})));
+  });
+  const target = await page.locator('.txt-preview').evaluate((el) => {
+    const node = el.firstChild;
+    const start = node.textContent.indexOf('6882');
+    const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + 4);
+    const rect = range.getBoundingClientRect();
+    return { x: rect.x, y: rect.y + rect.height / 2, width: rect.width };
+  });
+  await page.mouse.move(target.x, target.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width, target.y, { steps: 8 });
+  await page.mouse.up();
+  assert.equal(await page.evaluate(() => getSelection().toString()), '6882');
+  await page.keyboard.press('Control+c');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '6882');
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  const oneDownload = page.waitForEvent('download');
+  await card('#6886').getByRole('button', { name: 'GPX', exact: true }).click();
+  const oneFile = await oneDownload;
+  const oneGpx = await readFile(await oneFile.path(), 'utf8');
+  assert.equal((oneGpx.match(/<wpt /g) || []).length, 1);
+  assert.match(oneGpx, /#6886/);
+  const aggregateDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Экспорт', exact: true }).click();
+  const aggregateFile = await aggregateDownload;
+  const aggregate = await readFile(await aggregateFile.path(), 'utf8');
+  assert.equal((aggregate.match(/<wpt /g) || []).length, 5);
+  assert.doesNotMatch(aggregate, /#688[468]/);
+  for (const width of [320, 375, 812]) {
+    await page.setViewportSize({ width, height: width === 812 ? 375 : 812 });
+    await card('#6886').scrollIntoViewIfNeeded();
+    const header = await card('#6886').locator('header').boundingBox();
+    assert.ok(header.x >= 0 && header.x + header.width <= width);
+    assert.equal(await card('#6886').locator('.point-header-actions').evaluate((el) => el.scrollWidth <= el.clientWidth), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const identity of ['#6888', '#6884', '#6886']) {
+    await card(identity).getByRole('button', { name: 'Вернуть', exact: true }).click();
+    assert.deepEqual(await cards.locator('.photo-identity').allTextContents(), initialOrder);
+  }
+  assert.equal(await page.locator('.point-removed').count(), 0);
   assert.equal(await page.locator('.point-count').textContent(), '10 фото → 8 точек');
+  await openTxt();
+  await page.locator('.txt-preview').waitFor();
+  assert.match(await page.locator('.txt-preview').textContent(), /#6884/);
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  // Publish with an excluded row still present in its slot.
+  await card('#6886').getByRole('button', { name: 'Убрать', exact: true }).click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-  await page.screenshot({ path: '/tmp/darkfoto-038-review.png', fullPage: true });
-  await page.getByRole('button', { name: 'Опубликовать 8 точек', exact: true }).click();
+  await card('#6886').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '/tmp/darkfoto-039-review.png', fullPage: true });
+  await page.getByRole('button', { name: 'Опубликовать 7 точек', exact: true }).click();
   await page.getByRole('heading', { name: 'Результат', exact: true }).waitFor();
-  await page.waitForFunction(() => [...document.querySelectorAll('.result-photo-card a')].length === 8);
-  assert.equal(batches.length, 8);
+  await page.waitForFunction(() => [...document.querySelectorAll('.result-photo-card a')].length === 7);
+  assert.equal(batches.length, 7);
   assert.deepEqual(batches[0], ['6882-01.jpg', '6882-02.jpg', '6882-03.jpg']);
   assert.equal(await cards.first().locator('a').getAttribute('href'), 'https://ninjabox.org/ed8ae0b8-9373-4dc0-a454-99e5f57a0578');
-  assert.equal(await cards.locator('a').count(), 8);
+  assert.equal(await cards.locator('a').count(), 7);
   assert.equal(await page.locator('.point-actions').count(), 0);
-  assert.equal(await page.locator('.primary-action').getAttribute('disabled') !== null, true);
+  assert.equal(await page.locator('.point-removed').count(), 1);
   await cards.first().locator('.photo-thumbnail').nth(1).click();
   await page.locator('.image-gesture-area img').waitFor();
   await page.getByRole('button', { name: 'Увеличить' }).click();
   assert.match(await page.locator('.image-gesture-area img').getAttribute('style'), /scale\(1.5\)/);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByRole('button', { name: 'Посмотреть', exact: true }).click();
+  await openTxt();
   await page.locator('.txt-preview').waitFor();
   const txt = await page.locator('.txt-preview').textContent();
-  assert.equal((txt.match(/^#/gm) || []).length, 8);
+  assert.equal((txt.match(/^#/gm) || []).length, 7);
   assert.equal((txt.match(/ed8ae0b8/g) || []).length, 1);
   await page.locator('.txt-modal-content').evaluate((element) => element.scrollToBottom(0));
   await page.waitForFunction(() => {
@@ -102,8 +181,15 @@ try {
   await page.setViewportSize({ width: 812, height: 375 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   assert.equal(await cards.count(), 8);
+  await card('#6886').getByRole('button', { name: 'Вернуть', exact: true }).click();
+  assert.equal(await page.locator('.point-count').textContent(), '10 фото → 8 точек');
+  await page.getByRole('button', { name: 'Продолжить публикацию', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.result-photo-card a').length === 8);
+  assert.equal(batches.length, 8, 'restoring after publication publishes only the restored point');
+  assert.deepEqual(batches[7], ['6886.jpg']);
+  assert.deepEqual(await cards.locator('.photo-identity').allTextContents(), initialOrder);
   assert.deepEqual(errors, []);
-  console.log('375×812 / landscape: review 10→8, split/merge, no early uploads, 8 sanitized point POSTs/links, local viewer, TXT footer: PASS');
+  console.log('375×812 / landscape: review 10→8, split/merge, no early uploads, 7 active sanitized POSTs/links, independent removals/stable slots, one-point/aggregate GPX, TXT substring selection/copy and footer: PASS');
 } finally {
   await browser.close();
   await server.close();
