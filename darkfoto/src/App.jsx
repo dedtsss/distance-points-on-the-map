@@ -1,14 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
-import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints } from './core/photoPoints.js';
+import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { outgoingName, publishBatch } from './publishBatch.js';
 import { buildGpx, buildPointGpx, hasPointCoordinates, resultBlocksForCopy, validResultPhotos } from './resultExports.js';
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
 import { formatPhotoResultBlock } from './core/features/export/resultBlockFormatter.js';
-import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto, clearAndroidPhotoCache,
+import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto,
   saveAndroidRecovery, loadAndroidRecovery, clearAndroidRecovery } from './androidFolder.js';
 import { checkForUpdate, clearUpdateState, installRelease, installedVersion, isAndroidUpdateAvailable, startUpdateDownload, updateState } from './update.js';
 import { actionProgress, updateButton, updateProgress } from './progress.js';
@@ -16,7 +16,7 @@ import { recognizeAndroidStamp } from './nativeOcr.js';
 import { copyResultBlocks, copyText, exportGpx, exportText, isNativeTextExport } from './androidText.js';
 import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
   IonCardContent, IonItem, IonLabel, IonInput, IonTextarea, IonSelect, IonSelectOption,
-  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter } from '@ionic/react';
+  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonSearchbar } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
 import { activePoints, setPointRemoved, establishReviewSlots, reviewSections } from './pointState.js';
 
@@ -56,8 +56,12 @@ export default function App() {
   const [reviewing, setReviewing] = useState(false);
   const [previews, setPreviews] = useState({});
   const previewsRef = useRef({});
-  const restoredRef = useRef(false);
   const [viewer, setViewer] = useState(null);
+  const [photoAction, setPhotoAction] = useState(null);
+  const [moveAction, setMoveAction] = useState(null);
+  const [targetSearch, setTargetSearch] = useState('');
+  const [photoUndo, setPhotoUndo] = useState(null);
+  const appendInput = useRef(null);
 
   const rememberPreview = (id, file) => {
     const old = previewsRef.current[id];
@@ -78,7 +82,6 @@ export default function App() {
     loadAndroidRecovery().then(async (saved) => {
       if (!saved || !active) return;
       setFiles(saved.files);
-      restoredRef.current = true;
       setRows(saved.rows.every((point) => Number.isFinite(point.reviewSlot))
         ? saved.rows : establishReviewSlots(saved.rows, splitBatch(saved.rows)));
       setSplit(splitBatch(saved.rows));
@@ -89,9 +92,9 @@ export default function App() {
       setColor(saved.color || '');
       setPacking(saved.packing || '');
       setReviewing(saved.phase === 'review');
-      setResumeAvailable(saved.phase !== 'review');
+      setResumeAvailable(!['review', 'complete'].includes(saved.phase));
       const completed = activePoints(saved.rows).filter((row) => row.uploadResult?.links?.some((link) => link.provider === saved.publisher)).length;
-      setStatus(saved.phase === 'review' ? 'Проверьте точки перед публикацией.'
+      setStatus(saved.phase === 'complete' ? 'Обработка завершена.' : saved.phase === 'review' ? 'Проверьте точки перед публикацией.'
         : `${completed} из ${activePoints(saved.rows).length} точек готовы · можно продолжить`);
       for (const row of saved.rows.flatMap(pointMembers)) {
         if (!active) break;
@@ -158,8 +161,8 @@ export default function App() {
   };
 
   const select = (event) => {
+    setPhotoUndo(null);
     clearPreviews();
-    restoredRef.current = false;
     setFiles(imageFiles(event.target.files || []));
     setRows([]);
     setSplit(null);
@@ -170,10 +173,10 @@ export default function App() {
   const selectAndroidFolder = async () => {
     try {
       const picked = await pickAndroidFolder();
+      setPhotoUndo(null);
       await clearAndroidRecovery();
       clearPreviews();
       setFiles(picked);
-      restoredRef.current = false;
       setRows([]);
       setSplit(null);
       setResumeAvailable(false);
@@ -184,10 +187,10 @@ export default function App() {
   const selectAndroidPhotos = async () => {
     try {
       const picked = await pickAndroidPhotos();
+      setPhotoUndo(null);
       await clearAndroidRecovery();
       clearPreviews();
       setFiles(picked);
-      restoredRef.current = false;
       setRows([]);
       setSplit(null);
       setResumeAvailable(false);
@@ -199,11 +202,11 @@ export default function App() {
 
   const recoveryState = (current) => ({
     files: files.map(({ id, name, type, size, native }) => ({ id, name, type, size, native })),
-    rows: current, publisher, onion, session, comment, color, packing, phase: reviewing ? 'review' : 'publishing',
+    rows: current, publisher, onion, session, comment, color, packing, phase: reviewing ? 'review' : resumeAvailable ? 'publishing' : 'complete',
   });
 
   useEffect(() => {
-    if ((!resumeAvailable && !reviewing && !rows.some((point) => point.removed)) || busy || !files.length || !rows.length) return undefined;
+    if (busy || !files.length || !rows.length) return undefined;
     const timer = setTimeout(() => {
       saveAndroidRecovery(recoveryState(rows)).catch((error) => setStatus(`Сохранение состояния: ${errorText(error)}`));
     }, 300);
@@ -227,18 +230,14 @@ export default function App() {
     const active = activePoints(current);
     const completed = active.filter((row) => row.uploadResult?.links?.some((link) => link.provider === publisher)).length;
     if (completed === active.length) setResumeAvailable(false);
-    if (completed === active.length && !current.some((point) => point.removed)) {
-      await clearAndroidRecovery();
-      if (hasAndroidFolderPicker()) await clearAndroidPhotoCache();
-      setResumeAvailable(false);
-      if (restoredRef.current) setFiles([]);
-    }
+    await saveAndroidRecovery({ ...recoveryState(current), phase: completed === active.length ? 'complete' : 'publishing' });
     setStatus(publication.failures
       ? `Готово ${completed} из ${active.length}. Ошибок публикации: ${publication.failures}.${publication.stopped ? ' NinjaBox остановлен.' : ''}`
       : completed === active.length ? 'Обработка завершена.' : `Готово ${completed} из ${active.length}. Можно продолжить публикацию.`);
   };
 
   const resumePublication = async () => {
+    setPhotoUndo(null);
     setBusy(true);
     try {
       const destination = publisher === 'onion' ? onionBaseUrl(onion) : ninjaboxRelayUrl(ninjaboxRelay);
@@ -250,51 +249,57 @@ export default function App() {
     finally { setBusy(false); setWorkProgress(null); }
   };
 
+  const recognizeFiles = async (selected, offset = 0, onRows = () => {}) => {
+    const current = [];
+    for (let index = 0; index < selected.length; index += 1) {
+      setStatus(`Распознавание ${index + 1}/${selected.length}`);
+      setWorkProgress(actionProgress('recognition', index, selected.length));
+      try {
+        const nativeOcr = selected[index].native ? await recognizeAndroidStamp(selected[index]) : null;
+        const file = await (selected[index].native ? readAndroidPhoto(selected[index]) : selected[index]);
+        rememberPreview(String(offset + index + 1), file);
+        const read = await readPhoto(file, {
+          ...(nativeOcr ? { readOcr: async () => nativeOcr } : {}),
+          onProgress: ({ status: ocrStatus, progress }) => {
+            const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
+            const stage = String(ocrStatus || 'ocr')
+              .replace('ocr:initializing', 'OCR запуск')
+              .replace('ocr:ready', 'OCR готов')
+              .replace('loading tesseract core', 'ядро OCR')
+              .replace('initializing tesseract', 'инициализация OCR')
+              .replace('loading language traineddata', 'язык OCR')
+              .replace('initializing api', 'OCR API')
+              .replace('recognizing text', 'распознавание');
+            setStatus(`Распознавание ${index + 1}/${selected.length} · ${stage}${percent}`);
+          },
+        });
+        current.push({
+          id: String(offset + index + 1), number: offset + index + 1, fileName: file.name,
+          ...read, uploadResult: { providerOrder: [publisher], links: [] },
+        });
+        console.info('DarkFoto recognition', { photo: index + 1, engine: read.ocrEngine, elapsedMs: read.recognitionMs });
+      } catch (error) {
+        current.push({
+          id: String(offset + index + 1), number: offset + index + 1, fileName: selected[index].name,
+          coordinates: null, indexFromOcr: null, indexStatus: 'missing',
+          gpsStatus: 'missing', coordinateQuality: 'missing', gpsSource: 'missing',
+          warnings: [`photo_error: ${errorText(error)}`], uploadResult: { providerOrder: [publisher], links: [] },
+        });
+      }
+      onRows([...current]);
+      setWorkProgress(actionProgress('recognition', index + 1, selected.length));
+    }
+    return current;
+  };
+
   const run = async () => {
+    setPhotoUndo(null);
     setBusy(true);
     setRows([]);
     setSplit(null);
     clearPreviews();
-    const current = [];
     try {
-      for (let index = 0; index < files.length; index += 1) {
-        setStatus(`Распознавание ${index + 1}/${files.length}`);
-        setWorkProgress(actionProgress('recognition', index, files.length));
-        try {
-          const nativeOcr = files[index].native ? await recognizeAndroidStamp(files[index]) : null;
-          const file = await fileAt(index);
-          rememberPreview(String(index + 1), file);
-          const read = await readPhoto(file, {
-            ...(nativeOcr ? { readOcr: async () => nativeOcr } : {}),
-            onProgress: ({ status: ocrStatus, progress }) => {
-              const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
-              const stage = String(ocrStatus || 'ocr')
-                .replace('ocr:initializing', 'OCR запуск')
-                .replace('ocr:ready', 'OCR готов')
-                .replace('loading tesseract core', 'ядро OCR')
-                .replace('initializing tesseract', 'инициализация OCR')
-                .replace('loading language traineddata', 'язык OCR')
-                .replace('initializing api', 'OCR API')
-                .replace('recognizing text', 'распознавание');
-              setStatus(`Распознавание ${index + 1}/${files.length} · ${stage}${percent}`);
-            },
-          });
-          current.push({
-            id: String(index + 1), number: index + 1, fileName: file.name,
-            ...read, uploadResult: { providerOrder: [publisher], links: [] },
-          });
-          console.info('DarkFoto recognition', { photo: index + 1, engine: read.ocrEngine, elapsedMs: read.recognitionMs });
-        } catch (error) {
-          current.push({
-            id: String(index + 1), number: index + 1, fileName: files[index].name,
-            coordinates: null, indexFromOcr: null, indexStatus: 'missing',
-            gpsStatus: 'missing', coordinateQuality: 'missing', gpsSource: 'missing',
-            warnings: [`photo_error: ${errorText(error)}`], uploadResult: { providerOrder: [publisher], links: [] },
-          });
-        }
-        setRows([...current]);
-        setWorkProgress(actionProgress('recognition', index + 1, files.length));
-      }
+      const current = await recognizeFiles(files, 0, setRows);
       const logical = groupPhotos(current);
       const points = establishReviewSlots(logical, splitBatch(logical));
       setRows(points);
@@ -309,6 +314,36 @@ export default function App() {
     }
   };
 
+  const appendSelected = async (selected) => {
+    if (busy || !selected.length || !split) return;
+    if (files.length + selected.length > 100) { setStatus('В сессии может быть до 100 фото.'); return; }
+    setBusy(true);
+    setPhotoUndo(null);
+    try {
+      const additions = await recognizeFiles(selected, files.length);
+      const combinedFiles = [...files, ...selected];
+      const combined = appendPhotos(rows, additions);
+      // Retain existing review slots, including every removed placeholder.
+      const slotted = establishReviewSlots(combined, splitBatch(combined));
+      const nextRows = combined.map((point) => Number.isFinite(point.reviewSlot) ? point
+        : { ...point, reviewSection: slotted.find((item) => item.id === point.id).reviewSection,
+          reviewSlot: Math.max(-1, ...rows.map((item) => item.reviewSlot)) + 1 + additions.findIndex((item) => item.id === point.id) });
+      await saveAndroidRecovery({ ...recoveryState(nextRows), files: combinedFiles.map(({ id, name, type, size, native }) => ({ id, name, type, size, native })), phase: 'review' }, true);
+      setFiles(combinedFiles);
+      setRows(nextRows);
+      setSplit(splitBatch(nextRows));
+      setReviewing(true);
+      setResumeAvailable(false);
+      setStatus(`Добавлено ${selected.length} фото. Проверьте точки перед публикацией.`);
+    } catch (error) { setStatus(`Добавление: ${errorText(error)}`); }
+    finally { setBusy(false); setWorkProgress(null); }
+  };
+  const addPhotos = async () => {
+    if (!hasAndroidFolderPicker()) { appendInput.current?.click(); return; }
+    try { await appendSelected(await pickAndroidPhotos(true)); }
+    catch (error) { setStatus(`Добавление: ${errorText(error)}`); }
+  };
+
   const reviewLabels = {
     coordinates_missing: 'Координаты не найдены', index_missing: 'Индекс не найден',
     index_low_confidence: 'Индекс распознан неуверенно', coordinates_low_precision: 'Недостаточная точность координат',
@@ -316,6 +351,8 @@ export default function App() {
     batch_outlier: 'Координаты отличаются от партии', outside_expected_region: 'Координаты вне ожидаемого региона',
   };
   const active = activePoints(rows);
+  const pending = active.filter((point) => point.uploadResult?.stale
+    || !point.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
   const grouped = split ? splitBatch(active) : null;
   const normalizedSession = session.trim();
   const formatOptions = { description: comment, color, packing, session: normalizedSession };
@@ -387,19 +424,46 @@ export default function App() {
   const displaySections = grouped ? reviewSections(rows, grouped)
     : [{ key: 'recognized', title: '', items: rows }];
   const applyRegroup = (nextRows) => {
+    setPhotoUndo(null);
     setRows(establishReviewSlots(nextRows, splitBatch(nextRows)));
   };
   const removePoint = (photo) => {
     if (!reviewing || busy || hasPublishedPoints(rows)) return;
+    setPhotoUndo(null);
     setRows((current) => setPointRemoved(current, photo.id, true));
     setStatus(`${pointLabel(photo)} убрана из текущего набора.`);
   };
   const restorePoint = (photo) => {
     if (busy) return;
-    setRows((current) => setPointRemoved(current, photo.id, false));
+    setPhotoUndo(null);
+    setRows((current) => restoreMemberPoint(current, photo.id));
     if (!reviewing && publisher !== 'none') setResumeAvailable(true);
     setStatus(`${pointLabel(photo)} возвращена.`);
   };
+  const applyMembership = (nextRows) => {
+    setRows(nextRows);
+    if (!reviewing && publisher !== 'none') setResumeAvailable(true);
+  };
+  const removePhoto = ({ pointId, memberId }) => {
+    if (busy) return;
+    const before = rows.find((point) => point.id === pointId);
+    setPhotoUndo(before);
+    applyMembership(removeMember(rows, pointId, memberId));
+    setStatus('Фото убрано из точки. Исходный файл сохранён.');
+  };
+  const movePhoto = (targetId) => {
+    if (busy || !moveAction) return;
+    setPhotoUndo(null);
+    applyMembership(moveMember(rows, moveAction.pointId, moveAction.memberId, targetId));
+    setMoveAction(null);
+    setStatus('Фото перемещено. Проверьте обновлённые точки.');
+  };
+  const copyLink = async (url) => {
+    try { await copyText(url); setCopyStatus('Ссылка скопирована.'); }
+    catch (error) { setCopyStatus(`Не удалось скопировать: ${errorText(error)}`); }
+  };
+  const moveTargets = active.filter((point) => point.id !== moveAction?.pointId
+    && `${pointLabel(point)} ${point.id}`.toLowerCase().includes(targetSearch.toLowerCase().trim()));
   const updateBar = updateProgress(nativeUpdate);
   const updateAction = updateButton(nativeUpdate?.state, candidate?.version);
   const nativeStatus = {
@@ -442,6 +506,11 @@ export default function App() {
               <label>Папка с фото<input type="file" accept="image/*" webkitdirectory="" multiple onChange={select} disabled={busy} /></label>
             </div>}
             <p>Выбрано: {files.length}</p>
+            {grouped && <>
+              <IonButton fill="outline" onClick={addPhotos} disabled={busy}>Добавить фото</IonButton>
+              <input ref={appendInput} type="file" accept="image/*" multiple hidden data-testid="append-photos"
+                onChange={(event) => { const selected = imageFiles(event.target.files || []); event.target.value = ''; appendSelected(selected); }} />
+            </>}
           </IonCardContent></IonCard>
           <IonCard><IonCardContent>
             <IonList lines="inset">
@@ -472,7 +541,7 @@ export default function App() {
                 || (reviewing && !active.length)
                 || (!reviewing && hasPublishedPoints(rows) && !resumeAvailable)}>
               {busy ? 'Обработка…' : resumeAvailable ? 'Продолжить публикацию'
-                : reviewing ? publisher === 'none' ? 'Точки готовы локально' : `Опубликовать ${active.length} точек` : 'Обработать фото'}
+                : reviewing ? publisher === 'none' ? 'Точки готовы локально' : `Опубликовать ${pending.length} точек` : 'Обработать фото'}
             </IonButton>
             <IonText><p role="status" aria-live="polite">{status}</p></IonText>
             {workProgress?.kind !== 'clipboard' && <WorkProgress progress={workProgress} />}
@@ -508,6 +577,10 @@ export default function App() {
               <IonButton fill="outline" onClick={() => copyBlocks(reserveBlocks, 'Резерв')}
                 disabled={!reserveBlocks.length || copyBusy}>Копировать резерв по одному</IonButton>
             </div>
+            {photoUndo && <IonButton fill="outline" disabled={busy} onClick={() => {
+              applyMembership(rows.map((point) => point.id === photoUndo.id ? photoUndo : point));
+              setPhotoUndo(null); setStatus('Фото возвращено.');
+            }}>Отменить удаление фото</IonButton>}
             {copyStatus && <IonText><p role="status" aria-live="polite">{copyStatus}</p></IonText>}
             {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>}
@@ -528,7 +601,7 @@ export default function App() {
                           <span className={`photo-state photo-state-${state.kind}`}>{statusLabel}</span>
                         </div>
                         <div className="point-card-meta">
-                          <span>{pointMembers(photo).length} фото</span>
+                          <span>{photo.emptyFromMove ? 0 : pointMembers(photo).length} фото</span>
                           <span className="photo-coordinates">{photo.coordinates
                             ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
                         </div>
@@ -541,11 +614,15 @@ export default function App() {
                       </header>
                       {!photo.removed && <div className="point-card-body">
                         <div className={`point-thumbnails ${pointMembers(photo).length > 1 ? 'multi-photo' : ''}`}>
-                          {pointMembers(photo).map((member) => <button key={member.id} type="button" className="photo-thumbnail"
+                          {pointMembers(photo).map((member) => <div key={member.id} className="member-photo" data-member-id={member.id}><button type="button" className="photo-thumbnail"
                             onClick={() => setViewer(member.id)} disabled={!previews[member.id]}
                             aria-label={`Открыть фото ${member.fileName || member.number} точки ${photo.indexFromOcr || photo.number}`}>
                             {previews[member.id] && <img src={previews[member.id]} alt="" loading="lazy" />}
-                          </button>)}
+                          </button>
+                            {grouped && <IonButton fill="clear" size="small" disabled={busy}
+                              aria-label={`Действия фото ${member.fileName || member.number}`}
+                              onClick={() => setPhotoAction({ pointId: photo.id, memberId: member.id, name: member.fileName || String(member.number) })}>Действия</IonButton>}
+                          </div>)}
                         </div>
                         <div className="photo-detail">
                           <span className="photo-filename">{pointMembers(photo).map((member) => member.fileName).join(', ')}</span>
@@ -556,7 +633,14 @@ export default function App() {
                             </span>)}
                           </div>}
                           {state.kind === 'review' && <span className="review-reason">{state.text}</span>}
-                          {photo.uploadResult?.links?.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.provider}: открыть ссылку</a>)}
+                          {photo.uploadResult?.stale && <span className="review-reason">Фото изменены · требуется повторная публикация</span>}
+                          {!photo.uploadResult?.stale && photo.uploadResult?.links?.filter((link) => link?.url).map((link, index) => <div className="point-link" key={`${link.url}:${index}`}>
+                            <span>{link.provider || link.source || 'Ссылка'}</span>
+                            <div className="compact-actions">
+                              <IonButton size="small" fill="clear" href={link.url} target="_blank" rel="noreferrer">Открыть</IonButton>
+                              <IonButton size="small" fill="clear" onClick={() => copyLink(link.url)}>Копировать</IonButton>
+                            </div>
+                          </div>)}
                           {reviewing && !busy && !hasPublishedPoints(rows) && <div className="point-actions">
                             {pointMembers(photo).length > 1 && <IonButton size="small" fill="outline"
                               onClick={() => applyRegroup(splitPoint(rows, photo.id))}>Разделить</IonButton>}
@@ -565,7 +649,7 @@ export default function App() {
                             {next && <IonButton size="small" fill="outline"
                               onClick={() => applyRegroup(mergePoint(rows, photo.id, 1))}>Со следующей {pointLabel(next)}</IonButton>}
                             {validById.has(photo.id) && <IonButton size="small" fill="outline"
-                              onClick={() => copyOne(validById.get(photo.id))}>Копировать</IonButton>}
+                              onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}
                             <IonButton size="small" fill="clear" color="danger" onClick={() => removePoint(photo)}>Убрать</IonButton>
                           </div>}
                           {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
@@ -593,6 +677,25 @@ export default function App() {
         <IonButton onClick={copyPreview}>Копировать</IonButton>
         <IonButton fill="outline" onClick={() => setTxtOpen(false)}>Закрыть</IonButton>
       </div>{copyStatus && <span role="status">{copyStatus}</span>}</IonToolbar></IonFooter>
+    </IonModal>
+    <IonActionSheet cssClass="publication-sheet" isOpen={!!photoAction} header={photoAction?.name}
+      onDidDismiss={() => setPhotoAction(null)} buttons={[
+        { text: 'Переместить', disabled: active.length < 2, handler: () => { setTargetSearch(''); setMoveAction(photoAction); } },
+        { text: 'Убрать фото', role: 'destructive', handler: () => removePhoto(photoAction) },
+        { text: 'Отмена', role: 'cancel' },
+      ]} />
+    <IonModal className="move-photo-modal" isOpen={!!moveAction} onDidDismiss={() => setMoveAction(null)}>
+      <IonHeader><IonToolbar><IonTitle>Переместить фото</IonTitle></IonToolbar>
+        <IonSearchbar value={targetSearch} placeholder="Индекс или точка" aria-label="Найти точку"
+          onIonInput={(event) => setTargetSearch(event.detail.value || '')} />
+      </IonHeader>
+      <IonContent><IonList>
+        {moveTargets.map((point) => <IonItem key={point.id} button onClick={() => movePhoto(point.id)}>
+          <IonLabel><strong>{pointLabel(point)}</strong><p>{pointMembers(point).length} фото · {photoStatus(point).text}</p></IonLabel>
+        </IonItem>)}
+        {!moveTargets.length && <IonItem><IonLabel>Точки не найдены</IonLabel></IonItem>}
+      </IonList></IonContent>
+      <IonFooter><IonToolbar><IonButton expand="block" fill="outline" onClick={() => setMoveAction(null)}>Отмена</IonButton></IonToolbar></IonFooter>
     </IonModal>
     <PhotoViewer src={viewer ? previews[viewer] : null} open={!!viewer} onClose={() => setViewer(null)} />
   </IonPage></IonApp>;

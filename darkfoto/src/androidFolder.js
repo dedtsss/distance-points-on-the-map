@@ -10,8 +10,8 @@ export async function pickAndroidFolder() {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export async function pickAndroidPhotos() {
-  const result = await folder.pickPhotos();
+export async function pickAndroidPhotos(append = false) {
+  const result = await folder.pickPhotos({ append });
   return result.files.map((item) => ({ ...item, native: true }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }

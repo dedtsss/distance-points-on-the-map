@@ -167,15 +167,15 @@ public class DarkFotoFolderPlugin extends Plugin {
             call.reject("Photo selection cancelled");
             return;
         }
-        selected.clear();
-        clearCached();
+        boolean append = Boolean.TRUE.equals(call.getBoolean("append", false));
         ArrayList<Uri> uris = new ArrayList<>();
         ClipData clip = result.getData().getClipData();
         if (clip != null) {
             for (int index = 0; index < clip.getItemCount(); index++) uris.add(clip.getItemAt(index).getUri());
         } else if (result.getData().getData() != null) uris.add(result.getData().getData());
-        if (uris.isEmpty() || uris.size() > MAX_PHOTOS) { call.reject("Choose 1 to 100 photos"); return; }
+        if (uris.isEmpty() || uris.size() + (append ? selected.size() : 0) > MAX_PHOTOS) { call.reject("Choose up to 100 photos per session"); return; }
         JSArray files = new JSArray();
+        Map<String, Uri> additions = new HashMap<>();
         try {
             for (Uri uri : uris) {
                 String mime = getContext().getContentResolver().getType(uri);
@@ -192,7 +192,7 @@ public class DarkFotoFolderPlugin extends Plugin {
                 }
                 if (size > MAX_BYTES) { call.reject("Photo exceeds 25 MiB"); return; }
                 String id = UUID.randomUUID().toString();
-                selected.put(id, uri);
+                additions.put(id, uri);
                 JSObject item = new JSObject();
                 item.put("id", id);
                 item.put("name", name);
@@ -202,8 +202,10 @@ public class DarkFotoFolderPlugin extends Plugin {
             }
             JSObject output = new JSObject();
             output.put("files", files);
+            if (!append) { selected.clear(); clearCached(); }
+            selected.putAll(additions);
             call.resolve(output);
-        } catch (Exception error) { selected.clear(); call.reject("Photo selection failed", error); }
+        } catch (Exception error) { call.reject("Photo selection failed", error); }
     }
 
     @ActivityCallback

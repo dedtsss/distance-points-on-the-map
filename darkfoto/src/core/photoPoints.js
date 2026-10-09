@@ -61,13 +61,22 @@ export function groupPhotos(photos, rules = GROUP_DEFAULTS) {
   return groups.map(makePoint);
 }
 
-export const pointMembers = (point) => point.members || [point];
+export const pointMembers = (point) => point.emptyFromMove ? [] : point.members || [point];
 export const sourcePhotoCount = (points) => points.reduce((count, point) => count + pointMembers(point).length, 0);
-export const hasPublishedPoints = (points) => points.some((point) => point.uploadResult?.links?.length);
+export const hasPublishedPoints = (points) => points.some((point) => point.uploadResult?.links?.length || point.uploadResult?.stale);
+
+function availableIdentity(point, occupied) {
+  let id = point.id;
+  while (occupied.has(id)) id = `point:${id}`;
+  occupied.add(id);
+  return { ...point, id };
+}
 
 export function splitPoint(points, id) {
   if (hasPublishedPoints(points)) return points;
-  return points.flatMap((point) => point.id === id ? pointMembers(point).map((photo) => makePoint([photo])) : [point]);
+  const occupied = new Set(points.filter((point) => point.id !== id).map((point) => point.id));
+  return points.flatMap((point) => point.id === id && !point.removed ? pointMembers(point).map((photo, index) =>
+    availableIdentity({ ...makePoint([photo]), ...(index === 0 ? { excludedMembers: point.excludedMembers || [] } : {}) }, occupied)) : [point]);
 }
 
 export function mergePoint(points, id, direction) {
@@ -75,7 +84,82 @@ export function mergePoint(points, id, direction) {
   const position = points.findIndex((point) => point.id === id);
   const neighbor = position + direction;
   if (position < 0 || neighbor < 0 || neighbor >= points.length) return points;
+  if (points[position].removed || points[neighbor].removed) return points;
   const start = Math.min(position, neighbor);
-  return [...points.slice(0, start), makePoint([...pointMembers(points[start]), ...pointMembers(points[start + 1])]),
+  const occupied = new Set(points.filter((_, index) => index !== start && index !== start + 1).map((point) => point.id));
+  return [...points.slice(0, start), availableIdentity({ ...makePoint([...pointMembers(points[start]), ...pointMembers(points[start + 1])]),
+    excludedMembers: [...(points[start].excludedMembers || []), ...(points[start + 1].excludedMembers || [])] }, occupied),
     ...points.slice(start + 2)];
+}
+
+const invalidatePublication = (point) => ({ ...point.uploadResult,
+  stale: Boolean(point.uploadResult?.stale || point.uploadResult?.links?.length),
+  staleLinks: point.uploadResult?.links?.length ? point.uploadResult.links : point.uploadResult?.staleLinks || [],
+  links: [],
+});
+
+function withMembers(point, members) {
+  return { ...point, ...makePoint(members), id: point.id,
+    reviewSection: point.reviewSection, reviewSlot: point.reviewSlot,
+    removed: false, emptyFromMove: false, publishError: undefined,
+    uploadResult: invalidatePublication(point) };
+}
+
+export function removeMember(points, pointId, memberId) {
+  return points.map((point) => {
+    if (point.id !== pointId || point.removed) return point;
+    const members = pointMembers(point);
+    const member = members.find((photo) => photo.id === memberId);
+    if (!member) return point;
+    // Keep the final member in the existing recoverable removed-point slot.
+    if (members.length === 1) return { ...point, removed: true, uploadResult: invalidatePublication(point) };
+    return { ...withMembers(point, members.filter((photo) => photo.id !== memberId)),
+      excludedMembers: [...(point.excludedMembers || []), member] };
+  });
+}
+
+export function moveMember(points, sourceId, memberId, targetId) {
+  const source = points.find((point) => point.id === sourceId && !point.removed);
+  const target = points.find((point) => point.id === targetId && !point.removed);
+  const member = source && pointMembers(source).find((photo) => photo.id === memberId);
+  if (!member || !target || sourceId === targetId) return points;
+  return points.map((point) => {
+    if (point.id === targetId) return withMembers(point, [...pointMembers(point), member]);
+    if (point.id !== sourceId) return point;
+    const remaining = pointMembers(point).filter((photo) => photo.id !== memberId);
+    return remaining.length ? withMembers(point, remaining)
+      : { ...point, members: [member], removed: true, emptyFromMove: true, uploadResult: invalidatePublication(point) };
+  });
+}
+
+export function restoreMemberPoint(points, id) {
+  const point = points.find((item) => item.id === id);
+  if (!point?.emptyFromMove) return points.map((item) => item.id === id ? { ...item, removed: false } : item);
+  // An empty source keeps only a recovery snapshot, never duplicate ownership.
+  const memberId = point.members[0].id;
+  const owner = points.find((item) => pointMembers(item).some((member) => member.id === memberId));
+  if (!owner) {
+    const excluded = points.find((item) => item.excludedMembers?.some((member) => member.id === memberId));
+    if (!excluded) return points;
+    const member = excluded.excludedMembers.find((item) => item.id === memberId);
+    return points.map((item) => item.id === id ? withMembers(item, [member])
+      : item.id === excluded.id ? { ...item, excludedMembers: item.excludedMembers.filter((photo) => photo.id !== memberId) } : item);
+  }
+  const ready = points.map((item) => item.id === id
+    ? { ...item, removed: false, emptyFromMove: false, members: [] }
+    : item.id === owner.id ? { ...item, removed: false } : item);
+  return moveMember(ready, owner.id, memberId, id);
+}
+
+export function appendPhotos(points, photos, rules = GROUP_DEFAULTS) {
+  let next = [...points];
+  for (const photo of [...photos].sort(byOrder)) {
+    const matches = next.filter((point) => !point.removed && canJoin(pointMembers(point), photo, rules));
+    // The accepted evidence must identify exactly one entity; never coalesce
+    // manually separated points or attach into an excluded placeholder.
+    if (matches.length === 1) next = next.map((point) => point.id === matches[0].id
+      ? withMembers(point, [...pointMembers(point), photo]) : point);
+    else next.push(makePoint([photo]));
+  }
+  return next;
 }

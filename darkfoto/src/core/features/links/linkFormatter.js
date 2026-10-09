@@ -2,7 +2,7 @@ const DEFAULT_ORDER = ['ninjabox', 'freeimage', 'x0'];
 
 export function photoLinksInRequestedOrder(photo) {
   const result = photo?.uploadResult;
-  if (!result || !Array.isArray(result.links)) return [];
+  if (!result || result.stale || !Array.isArray(result.links)) return [];
   const order = Array.isArray(result.providerOrder) && result.providerOrder.length > 0
     ? result.providerOrder
     : Array.isArray(result.requestedProviders) && result.requestedProviders.length > 0

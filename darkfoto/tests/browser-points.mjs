@@ -10,18 +10,34 @@ await server.listen();
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 375, height: 812 }, reducedMotion: 'reduce', permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await context.newPage();
+page.setDefaultTimeout(30000);
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
 // Recognition has separate real-JPEG OCR coverage. Keep this UI flow deterministic.
 await page.route('**/src/core/readPhoto.js', (route) => route.fulfill({ contentType: 'application/javascript', body: `
 export async function readPhoto(file) {
+  globalThis.__recognitions ||= []; globalThis.__recognitions.push(file.name);
   const n = Number(file.name.match(/source-(\\d+)/)[1]);
-  return { coordinates: { latitude: 64, longitude: 30 + (n <= 3 ? 0 : n * .001) },
+  return { coordinates: n === 12 ? null : { latitude: 64, longitude: 30 + (n <= 3 || n === 11 ? 0 : n === 13 ? .006 : n * .001) },
     coordinateQuality: 'confident', gpsSource: 'exif', gpsStatus: 'done',
-    indexFromOcr: String(6880 + n), indexStatus: 'found', orientation: 1,
+    indexFromOcr: n === 12 ? null : n === 11 ? '6882' : String(6880 + n), indexStatus: n === 12 ? 'missing' : 'found', orientation: 1,
     accuracyMeters: n === 2 ? 1 : null,
-    captureTimeMs: 1700000000000 + n * 1000, captureTimeSource: 'exif' };
+    captureTimeMs: 1700000000000 + (n === 11 ? 4 : n) * 1000, captureTimeSource: 'exif' };
 }` }));
+await page.route('**/src/publishBatch.js', async (route) => {
+  const response = await route.fetch();
+  const body = (await response.text()).replace('export async function publishBatch(', 'async function originalPublishBatch(');
+  await route.fulfill({ response, body: body + `
+export async function publishBatch(rows, ids, options) {
+  return originalPublishBatch(rows, ids, { ...options, onRows: async (updated) => {
+    if (globalThis.__multipleLinks && updated[0].uploadResult?.links?.length && !updated[0].uploadResult.stale) {
+      updated[0].uploadResult.links = [updated[0].uploadResult.links[0],
+        {provider: 'fixture-provider', url: 'https://public.example/second?exact=1&x=2'}];
+    }
+    await options.onRows(updated);
+  }});
+}` });
+});
 const batches = [];
 await page.route('https://*.workers.dev/v1/ninjabox', async (route) => {
   if (route.request().method() === 'OPTIONS') {
@@ -153,11 +169,11 @@ try {
   await page.screenshot({ path: '/tmp/darkfoto-039-review.png', fullPage: true });
   await page.getByRole('button', { name: 'Опубликовать 7 точек', exact: true }).click();
   await page.getByRole('heading', { name: 'Результат', exact: true }).waitFor();
-  await page.waitForFunction(() => [...document.querySelectorAll('.result-photo-card a')].length === 7);
+  await page.waitForFunction(() => [...document.querySelectorAll('.point-link')].length === 7);
   assert.equal(batches.length, 7);
   assert.deepEqual(batches[0], ['6882-01.jpg', '6882-02.jpg', '6882-03.jpg']);
-  assert.equal(await cards.first().locator('a').getAttribute('href'), 'https://ninjabox.org/ed8ae0b8-9373-4dc0-a454-99e5f57a0578');
-  assert.equal(await cards.locator('a').count(), 7);
+  assert.equal(await cards.first().getByRole('link').getAttribute('href'), 'https://ninjabox.org/ed8ae0b8-9373-4dc0-a454-99e5f57a0578');
+  assert.equal(await cards.locator('.point-link').count(), 7);
   assert.equal(await page.locator('.point-actions').count(), 0);
   assert.equal(await page.locator('.point-removed').count(), 1);
   await cards.first().locator('.photo-thumbnail').nth(1).click();
@@ -184,13 +200,102 @@ try {
   await card('#6886').getByRole('button', { name: 'Вернуть', exact: true }).click();
   assert.equal(await page.locator('.point-count').textContent(), '10 фото → 8 точек');
   await page.getByRole('button', { name: 'Продолжить публикацию', exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll('.result-photo-card a').length === 8);
+  await page.waitForFunction(() => document.querySelectorAll('.point-link').length === 8);
   assert.equal(batches.length, 8, 'restoring after publication publishes only the restored point');
   assert.deepEqual(batches[7], ['6886.jpg']);
   assert.deepEqual(await cards.locator('.photo-identity').allTextContents(), initialOrder);
+  // Correct only one member after publication, preserving logical identities.
+  const sourceId = await cards.first().getAttribute('data-point-id');
+  const targetId = await card('#6884').getAttribute('data-point-id');
+  const source = () => page.locator(`[data-point-id="${sourceId}"]`);
+  const targetPoint = () => page.locator(`[data-point-id="${targetId}"]`);
+  const act = async (point, memberId, name) => {
+    await point.locator(`[data-member-id="${memberId}"]`).getByRole('button', { name: /Действия фото/ }).click();
+    await page.locator('ion-action-sheet').getByRole('button', { name, exact: true }).click();
+    await page.locator('ion-action-sheet').waitFor({ state: 'hidden' });
+  };
+  await act(source(), '3', 'Переместить');
+  await page.locator('.move-photo-modal ion-searchbar input').fill('6884');
+  await page.locator('.move-photo-modal ion-item').filter({ hasText: '#6884' }).click();
+  await page.locator('.move-photo-modal').waitFor({ state: 'hidden' });
+  assert.equal(await source().locator('.photo-thumbnail').count(), 2);
+  assert.equal(await targetPoint().locator('.photo-thumbnail').count(), 2);
+  assert.equal(await cards.count(), 8);
+  assert.equal(await page.locator('.point-link').count(), 6);
+  assert.equal(batches.length, 8);
+  await source().getByRole('button', { name: 'Копировать блок', exact: true }).click();
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /Фото: ссылка отсутствует/);
+  await page.evaluate(() => { globalThis.__multipleLinks = true; });
+  await page.getByRole('button', { name: 'Продолжить публикацию', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.point-link').length === 9);
+  assert.equal(batches.length, 10, 'only two affected points are republished');
+  assert.deepEqual(batches[8], ['6882-01.jpg', '6882-02.jpg']);
+  assert.deepEqual(batches[9], ['6883-01.jpg', '6883-02.jpg']);
+  const links = source().locator('.point-link');
+  assert.equal(await links.count(), 2, 'multi-provider fixture is rendered');
+  for (const link of await links.all()) {
+    const open = link.getByRole('link', { name: 'Открыть', exact: true });
+    const url = await open.getAttribute('href');
+    assert.equal(await open.getAttribute('target'), '_blank');
+    assert.equal(await open.getAttribute('rel'), 'noreferrer');
+    await link.getByRole('button', { name: 'Копировать', exact: true }).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), url);
+  }
+  assert.match(await links.nth(1).textContent(), /fixture-provider/);
+  await act(source(), '2', 'Убрать фото');
+  assert.equal(await source().locator('.photo-identity').textContent(), '#6881');
+  assert.equal(await source().locator('.photo-thumbnail').count(), 1);
+  assert.equal(await source().locator('.point-link').count(), 0);
+  await page.getByRole('button', { name: 'Отменить удаление фото', exact: true }).click();
+  assert.equal(await source().locator('.photo-identity').textContent(), '#6882');
+  assert.equal(await source().locator('.point-link').count(), 2);
+  await act(card('#6886'), '6', 'Убрать фото');
+  assert.equal(await card('#6886').locator('.point-card-body').count(), 0);
+  const beforeAppend = await page.evaluate(() => globalThis.__recognitions.slice());
+  const appendChooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Добавить фото', exact: true }).click();
+  await (await appendChooser).setFiles([11, 12, 13].map((n) => ({ name: `source-${n}.jpg`, mimeType: 'image/jpeg', buffer })));
+  await page.getByText('Добавлено 3 фото. Проверьте точки перед публикацией.', { exact: true }).waitFor();
+  assert.deepEqual(await page.evaluate(() => globalThis.__recognitions), [...beforeAppend, 'source-11.jpg', 'source-12.jpg', 'source-13.jpg']);
+  assert.equal(await source().locator('.photo-thumbnail').count(), 3, 'strong evidence attaches to existing source');
+  assert.equal(await card('#6886').locator('.photo-state-removed').count(), 1, 'removed placeholder retained');
+  assert.equal(await cards.count(), 10, 'unknown and photo near removed point create new entities');
+  assert.equal(batches.length, 10, 'append does not auto-upload');
+  assert.equal(await targetPoint().locator('.photo-thumbnail').count(), 2, 'manual membership remains intact');
+  const unknown = cards.filter({ has: page.locator('[data-member-id="12"]') });
+  await act(unknown, '12', 'Переместить');
+  for (const width of [320, 375, 812]) {
+    await page.setViewportSize({ width, height: width === 812 ? 375 : 812 });
+    await page.locator('.move-photo-modal ion-searchbar input').fill('6883');
+    const bounds = await page.locator('.move-photo-modal ion-content').boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.equal(await page.locator('.move-photo-modal ion-content').evaluate((el) => el.scrollWidth <= el.clientWidth), true);
+  }
+  await page.screenshot({ path: '/tmp/darkfoto-040-move.png' });
+  await page.locator('.move-photo-modal ion-item').filter({ hasText: '#6883' }).click();
+  await page.locator('.move-photo-modal').waitFor({ state: 'hidden' });
+  assert.equal(await targetPoint().locator('.photo-thumbnail').count(), 3, 'manual move accepts no-GPS/no-index photo');
+  assert.equal(await page.locator('[data-point-id="12"] .photo-state-removed').count(), 1);
+  await page.getByRole('button', { name: 'Опубликовать 3 точек', exact: true }).click();
+  await page.getByText('Обработка завершена.', { exact: true }).waitFor();
+  assert.equal(batches.length, 13, 'only two dirty points and one new active point upload');
+  assert.deepEqual(batches[10], ['6882-01.jpg', '6882-02.jpg', '6882-03.jpg']);
+  assert.deepEqual(batches[11], ['6883-01.jpg', '6883-02.jpg', '6883-03.jpg']);
+  assert.deepEqual(batches[12], ['6893.jpg']);
+  await page.locator('[data-point-id="12"]').getByRole('button', { name: 'Вернуть', exact: true }).click();
+  assert.equal(await targetPoint().locator('.photo-thumbnail').count(), 2, 'empty moved source recovers its photo');
+  assert.equal(await page.locator('[data-point-id="12"] .photo-thumbnail').count(), 1);
+  console.log('0.4.0 mobile membership: stable 1+3→2+2 identities, dirty-point retry, representative removal/undo, append-only recognition, removed placeholders, no-GPS move, universal exact URL copy, searchable chooser at 320/375/812px: PASS');
   assert.deepEqual(errors, []);
   console.log('375×812 / landscape: review 10→8, split/merge, no early uploads, 7 active sanitized POSTs/links, independent removals/stable slots, one-point/aggregate GPX, TXT substring selection/copy and footer: PASS');
+} catch (error) {
+  console.error(error);
+  console.error(await page.locator('body').innerText());
+  await page.screenshot({ path: '/tmp/darkfoto-040-failed.png', fullPage: true });
+  throw error;
 } finally {
   await browser.close();
+  server.httpServer.closeAllConnections();
   await server.close();
 }

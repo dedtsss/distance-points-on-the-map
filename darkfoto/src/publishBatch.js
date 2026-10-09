@@ -20,7 +20,7 @@ export async function publishBatch(rows, _unresolvedIds, options) {
   const active = activePoints(rows);
   const eligible = active.map((row, index) => ({ row, index,
     filename: outgoingName(row, hasRecognizedIndex(row) ? unresolvedNumber : ++unresolvedNumber) }))
-    .filter(({ row }) => !row.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
+    .filter(({ row }) => row.uploadResult?.stale || !row.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
   for (const [position, { row, index, filename }] of eligible.entries()) {
     const members = pointMembers(row);
     if (publisher === 'onion' && members.length > 1) {
@@ -62,6 +62,8 @@ export async function publishBatch(rows, _unresolvedIds, options) {
         });
       row.uploadResult ||= { links: [] };
       row.uploadResult.links = [{ provider: publisher, url }];
+      delete row.uploadResult.stale;
+      delete row.uploadResult.staleLinks;
       delete row.publishError;
     } catch (error) {
       row.publishError = message(error);
