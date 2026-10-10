@@ -1,0 +1,9 @@
+{
+  "appId": "app.darkfoto.mvp",
+  "appName": "DarkCat Photo",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}
