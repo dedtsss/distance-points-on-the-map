@@ -10,7 +10,7 @@ export const textFilename = (session = '') => {
     .replace(/_+/g, '_')
     .replace(/^[_\.\s]+|[_\.\s]+$/g, '')
     .slice(0, 64);
-  return safe ? `DarkFotoResult_${safe}.txt` : 'DarkFotoResult.txt';
+  return safe ? `DarkCatPhotoResult_${safe}.txt` : 'DarkCatPhotoResult.txt';
 };
 export const gpxFilename = (session = '') => textFilename(session).replace(/\.txt$/, '.gpx');
 

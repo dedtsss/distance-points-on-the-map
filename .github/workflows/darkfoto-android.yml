@@ -1,4 +1,4 @@
-name: DarkFoto Android MVP
+name: DarkCat Photo Android
 
 on:
   pull_request:
@@ -30,7 +30,7 @@ jobs:
           packages: ''
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Install and test DarkFoto
+      - name: Install and test DarkCat Photo
         working-directory: darkfoto
         run: |
           npm ci
@@ -54,5 +54,13 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: DarkFoto-unsigned-release-apk
+          name: DarkCatPhoto-unsigned-release-apk
           path: darkfoto/android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Retain Stage A browser and native test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarkCatPhoto-stage-a-evidence
+          path: |
+            /tmp/darkcat-stage-a/
+            darkfoto/android/app/build/reports/tests/testDebugUnitTest/

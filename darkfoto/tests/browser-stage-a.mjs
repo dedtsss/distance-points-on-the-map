@@ -134,8 +134,21 @@ try {
   await page.reload();
   await page.getByRole('combobox', { name: 'Сессия', exact: true }).focus();
   assert.equal(await page.getByRole('listbox', { name: 'Подсказки: Сессия', exact: true }).getByRole('option').first().textContent(), 'Сессия изменён');
+  assert.equal(await page.title(), 'DarkCat Photo');
+  assert.equal(await page.locator('ion-segment-button').nth(0).textContent(), 'Точки');
+  assert.equal(await page.locator('ion-segment-button').count(), 2, 'Stage A has no nonfunctional map tab');
+  await page.locator('ion-segment-button').nth(1).click();
+  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.0.*этап A.*приёмки карты/);
+  const canonical = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
+  assert.equal(await page.getByLabel('История изменений', { exact: true }).textContent(), canonical);
+  for (const width of [320, 375, 812]) {
+    await page.setViewportSize({ width, height: width === 812 ? 375 : 812 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  await page.setViewportSize({ width: 320, height: 812 });
+  await page.screenshot({ path: '/tmp/darkcat-stage-a/about-320.png' });
   assert.deepEqual(errors, []);
-  console.log('Stage A: usable 3×3 at 320/375/812, 5/9 swipe 4↔5↔6, scoped boundaries, zoom pan, three local LIFO restores: PASS');
+  console.log('Stage A: 3×3 at 320/375/812, point-scoped 5/9 swipe/zoom, three LIFO restores, real sanitized edited export/failure, four persisted MRUs, product name/two tabs/canonical changelog: PASS');
 } finally {
   await browser.close(); server.httpServer.closeAllConnections(); await server.close();
 }

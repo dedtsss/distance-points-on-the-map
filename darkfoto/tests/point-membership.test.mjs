@@ -120,6 +120,19 @@ test('sole removal retains recoverable point; sole move keeps excluded placehold
   assert.deepEqual(membership(restoreMemberPoint(recover(excluded, 4), before[0].id)), membership(before));
 });
 
+test('empty-source recovery consumes the destination undo entry when its final member was removed', () => {
+  const initial = [makePoint([photo(1, 100)]), makePoint([photo(2)])];
+  let rows = moveMember(initial, '1', '1', '2');
+  rows = removeMember(rows, '2', '2');
+  rows = removeMember(rows, '2', '1');
+  rows = restoreMemberPoint(recover(rows, 2), '1');
+  assert.deepEqual(membership(rows), [['1'], []]);
+  assert.deepEqual(rows[1].memberUndo.map((entry) => entry.memberId), ['2']);
+  rows = restoreLastMember(rows, '2');
+  assert.deepEqual(membership(recover(rows, 2)), [['1'], ['2']]);
+  assert.equal(rows[1].memberUndo.length, 0);
+});
+
 test('explicit move accepts missing GPS/index/time, even into a target with no evidence', () => {
   const unknown = (n) => photo(n, 0, { coordinates: null, coordinateQuality: 'missing',
     indexFromOcr: null, indexStatus: 'missing', captureTimeMs: null });

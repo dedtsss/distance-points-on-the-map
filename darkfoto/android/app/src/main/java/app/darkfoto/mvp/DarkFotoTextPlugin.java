@@ -52,7 +52,7 @@ public class DarkFotoTextPlugin extends Plugin {
             .replaceAll("\\s+", "_")
             .replaceAll("_+", "_")
             .replaceAll("^[._ ]+|[._ ]+$", "");
-        if (name.isEmpty()) name = "DarkFotoResult";
+        if (name.isEmpty()) name = "DarkCatPhotoResult";
         if (name.length() > 120) name = name.substring(0, 120);
         if (!name.toLowerCase(Locale.ROOT).endsWith(extension)) name += extension;
         return name;
@@ -63,7 +63,7 @@ public class DarkFotoTextPlugin extends Plugin {
         try {
             ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
             if (clipboard == null) throw new IllegalStateException("Clipboard unavailable");
-            clipboard.setPrimaryClip(ClipData.newPlainText("DarkFoto TXT", content(call)));
+            clipboard.setPrimaryClip(ClipData.newPlainText("DarkCat Photo TXT", content(call)));
             call.resolve();
         } catch (Exception error) { call.reject("TXT copy failed", error); }
     }
@@ -87,7 +87,7 @@ public class DarkFotoTextPlugin extends Plugin {
             Handler handler = new Handler(Looper.getMainLooper());
             handler.post(() -> ClipboardSequence.start(blocks, 220,
                 (block, count) -> {
-                    clipboard.setPrimaryClip(ClipData.newPlainText("DarkFoto #" + count, block));
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DarkCat Photo #" + count, block));
                     JSObject progress = new JSObject();
                     progress.put("count", count);
                     progress.put("total", blocks.size());
@@ -151,12 +151,12 @@ public class DarkFotoTextPlugin extends Plugin {
 
     @PluginMethod
     public void shareText(PluginCall call) {
-        shareFile(call, "text/plain", ".txt", "DarkFoto TXT", "textShared");
+        shareFile(call, "text/plain", ".txt", "DarkCat Photo TXT", "textShared");
     }
 
     @PluginMethod
     public void shareGpx(PluginCall call) {
-        shareFile(call, GPX_MIME, ".gpx", "DarkFoto GPX", "gpxShared");
+        shareFile(call, GPX_MIME, ".gpx", "DarkCat Photo GPX", "gpxShared");
     }
 
     private void shareFile(PluginCall call, String mime, String extension, String label, String callback) {

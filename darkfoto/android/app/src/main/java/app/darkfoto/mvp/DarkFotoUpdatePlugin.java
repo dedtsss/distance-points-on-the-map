@@ -52,7 +52,7 @@ public class DarkFotoUpdatePlugin extends Plugin {
         try {
             PackageInfo info = getContext().getPackageManager().getPackageInfo(PACKAGE_ID, 0);
             JSObject result = new JSObject();
-            result.put("name", "DarkFoto");
+            result.put("name", "DarkCat Photo");
             result.put("versionName", info.versionName);
             result.put("versionCode", code(info));
             call.resolve(result);
@@ -97,7 +97,7 @@ public class DarkFotoUpdatePlugin extends Plugin {
     private void validate(String source, String digest) {
         if (!source.matches("https://github\\.com/dedtsss/distance-points-on-the-map/releases/download/[^?#]+\\.apk")
             || !digest.matches("(?i)[0-9a-f]{64}"))
-            throw new IllegalArgumentException("Invalid public DarkFoto release URL or digest");
+            throw new IllegalArgumentException("Invalid public DarkCat Photo release URL or digest");
     }
 
     private synchronized void selectCandidate(String version, String source, String digest) {
@@ -247,8 +247,8 @@ public class DarkFotoUpdatePlugin extends Plugin {
                 File apk = target();
                 DownloadManager.Request request = new DownloadManager.Request(Uri.parse(source));
                 request.setDestinationUri(Uri.fromFile(apk));
-                request.setTitle("DarkFoto " + call.getString("version", ""));
-                request.setDescription("Загрузка обновления DarkFoto");
+                request.setTitle("DarkCat Photo " + call.getString("version", ""));
+                request.setDescription("Загрузка обновления DarkCat Photo");
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
                 request.setAllowedOverMetered(true);
                 request.setAllowedOverRoaming(false);

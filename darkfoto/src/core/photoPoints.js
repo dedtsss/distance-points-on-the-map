@@ -170,7 +170,8 @@ export function restoreMemberPoint(points, id) {
   }
   const ready = points.map((item) => item.id === id
     ? { ...item, removed: false, emptyFromMove: false, members: [] }
-    : item.id === owner.id ? { ...item, removed: false } : item);
+    : item.id === owner.id ? { ...item, removed: false, memberRemovedLast: false,
+      memberUndo: (item.memberUndo || []).filter((entry) => entry.memberId !== memberId) } : item);
   return moveMember(ready, owner.id, memberId, id);
 }
 

@@ -18,6 +18,9 @@ import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton
   IonCardContent, IonItem, IonLabel, IonInput, IonSelect, IonSelectOption,
   IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonSearchbar } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
+import changelog from '../CHANGELOG.md?raw';
+import buildInfo from '../build-info.json';
+import { releaseNotes } from './changelog.js';
 import RecentField from './RecentField.jsx';
 import { exportLocalSession } from './localSessionExport.js';
 import { androidSessionDestination, hasSessionFolderExport } from './androidSessionExport.js';
@@ -158,7 +161,7 @@ export default function App() {
       const result = ['ready_to_install', 'permission_required'].includes(current.state)
         ? await installRelease() : await startUpdateDownload(candidate);
       setNativeUpdate(result);
-      if (result.state === 'permission_required') setUpdateStatus('Разрешите установку из DarkFoto в Android. APK сохранён.');
+      if (result.state === 'permission_required') setUpdateStatus('Разрешите установку из DarkCat Photo в Android. APK сохранён.');
       else if (result.state === 'ready_to_install') setUpdateStatus('APK проверен. Подтвердите установку в Android.');
     } catch (error) { setUpdateStatus(`Обновление отклонено: ${errorText(error)}`); }
   };
@@ -276,7 +279,7 @@ export default function App() {
           id: String(offset + index + 1), number: offset + index + 1, fileName: file.name,
           ...read, uploadResult: { providerOrder: [publisher], links: [] },
         });
-        console.info('DarkFoto recognition', { photo: index + 1, engine: read.ocrEngine, elapsedMs: read.recognitionMs });
+        console.info('DarkCat Photo recognition', { photo: index + 1, engine: read.ocrEngine, elapsedMs: read.recognitionMs });
       } catch (error) {
         current.push({
           id: String(offset + index + 1), number: offset + index + 1, fileName: selected[index].name,
@@ -495,21 +498,22 @@ export default function App() {
     downloading: 'Загрузка обновления', paused: 'Загрузка приостановлена Android; ожидается возобновление',
     completed: 'Загрузка завершена. Проверка APK…', verifying: 'Проверка APK…',
     ready_to_install: 'APK проверен и готов к установке.',
-    permission_required: 'APK проверен. Разрешите установку из DarkFoto.',
+    permission_required: 'APK проверен. Разрешите установку из DarkCat Photo.',
     failed: nativeUpdate?.error || 'Загрузка не удалась.',
   }[nativeUpdate?.state];
 
   return <IonApp><IonPage>
-    <IonHeader><IonToolbar><IonTitle>DarkFoto</IonTitle></IonToolbar></IonHeader>
+    <IonHeader><IonToolbar><IonTitle>DarkCat Photo</IonTitle></IonToolbar></IonHeader>
     <IonContent className="darkfoto-content">
       <div className="darkfoto-layout">
         <IonSegment value={screen} onIonChange={(event) => event.detail.value === 'about' ? showAbout() : setScreen('photos')}>
-          <IonSegmentButton value="photos"><IonLabel>Фото</IonLabel></IonSegmentButton>
+          <IonSegmentButton value="photos"><IonLabel>Точки</IonLabel></IonSegmentButton>
           <IonSegmentButton value="about"><IonLabel>О приложении</IonLabel></IonSegmentButton>
         </IonSegment>
         {screen === 'about' ? <IonCard><IonCardContent>
           <h2>О приложении / Обновление</h2>
-          <p>Установлена версия: {version ? `${version.versionName} (код ${version.versionCode})` : '—'}</p>
+          {!buildInfo.releaseReady && <p className="stage-notice">{buildInfo.version} · этап {buildInfo.stage}, подготовка. Выпуск ожидает приёмки карты.</p>}
+          <p>Установлена версия: {version ? `${version.versionName} (код ${version.versionCode})` : `${buildInfo.version} (код ${buildInfo.versionCode}, Web)`}</p>
           <p role="status">{updateStatus || nativeStatus || 'Обновление не проверено.'}</p>
           {updateBar?.active && <div className="progress-area" role="status" aria-label="Загрузка обновления">
             <span>{updateBar.label}</span>
@@ -517,7 +521,10 @@ export default function App() {
           </div>}
           {version && <IonButton expand="block" onClick={checkUpdate}>Проверить обновление</IonButton>}
           {candidate && <><p>Новая версия: {candidate.version}</p>
+            {releaseNotes(changelog, candidate.version) && <pre className="changelog-text">{releaseNotes(changelog, candidate.version)}</pre>}
             {updateAction && <IonButton expand="block" onClick={downloadUpdate}>{updateAction}</IonButton>}</>}
+          <h3>История изменений</h3>
+          <pre className="changelog-text" aria-label="История изменений">{changelog}</pre>
         </IonCardContent></IonCard> : <>
           <p className="intro">Выберите фотографии и получите Основные / Резерв. Исходники остаются на устройстве.</p>
           <IonCard><IonCardContent>

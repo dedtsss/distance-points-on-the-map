@@ -35,7 +35,7 @@ export function buildGpx(grouped, session = '') {
     return `  <wpt lat="${decimal(photo.coordinates.latitude)}" lon="${decimal(photo.coordinates.longitude)}"><name>${xml(name)}</name><desc>${xml(description)}</desc></wpt>`;
   });
   return ['<?xml version="1.0" encoding="UTF-8"?>',
-    '<gpx version="1.1" creator="DarkFoto" xmlns="http://www.topografix.com/GPX/1/1">',
+    '<gpx version="1.1" creator="DarkCat Photo" xmlns="http://www.topografix.com/GPX/1/1">',
     ...points, '</gpx>', ''].join('\n');
 }
 

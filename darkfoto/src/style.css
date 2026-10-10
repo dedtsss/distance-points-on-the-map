@@ -125,3 +125,6 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 .recent-suggestions [aria-selected=true], .recent-suggestions button:focus-visible { outline: 2px solid var(--ion-color-primary); outline-offset: -2px; }
 .recent-suggestions .recent-forget { font-size: .8rem; background: transparent; }
 .recent-suggestions button:disabled { opacity: .5; }
+
+.stage-notice { border-left: 3px solid #ffd882; padding-left: 10px; }
+.changelog-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .9rem; line-height: 1.5; color: #c4d0dc; }

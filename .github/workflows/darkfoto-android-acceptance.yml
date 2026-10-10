@@ -1,4 +1,4 @@
-name: DarkFoto Android OCR Acceptance
+name: DarkCat Photo Android OCR Acceptance
 
 on:
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: DarkFoto-Android-OCR-acceptance-reports
+          name: DarkCat Photo-Android-OCR-acceptance-reports
           path: |
             darkfoto/android/app/build/reports/androidTests/connected/
             darkfoto/android/app/build/outputs/androidTest-results/connected/

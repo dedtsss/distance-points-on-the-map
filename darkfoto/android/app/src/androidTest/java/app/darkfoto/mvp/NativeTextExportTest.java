@@ -23,7 +23,7 @@ public class NativeTextExportTest {
         assertTrue(directory.exists() || directory.mkdirs());
         String filename = DarkFotoTextPlugin.safeFilename("17 Север");
         assertEquals("17_Север.txt", filename);
-        assertEquals("DarkFotoResult.txt", DarkFotoTextPlugin.safeFilename(""));
+        assertEquals("DarkCatPhotoResult.txt", DarkFotoTextPlugin.safeFilename(""));
         File file = new File(directory, filename);
         String result = "Основные\n#6301\n64.581207, 30.597531\n";
         try (FileOutputStream output = new FileOutputStream(file)) {

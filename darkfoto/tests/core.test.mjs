@@ -65,8 +65,8 @@ test('25 m boundary and minimum conflict cover are deterministic', () => {
 test('result fields retain donor order and onion publisher refuses clearnet', async () => {
   assert.equal(formatPhotoResultBlock({ indexFromOcr: '0123', coordinates: { latitude: 64, longitude: 30 } }, { description: 'x' }).split('\n')[0], '#0123');
   assert.equal(formatPhotoResultBlock({ indexFromOcr: '6301', coordinates: { latitude: 64, longitude: 30 } }, { session: '17 Север' }).split('\n')[0], '#6301 / 17 Север');
-  assert.equal(textFilename('17 Север'), 'DarkFotoResult_17_Север.txt');
-  assert.equal(textFilename('  /опасно:*?  '), 'DarkFotoResult_опасно.txt');
+  assert.equal(textFilename('17 Север'), 'DarkCatPhotoResult_17_Север.txt');
+  assert.equal(textFilename('  /опасно:*?  '), 'DarkCatPhotoResult_опасно.txt');
   assert.throws(() => onionBaseUrl('https://example.com'));
   assert.throws(() => onionBaseUrl('http://abc.onion'));
   const onion = `http://${'a'.repeat(56)}.onion/`;
@@ -208,7 +208,7 @@ test('GPX and copy blocks include valid Main and Reserve in photo order', () => 
   assert.match(gpx, /two &amp; &lt;bad&gt;\.jpg/);
   assert.doesNotMatch(gpx, /review\.jpg/);
   assert.match(buildGpx({ main: [photo('1', 1, '6300', 'one.jpg')], reserve: [] }), /<name>#6300<\/name>/);
-  assert.equal(gpxFilename('17 Север'), 'DarkFotoResult_17_Север.gpx');
+  assert.equal(gpxFilename('17 Север'), 'DarkCatPhotoResult_17_Север.gpx');
 });
 
 test('NinjaBox timeout aborts even if transport does not settle', async () => {
