@@ -15,9 +15,12 @@ import { actionProgress, updateButton, updateProgress } from './progress.js';
 import { recognizeAndroidStamp } from './nativeOcr.js';
 import { copyResultBlocks, copyText, exportGpx, exportText, isNativeTextExport } from './androidText.js';
 import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
-  IonCardContent, IonItem, IonLabel, IonInput, IonTextarea, IonSelect, IonSelectOption,
+  IonCardContent, IonItem, IonLabel, IonInput, IonSelect, IonSelectOption,
   IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonSearchbar } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
+import RecentField from './RecentField.jsx';
+import { exportLocalSession } from './localSessionExport.js';
+import { androidSessionDestination, hasSessionFolderExport } from './androidSessionExport.js';
 import { activePoints, setPointRemoved, establishReviewSlots, reviewSections } from './pointState.js';
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
@@ -360,6 +363,23 @@ export default function App() {
     try { await exportText(txtText, action, normalizedSession); setStatus('TXT готов.'); }
     catch (error) { setStatus(`TXT: ${errorText(error)}`); }
   };
+  const exportSession = async () => {
+    if (busy) return;
+    setBusy(true); setStatus('Выберите папку для экспорта сессии.');
+    try {
+      const result = await exportLocalSession(rows, { session, color, packing, comment }, {
+        destination: androidSessionDestination, fileAt,
+        onCommit: () => { setStatus('Запись и проверка файлов…'); setWorkProgress({ kind: 'local-export', label: 'Запись и проверка файлов…',
+          type: 'indeterminate', value: 0, buffer: 0, itemPercent: null }); },
+        onProgress: (completed, total) => {
+          setStatus(`Подготовка экспорта ${completed}/${total}`);
+          setWorkProgress(actionProgress('local-export', completed, total));
+        },
+      });
+      setStatus(`Сессия экспортирована: ${result.directory} · ${result.files} файлов. Копии проверены.`);
+    } catch (error) { setStatus(`Экспорт сессии: ${errorText(error)}`); }
+    finally { setBusy(false); setWorkProgress(null); }
+  };
   const copyPreview = async () => {
     try {
       await copyText(txtText);
@@ -530,14 +550,10 @@ export default function App() {
               {publisher === 'ninjabox' && <IonItem><IonLabel className="publisher-note">
                 NinjaBox: публичная публикация через встроенный relay. Для анонимного режима используйте Onion.
               </IonLabel></IonItem>}
-              <IonItem><IonInput label="Сессия" labelPlacement="stacked" value={session}
-                placeholder="Например 17 или Север-2" onIonInput={(event) => setSession(event.detail.value || '')} /></IonItem>
-              <IonItem><IonInput label="Цвет" labelPlacement="stacked" value={color}
-                onIonInput={(event) => setColor(event.detail.value || '')} /></IonItem>
-              <IonItem><IonInput label="Фасовка" labelPlacement="stacked" value={packing}
-                onIonInput={(event) => setPacking(event.detail.value || '')} /></IonItem>
-              <IonItem><IonTextarea label="Комментарий" labelPlacement="stacked" value={comment}
-                onIonInput={(event) => setComment(event.detail.value || '')} /></IonItem>
+              <RecentField field="session" label="Сессия" value={session} onChange={setSession} placeholder="Например 17 или Север-2" />
+              <RecentField field="color" label="Цвет" value={color} onChange={setColor} />
+              <RecentField field="packing" label="Фасовка" value={packing} onChange={setPacking} />
+              <RecentField field="comment" label="Комментарий" value={comment} onChange={setComment} multiline />
             </IonList>
             <IonButton className="primary-action" expand="block"
               onClick={resumeAvailable || (reviewing && publisher !== 'none') ? resumePublication : run}
@@ -562,6 +578,7 @@ export default function App() {
               <IonBadge color="warning">Резерв {grouped.reserve.length}</IonBadge>
               <IonBadge color="danger">Требует проверки {grouped.unresolved.length}</IonBadge>
             </div>
+            {hasSessionFolderExport() && <IonButton fill="outline" onClick={exportSession} disabled={busy || !active.length}>Экспортировать сессию</IonButton>}
             <div className="export-groups">
               <div><strong>TXT</strong><div className="compact-actions">
                 <IonButton fill="clear" onClick={() => { setCopyStatus(''); setTxtOpen(true); }}>Посмотреть</IonButton>

@@ -5,11 +5,11 @@ export function actionProgress(kind, completed, total, itemFraction = null) {
   const done = Math.max(0, Math.min(total, Math.floor(completed)));
   const part = bounded(itemFraction);
   const current = Math.min(total, done + 1);
-  const names = { recognition: 'Распознавание', cleanup: 'Очистка', ninjabox: 'NinjaBox', onion: 'Onion', clipboard: 'Копирование блоков' };
+  const names = { recognition: 'Распознавание', cleanup: 'Очистка', ninjabox: 'NinjaBox', onion: 'Onion', clipboard: 'Копирование блоков', 'local-export': 'Экспорт сессии' };
   return {
     kind,
-    label: `${names[kind] || kind} ${kind === 'clipboard' ? done : current}/${total}`,
-    type: part === null && kind !== 'clipboard' ? (kind === 'recognition' ? 'buffer' : 'indeterminate') : 'determinate',
+    label: `${names[kind] || kind} ${['clipboard', 'local-export'].includes(kind) ? done : current}/${total}`,
+    type: part === null && !['clipboard', 'local-export'].includes(kind) ? (kind === 'recognition' ? 'buffer' : 'indeterminate') : 'determinate',
     value: Math.min(1, (done + (part || 0)) / total),
     buffer: current / total,
     itemPercent: part === null ? null : Math.round(part * 100),

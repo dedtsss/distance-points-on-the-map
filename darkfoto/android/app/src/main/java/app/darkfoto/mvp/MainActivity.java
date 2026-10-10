@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DarkFotoFolderPlugin.class);
         registerPlugin(DarkFotoUpdatePlugin.class);
         registerPlugin(DarkFotoTextPlugin.class);
+        registerPlugin(DarkFotoSessionExportPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

@@ -113,3 +113,15 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 
 .image-viewer-modal { --width: 100%; --height: 100%; --border-radius: 0; }
 .photo-thumbnail:focus-visible, .image-gesture-area:focus-visible { outline: 2px solid var(--ion-color-primary); outline-offset: 2px; }
+
+.recent-field { display: grid; gap: 6px; padding: 12px 16px; border-bottom: 1px solid #344352; min-width: 0; }
+.recent-field label { color: #c4d0dc; font-size: .85rem; }
+.recent-field input, .recent-field textarea { width: 100%; min-height: 48px; padding: 8px; color: #eef1f5; background: #121a22; border: 1px solid #45576a; border-radius: 6px; font: inherit; font-size: 16px; box-sizing: border-box; }
+.recent-field textarea { resize: vertical; }
+.recent-field input:focus, .recent-field textarea:focus { outline: 2px solid var(--ion-color-primary); }
+.recent-suggestions { display: grid; gap: 6px; min-width: 0; }
+.recent-suggestions [role=listbox] { max-height: 220px; overflow-y: auto; }
+.recent-suggestions button { display: block; width: 100%; min-height: 48px; padding: 8px 12px; text-align: left; border: 1px solid #45576a; border-radius: 6px; background: #263442; color: #eef1f5; font: inherit; white-space: normal; overflow-wrap: anywhere; }
+.recent-suggestions [aria-selected=true], .recent-suggestions button:focus-visible { outline: 2px solid var(--ion-color-primary); outline-offset: -2px; }
+.recent-suggestions .recent-forget { font-size: .8rem; background: transparent; }
+.recent-suggestions button:disabled { opacity: .5; }
