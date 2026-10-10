@@ -53,6 +53,12 @@ await page.route('https://*.workers.dev/v1/ninjabox', async (route) => {
   await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() });
 });
 
+const pointAct = async (point, name) => {
+  await point.getByRole('button', { name: /Действия точки/ }).click();
+  await page.locator('.point-action-sheet').getByRole('button', { name, exact: true }).click();
+  await page.locator('.point-action-sheet').waitFor({ state: 'hidden' });
+};
+
 const openTxt = async () => {
   await page.evaluate(() => {
     window.__txtPresented = false;
@@ -77,23 +83,23 @@ try {
   assert.equal(await cards.first().locator('.photo-identity').textContent(), '#6882');
   assert.equal(await cards.first().locator('.photo-thumbnail').count(), 3);
   assert.equal(batches.length, 0, 'review must precede any publication');
-  await cards.first().getByRole('button', { name: 'Разделить', exact: true }).click();
+  await pointAct(cards.first(), 'Разделить');
   assert.equal(await cards.count(), 10);
   assert.equal(await page.locator('ion-badge').filter({ hasText: 'Резерв' }).textContent(), 'Резерв 2');
   assert.deepEqual(await page.locator('.point-section-title').allTextContents(), ['Основные8', 'Резерв2']);
   assert.equal(await page.locator('.point-section-reserve .reserve-reasons').count(), 2);
   assert.match(await page.locator('.point-section-reserve .reserve-reasons').first().textContent(), /Конфликт: #6881 · 0\.0 м/);
-  await page.getByRole('button', { name: 'Со следующей #6882', exact: true }).click();
+  await pointAct(cards.first(), 'Со следующей #6882');
   assert.equal(await cards.count(), 9);
   const reserve6883 = cards.filter({ has: page.locator('.photo-identity', { hasText: '#6883' }) });
-  await reserve6883.getByRole('button', { name: 'С предыдущей #6882', exact: true }).click();
+  await pointAct(reserve6883, 'С предыдущей #6882');
   assert.equal(await cards.count(), 8);
   assert.equal(await cards.first().locator('.photo-identity').textContent(), '#6882');
   assert.equal(await page.locator('ion-badge').filter({ hasText: 'Резерв' }).textContent(), 'Резерв 0');
   const initialOrder = await cards.locator('.photo-identity').allTextContents();
   const card = (identity) => cards.filter({ has: page.locator('.photo-identity', { hasText: identity }) });
   for (const identity of ['#6884', '#6886', '#6888']) {
-    await card(identity).getByRole('button', { name: 'Убрать', exact: true }).click();
+    await pointAct(card(identity), 'Убрать');
     assert.equal(await cards.count(), 8);
     assert.deepEqual(await cards.locator('.photo-identity').allTextContents(), initialOrder);
   }
@@ -163,7 +169,7 @@ try {
   assert.match(await page.locator('.txt-preview').textContent(), /#6884/);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   // Publish with an excluded row still present in its slot.
-  await card('#6886').getByRole('button', { name: 'Убрать', exact: true }).click();
+  await pointAct(card('#6886'), 'Убрать');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await card('#6886').scrollIntoViewIfNeeded();
   await page.screenshot({ path: '/tmp/darkfoto-039-review.png', fullPage: true });
@@ -211,8 +217,8 @@ try {
   const targetPoint = () => page.locator(`[data-point-id="${targetId}"]`);
   const act = async (point, memberId, name) => {
     await point.locator(`[data-member-id="${memberId}"]`).getByRole('button', { name: /Действия фото/ }).click();
-    await page.locator('ion-action-sheet').getByRole('button', { name, exact: true }).click();
-    await page.locator('ion-action-sheet').waitFor({ state: 'hidden' });
+    await page.locator('.photo-action-sheet').getByRole('button', { name, exact: true }).click();
+    await page.locator('.photo-action-sheet').waitFor({ state: 'hidden' });
   };
   await act(source(), '3', 'Переместить');
   await page.locator('.move-photo-modal ion-searchbar input').fill('6884');
@@ -223,7 +229,7 @@ try {
   assert.equal(await cards.count(), 8);
   assert.equal(await page.locator('.point-link').count(), 6);
   assert.equal(batches.length, 8);
-  await source().getByRole('button', { name: 'Копировать блок', exact: true }).click();
+  await pointAct(source(), 'Копировать блок');
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /Фото: ссылка отсутствует/);
   await page.evaluate(() => { globalThis.__multipleLinks = true; });
   await page.getByRole('button', { name: 'Продолжить публикацию', exact: true }).click();
@@ -246,9 +252,9 @@ try {
   assert.equal(await source().locator('.photo-identity').textContent(), '#6881');
   assert.equal(await source().locator('.photo-thumbnail').count(), 1);
   assert.equal(await source().locator('.point-link').count(), 0);
-  await page.getByRole('button', { name: 'Отменить удаление фото', exact: true }).click();
+  await source().getByRole('button', { name: /Вернуть фото точки/ }).click();
   assert.equal(await source().locator('.photo-identity').textContent(), '#6882');
-  assert.equal(await source().locator('.point-link').count(), 2);
+  assert.equal(await source().locator('.point-link').count(), 0, 'restore invalidates publication instead of reviving obsolete URLs');
   await act(card('#6886'), '6', 'Убрать фото');
   assert.equal(await card('#6886').locator('.point-card-body').count(), 0);
   const beforeAppend = await page.evaluate(() => globalThis.__recognitions.slice());

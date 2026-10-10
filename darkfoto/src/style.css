@@ -38,10 +38,10 @@ ion-button { min-height: 48px; }
 .point-card-header-review { box-shadow: inset 3px 0 0 rgba(229, 80, 80, .9); }
 .point-card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
 .point-card-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; color: #c4d0dc; font-size: .86rem; }
-.point-card-body { display: flex; gap: 12px; padding: 12px; min-width: 0; }
+.point-card-body { display: grid; gap: 12px; padding: 12px; min-width: 0; }
 .point-thumbnails { display: flex; flex: 0 0 100px; flex-direction: column; gap: 8px; }
-.point-thumbnails.multi-photo { flex: 0 0 64px; }
-.multi-photo .photo-thumbnail { flex-basis: 64px; width: 64px; height: 64px; }
+.point-thumbnails.multi-photo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.multi-photo .photo-thumbnail { width: 100%; height: auto; aspect-ratio: 1; }
 .photo-thumbnail { flex: 0 0 100px; width: 100px; height: 100px; padding: 0; border: 1px solid #45576a; border-radius: 9px; background: #263442; overflow: hidden; cursor: pointer; }
 .photo-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 .photo-detail { display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 7px; min-width: 0; }
@@ -83,9 +83,9 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 .group-copy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .group-copy-actions ion-button { flex: 1 1 220px; margin: 0; }
 .image-viewer-content { --background: #080d12; }
-.image-gesture-area { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; min-height: 100%; overflow: hidden; touch-action: none; }
+.image-gesture-area { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; min-height: 100%; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 .image-gesture-area img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; pointer-events: none; will-change: transform; }
-.viewer-actions { display: flex; justify-content: center; gap: 4px; padding: 4px 8px max(8px, env(safe-area-inset-bottom)); }
+.viewer-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 4px 8px max(8px, env(safe-area-inset-bottom)); }
 .viewer-actions ion-button { margin: 0; min-width: 48px; }
 @media (max-width: 370px) { .photo-thumbnail { flex-basis: 90px; width: 90px; height: 90px; } }
 
@@ -110,3 +110,6 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 .move-photo-modal { --width: min(100%, 480px); --height: min(85%, 640px); }
 .move-photo-modal ion-label { white-space: normal; overflow-wrap: anywhere; }
 .move-photo-modal ion-searchbar { --background: var(--ion-item-background); --color: var(--ion-text-color); --placeholder-color: var(--ion-text-color); --icon-color: var(--ion-text-color); --clear-button-color: var(--ion-text-color); }
+
+.image-viewer-modal { --width: 100%; --height: 100%; --border-radius: 0; }
+.photo-thumbnail:focus-visible, .image-gesture-area:focus-visible { outline: 2px solid var(--ion-color-primary); outline-offset: 2px; }

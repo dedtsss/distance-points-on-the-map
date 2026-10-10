@@ -76,7 +76,7 @@ export function splitPoint(points, id) {
   if (hasPublishedPoints(points)) return points;
   const occupied = new Set(points.filter((point) => point.id !== id).map((point) => point.id));
   return points.flatMap((point) => point.id === id && !point.removed ? pointMembers(point).map((photo, index) =>
-    availableIdentity({ ...makePoint([photo]), ...(index === 0 ? { excludedMembers: point.excludedMembers || [] } : {}) }, occupied)) : [point]);
+    availableIdentity({ ...makePoint([photo]), ...(index === 0 ? { excludedMembers: point.excludedMembers || [], memberUndo: point.memberUndo || [] } : {}) }, occupied)) : [point]);
 }
 
 export function mergePoint(points, id, direction) {
@@ -88,7 +88,8 @@ export function mergePoint(points, id, direction) {
   const start = Math.min(position, neighbor);
   const occupied = new Set(points.filter((_, index) => index !== start && index !== start + 1).map((point) => point.id));
   return [...points.slice(0, start), availableIdentity({ ...makePoint([...pointMembers(points[start]), ...pointMembers(points[start + 1])]),
-    excludedMembers: [...(points[start].excludedMembers || []), ...(points[start + 1].excludedMembers || [])] }, occupied),
+    excludedMembers: [...(points[start].excludedMembers || []), ...(points[start + 1].excludedMembers || [])],
+    memberUndo: [...(points[start].memberUndo || []), ...(points[start + 1].memberUndo || [])].sort((a, b) => a.order - b.order) }, occupied),
     ...points.slice(start + 2)];
 }
 
@@ -101,7 +102,7 @@ const invalidatePublication = (point) => ({ ...point.uploadResult,
 function withMembers(point, members) {
   return { ...point, ...makePoint(members), id: point.id,
     reviewSection: point.reviewSection, reviewSlot: point.reviewSlot,
-    removed: false, emptyFromMove: false, publishError: undefined,
+    removed: false, emptyFromMove: false, memberRemovedLast: false, publishError: undefined,
     uploadResult: invalidatePublication(point) };
 }
 
@@ -111,10 +112,30 @@ export function removeMember(points, pointId, memberId) {
     const members = pointMembers(point);
     const member = members.find((photo) => photo.id === memberId);
     if (!member) return point;
+    const order = Math.max(0, ...points.flatMap((item) => (item.memberUndo || []).map((entry) => entry.order))) + 1;
+    const memberUndo = [...(point.memberUndo || []), { memberId, order }];
     // Keep the final member in the existing recoverable removed-point slot.
-    if (members.length === 1) return { ...point, removed: true, uploadResult: invalidatePublication(point) };
+    if (members.length === 1) return { ...point, removed: true, memberRemovedLast: true, memberUndo, uploadResult: invalidatePublication(point) };
     return { ...withMembers(point, members.filter((photo) => photo.id !== memberId)),
-      excludedMembers: [...(point.excludedMembers || []), member] };
+      excludedMembers: [...(point.excludedMembers || []), member], memberUndo };
+  });
+}
+
+// Restore only the removed member into the current edited membership. Never
+// revive a snapshot's obsolete publication or overwrite subsequent moves/appends.
+export function restoreLastMember(points, pointId) {
+  const point = points.find((item) => item.id === pointId);
+  const entry = point?.memberUndo?.at(-1);
+  if (!entry) return points;
+  const member = point.excludedMembers?.find((item) => item.id === entry.memberId);
+  const retained = point.removed && !point.emptyFromMove
+    && pointMembers(point).some((item) => item.id === entry.memberId);
+  if (!member && !retained) return points;
+  if (member && points.some((item) => pointMembers(item).some((photo) => photo.id === member.id))) return points;
+  return points.map((item) => item.id !== pointId ? item : {
+    ...withMembers(item, member ? [...pointMembers(item), member] : pointMembers(item)),
+    excludedMembers: (item.excludedMembers || []).filter((photo) => photo.id !== entry.memberId),
+    memberUndo: item.memberUndo.slice(0, -1),
   });
 }
 
@@ -134,6 +155,7 @@ export function moveMember(points, sourceId, memberId, targetId) {
 
 export function restoreMemberPoint(points, id) {
   const point = points.find((item) => item.id === id);
+  if (point?.removed && point.memberRemovedLast && point.memberUndo?.length && !point.emptyFromMove) return restoreLastMember(points, id);
   if (!point?.emptyFromMove) return points.map((item) => item.id === id ? { ...item, removed: false } : item);
   // An empty source keeps only a recovery snapshot, never duplicate ownership.
   const memberId = point.members[0].id;
@@ -143,7 +165,8 @@ export function restoreMemberPoint(points, id) {
     if (!excluded) return points;
     const member = excluded.excludedMembers.find((item) => item.id === memberId);
     return points.map((item) => item.id === id ? withMembers(item, [member])
-      : item.id === excluded.id ? { ...item, excludedMembers: item.excludedMembers.filter((photo) => photo.id !== memberId) } : item);
+      : item.id === excluded.id ? { ...item, excludedMembers: item.excludedMembers.filter((photo) => photo.id !== memberId),
+        memberUndo: (item.memberUndo || []).filter((entry) => entry.memberId !== memberId) } : item);
   }
   const ready = points.map((item) => item.id === id
     ? { ...item, removed: false, emptyFromMove: false, members: [] }

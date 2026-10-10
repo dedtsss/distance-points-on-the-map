@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { makePoint, pointMembers, moveMember, removeMember, appendPhotos, restoreMemberPoint, splitPoint, mergePoint } from '../src/core/photoPoints.js';
+import { makePoint, pointMembers, moveMember, removeMember, appendPhotos, restoreMemberPoint, restoreLastMember, splitPoint, mergePoint } from '../src/core/photoPoints.js';
 import { activePoints, establishReviewSlots, setPointRemoved, reviewSections } from '../src/pointState.js';
 import { splitBatch } from '../src/core/batch.js';
 import { buildResultText } from '../src/resultSummary.js';
@@ -23,6 +23,55 @@ const recover = (rows, count) => validateRecovery(JSON.parse(JSON.stringify({ ro
 const completed = (points) => points.map((point) => ({ ...point,
   uploadResult: { links: [{ provider: 'ninjabox', url: `https://example.org/old/${point.id}` },
     { provider: 'other', url: `https://other.example/${point.id}` }] } }));
+
+test('three member removals restore in LIFO order per point, recomputing exports and invalidating publication', () => {
+  const before = completed([makePoint([photo(1), photo(2), photo(3), photo(4)]), makePoint([photo(5, 100)])]);
+  const id = before[0].id;
+  let rows = before;
+  for (const member of ['1', '2', '3']) rows = removeMember(rows, id, member);
+  rows = recover(rows, 5);
+  assert.deepEqual(rows[0].memberUndo.map((entry) => entry.memberId), ['1', '2', '3']);
+  for (const member of ['3', '2', '1']) {
+    const count = pointMembers(rows[0]).length;
+    rows = restoreLastMember(rows, id);
+    assert.equal(pointMembers(rows[0]).length, count + 1);
+    assert.equal(rows[0].representativeId, member);
+    assert.match(buildGpx(splitBatch(rows)), new RegExp(`#695${member}`));
+    assert.match(buildResultText({ grouped: splitBatch(rows) }), new RegExp(`#695${member}`));
+    assert.equal(rows[0].uploadResult.links.length, 0);
+    assert.equal(rows[0].uploadResult.stale, true);
+    assert.equal(rows[1].uploadResult.links.length, 2);
+    rows = recover(rows, 5);
+  }
+  assert.deepEqual(membership(rows), membership(before));
+  assert.equal(restoreLastMember(rows, id), rows);
+});
+
+test('final-member restore, independent points, append/move and split/merge retain current membership', () => {
+  let rows = fixture(); const id = rows[1].id;
+  for (const member of ['2', '3', '4']) rows = removeMember(rows, id, member);
+  assert.equal(rows[1].removed, true);
+  rows = removeMember(rows, rows[0].id, '1');
+  rows = restoreLastMember(recover(rows, 4), id);
+  assert.equal(rows[1].removed, false);
+  assert.equal(rows[0].removed, true);
+  assert.deepEqual(membership(rows)[1], ['4']);
+  rows = restoreLastMember(rows, id);
+  rows = appendPhotos(rows, [photo(5, 1)]);
+  rows = restoreLastMember(rows, id);
+  assert.deepEqual(membership(rows)[1], ['2', '3', '4', '5']);
+  recover(rows, 5);
+  rows = restoreLastMember(rows, rows[0].id);
+  rows = removeMember(rows, id, '3');
+  rows = moveMember(rows, id, '4', rows[0].id);
+  rows = restoreLastMember(rows, id);
+  assert.deepEqual(membership(rows), [['1', '4'], ['2', '3', '5']]);
+  rows = removeMember(rows, id, '3');
+  rows = splitPoint(rows, id);
+  const owner = rows.find((point) => point.memberUndo?.length);
+  rows = restoreLastMember(rows, owner.id);
+  assert.deepEqual(membership(recover(rows, 5)), [['1', '4'], ['2', '3'], ['5']]);
+});
 
 test('A=1 / B=3: move third member yields A=2 / B=2 with stable entity IDs and order', () => {
   const before = fixture();

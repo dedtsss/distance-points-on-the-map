@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
-import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint } from './core/photoPoints.js';
+import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint, restoreLastMember } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { outgoingName, publishBatch } from './publishBatch.js';
@@ -60,7 +60,7 @@ export default function App() {
   const [photoAction, setPhotoAction] = useState(null);
   const [moveAction, setMoveAction] = useState(null);
   const [targetSearch, setTargetSearch] = useState('');
-  const [photoUndo, setPhotoUndo] = useState(null);
+  const [pointAction, setPointAction] = useState(null);
   const appendInput = useRef(null);
 
   const rememberPreview = (id, file) => {
@@ -161,7 +161,6 @@ export default function App() {
   };
 
   const select = (event) => {
-    setPhotoUndo(null);
     clearPreviews();
     setFiles(imageFiles(event.target.files || []));
     setRows([]);
@@ -173,8 +172,7 @@ export default function App() {
   const selectAndroidFolder = async () => {
     try {
       const picked = await pickAndroidFolder();
-      setPhotoUndo(null);
-      await clearAndroidRecovery();
+        await clearAndroidRecovery();
       clearPreviews();
       setFiles(picked);
       setRows([]);
@@ -187,8 +185,7 @@ export default function App() {
   const selectAndroidPhotos = async () => {
     try {
       const picked = await pickAndroidPhotos();
-      setPhotoUndo(null);
-      await clearAndroidRecovery();
+        await clearAndroidRecovery();
       clearPreviews();
       setFiles(picked);
       setRows([]);
@@ -237,7 +234,6 @@ export default function App() {
   };
 
   const resumePublication = async () => {
-    setPhotoUndo(null);
     setBusy(true);
     try {
       const destination = publisher === 'onion' ? onionBaseUrl(onion) : ninjaboxRelayUrl(ninjaboxRelay);
@@ -293,7 +289,6 @@ export default function App() {
   };
 
   const run = async () => {
-    setPhotoUndo(null);
     setBusy(true);
     setRows([]);
     setSplit(null);
@@ -318,7 +313,6 @@ export default function App() {
     if (busy || !selected.length || !split) return;
     if (files.length + selected.length > 100) { setStatus('В сессии может быть до 100 фото.'); return; }
     setBusy(true);
-    setPhotoUndo(null);
     try {
       const additions = await recognizeFiles(selected, files.length);
       const combinedFiles = [...files, ...selected];
@@ -424,18 +418,15 @@ export default function App() {
   const displaySections = grouped ? reviewSections(rows, grouped)
     : [{ key: 'recognized', title: '', items: rows }];
   const applyRegroup = (nextRows) => {
-    setPhotoUndo(null);
     setRows(establishReviewSlots(nextRows, splitBatch(nextRows)));
   };
   const removePoint = (photo) => {
     if (!reviewing || busy || hasPublishedPoints(rows)) return;
-    setPhotoUndo(null);
     setRows((current) => setPointRemoved(current, photo.id, true));
     setStatus(`${pointLabel(photo)} убрана из текущего набора.`);
   };
   const restorePoint = (photo) => {
     if (busy) return;
-    setPhotoUndo(null);
     setRows((current) => restoreMemberPoint(current, photo.id));
     if (!reviewing && publisher !== 'none') setResumeAvailable(true);
     setStatus(`${pointLabel(photo)} возвращена.`);
@@ -446,14 +437,11 @@ export default function App() {
   };
   const removePhoto = ({ pointId, memberId }) => {
     if (busy) return;
-    const before = rows.find((point) => point.id === pointId);
-    setPhotoUndo(before);
     applyMembership(removeMember(rows, pointId, memberId));
     setStatus('Фото убрано из точки. Исходный файл сохранён.');
   };
   const movePhoto = (targetId) => {
     if (busy || !moveAction) return;
-    setPhotoUndo(null);
     applyMembership(moveMember(rows, moveAction.pointId, moveAction.memberId, targetId));
     setMoveAction(null);
     setStatus('Фото перемещено. Проверьте обновлённые точки.');
@@ -462,6 +450,22 @@ export default function App() {
     try { await copyText(url); setCopyStatus('Ссылка скопирована.'); }
     catch (error) { setCopyStatus(`Не удалось скопировать: ${errorText(error)}`); }
   };
+  const viewerPoint = rows.find((point) => point.id === viewer?.pointId);
+  const viewerMembers = viewerPoint && !viewerPoint.removed ? pointMembers(viewerPoint) : [];
+  const viewerIndex = viewerMembers.findIndex((member) => member.id === viewer?.memberId);
+  const actionPoint = rows.find((point) => point.id === pointAction && !point.removed);
+  const canRegroup = reviewing && !busy && !hasPublishedPoints(rows);
+  const pointButtons = actionPoint ? [
+    ...(canRegroup && pointMembers(actionPoint).length > 1 ? [{ text: 'Разделить', handler: () => applyRegroup(splitPoint(rows, actionPoint.id)) }] : []),
+    ...[-1, 1].flatMap((direction) => {
+      const neighbor = neighborOf(actionPoint, direction);
+      return canRegroup && neighbor ? [{ text: `${direction === -1 ? 'С предыдущей' : 'Со следующей'} ${pointLabel(neighbor)}`,
+        handler: () => applyRegroup(mergePoint(rows, actionPoint.id, direction)) }] : [];
+    }),
+    ...(validById.has(actionPoint.id) ? [{ text: 'Копировать блок', handler: () => copyOne(validById.get(actionPoint.id)) }] : []),
+    ...(canRegroup ? [{ text: 'Убрать', role: 'destructive', handler: () => removePoint(actionPoint) }] : []),
+    { text: 'Отмена', role: 'cancel' },
+  ] : [];
   const moveTargets = active.filter((point) => point.id !== moveAction?.pointId
     && `${pointLabel(point)} ${point.id}`.toLowerCase().includes(targetSearch.toLowerCase().trim()));
   const updateBar = updateProgress(nativeUpdate);
@@ -577,10 +581,6 @@ export default function App() {
               <IonButton fill="outline" onClick={() => copyBlocks(reserveBlocks, 'Резерв')}
                 disabled={!reserveBlocks.length || copyBusy}>Копировать резерв по одному</IonButton>
             </div>
-            {photoUndo && <IonButton fill="outline" disabled={busy} onClick={() => {
-              applyMembership(rows.map((point) => point.id === photoUndo.id ? photoUndo : point));
-              setPhotoUndo(null); setStatus('Фото возвращено.');
-            }}>Отменить удаление фото</IonButton>}
             {copyStatus && <IonText><p role="status" aria-live="polite">{copyStatus}</p></IonText>}
             {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
           </IonCardContent></IonCard>}
@@ -591,8 +591,6 @@ export default function App() {
                 <div className="result-photo-list">
                   {section.items.map((photo) => {
                     const state = photoStatus(photo);
-                    const previous = neighborOf(photo, -1);
-                    const next = neighborOf(photo, 1);
                     const statusLabel = state.kind === 'review' ? 'Требует проверки' : state.text;
                     return <article key={photo.id} className={`result-photo-card${photo.removed ? ' point-removed' : ''}`} data-point-id={photo.id}>
                       <header className={`point-card-header point-card-header-${state.kind}`}>
@@ -606,22 +604,28 @@ export default function App() {
                             ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
                         </div>
                         <div className="point-header-actions">
+                          {!photo.removed && grouped && <IonButton size="small" fill="clear" disabled={busy}
+                            aria-label={`Действия точки ${pointLabel(photo)}`} onClick={() => setPointAction(photo.id)}>⋯ Точка</IonButton>}
+                          {!!photo.memberUndo?.length && (!photo.removed || photo.memberRemovedLast) && <IonButton size="small" fill="outline" disabled={busy}
+                            aria-label={`Вернуть фото точки ${pointLabel(photo)}`} onClick={() => {
+                              applyMembership(restoreLastMember(rows, photo.id)); setStatus('Фото возвращено.');
+                            }}>Вернуть фото ({photo.memberUndo.length})</IonButton>}
                           {hasPointCoordinates(photo) && <IonButton size="small" fill="clear"
                             onClick={() => pointGpx(photo)}>GPX</IonButton>}
-                          {photo.removed && <IonButton size="small" fill="outline" disabled={busy}
+                          {photo.removed && !photo.memberRemovedLast && <IonButton size="small" fill="outline" disabled={busy}
                             onClick={() => restorePoint(photo)}>Вернуть</IonButton>}
                         </div>
                       </header>
                       {!photo.removed && <div className="point-card-body">
                         <div className={`point-thumbnails ${pointMembers(photo).length > 1 ? 'multi-photo' : ''}`}>
                           {pointMembers(photo).map((member) => <div key={member.id} className="member-photo" data-member-id={member.id}><button type="button" className="photo-thumbnail"
-                            onClick={() => setViewer(member.id)} disabled={!previews[member.id]}
+                            onClick={() => setViewer({ pointId: photo.id, memberId: member.id })} disabled={!previews[member.id]}
                             aria-label={`Открыть фото ${member.fileName || member.number} точки ${photo.indexFromOcr || photo.number}`}>
                             {previews[member.id] && <img src={previews[member.id]} alt="" loading="lazy" />}
                           </button>
                             {grouped && <IonButton fill="clear" size="small" disabled={busy}
                               aria-label={`Действия фото ${member.fileName || member.number}`}
-                              onClick={() => setPhotoAction({ pointId: photo.id, memberId: member.id, name: member.fileName || String(member.number) })}>Действия</IonButton>}
+                              onClick={() => setPhotoAction({ pointId: photo.id, memberId: member.id, name: member.fileName || String(member.number) })}>⋯</IonButton>}
                           </div>)}
                         </div>
                         <div className="photo-detail">
@@ -641,20 +645,7 @@ export default function App() {
                               <IonButton size="small" fill="clear" onClick={() => copyLink(link.url)}>Копировать</IonButton>
                             </div>
                           </div>)}
-                          {reviewing && !busy && !hasPublishedPoints(rows) && <div className="point-actions">
-                            {pointMembers(photo).length > 1 && <IonButton size="small" fill="outline"
-                              onClick={() => applyRegroup(splitPoint(rows, photo.id))}>Разделить</IonButton>}
-                            {previous && <IonButton size="small" fill="outline"
-                              onClick={() => applyRegroup(mergePoint(rows, photo.id, -1))}>С предыдущей {pointLabel(previous)}</IonButton>}
-                            {next && <IonButton size="small" fill="outline"
-                              onClick={() => applyRegroup(mergePoint(rows, photo.id, 1))}>Со следующей {pointLabel(next)}</IonButton>}
-                            {validById.has(photo.id) && <IonButton size="small" fill="outline"
-                              onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}
-                            <IonButton size="small" fill="clear" color="danger" onClick={() => removePoint(photo)}>Убрать</IonButton>
-                          </div>}
                           {photo.publishError && <span role="alert">Публикация: {photo.publishError}</span>}
-                          {!reviewing && validById.has(photo.id) && <IonButton size="small" fill="clear"
-                            onClick={() => copyOne(validById.get(photo.id))}>Копировать блок</IonButton>}
                         </div>
                       </div>}
                     </article>;
@@ -678,7 +669,9 @@ export default function App() {
         <IonButton fill="outline" onClick={() => setTxtOpen(false)}>Закрыть</IonButton>
       </div>{copyStatus && <span role="status">{copyStatus}</span>}</IonToolbar></IonFooter>
     </IonModal>
-    <IonActionSheet cssClass="publication-sheet" isOpen={!!photoAction} header={photoAction?.name}
+    <IonActionSheet cssClass="publication-sheet point-action-sheet" isOpen={!!actionPoint} header={actionPoint ? pointLabel(actionPoint) : ''}
+      onDidDismiss={() => setPointAction(null)} buttons={pointButtons} />
+    <IonActionSheet cssClass="publication-sheet photo-action-sheet" isOpen={!!photoAction} header={photoAction?.name}
       onDidDismiss={() => setPhotoAction(null)} buttons={[
         { text: 'Переместить', disabled: active.length < 2, handler: () => { setTargetSearch(''); setMoveAction(photoAction); } },
         { text: 'Убрать фото', role: 'destructive', handler: () => removePhoto(photoAction) },
@@ -697,6 +690,10 @@ export default function App() {
       </IonList></IonContent>
       <IonFooter><IonToolbar><IonButton expand="block" fill="outline" onClick={() => setMoveAction(null)}>Отмена</IonButton></IonToolbar></IonFooter>
     </IonModal>
-    <PhotoViewer src={viewer ? previews[viewer] : null} open={!!viewer} onClose={() => setViewer(null)} />
+    <PhotoViewer src={viewer ? previews[viewer.memberId] : null} open={!!viewer} onClose={() => setViewer(null)}
+      index={viewerIndex} total={viewerMembers.length} onNavigate={(direction) => {
+        const member = viewerMembers[viewerIndex + direction];
+        if (member) setViewer({ ...viewer, memberId: member.id });
+      }} />
   </IonPage></IonApp>;
 }
