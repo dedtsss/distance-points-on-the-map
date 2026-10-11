@@ -9,14 +9,14 @@ import { buildGpx, buildPointGpx, hasPointCoordinates, resultBlocksForCopy, vali
 import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
 import { formatPhotoResultBlock } from './core/features/export/resultBlockFormatter.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto,
-  saveAndroidRecovery, loadAndroidRecovery, clearAndroidRecovery } from './androidFolder.js';
+  clearAndroidRecovery } from './androidFolder.js';
 import { checkForUpdate, clearUpdateState, installRelease, installedVersion, isAndroidUpdateAvailable, startUpdateDownload, updateState } from './update.js';
 import { actionProgress, updateButton, updateProgress } from './progress.js';
 import { recognizeAndroidStamp } from './nativeOcr.js';
 import { copyResultBlocks, copyText, exportGpx, exportText, isNativeTextExport } from './androidText.js';
 import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
   IonCardContent, IonItem, IonLabel, IonInput, IonSelect, IonSelectOption,
-  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonSearchbar } from '@ionic/react';
+  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonSearchbar, IonAlert } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
 import changelog from '../CHANGELOG.md?raw';
 import buildInfo from '../build-info.json';
@@ -83,6 +83,9 @@ export default function App() {
   const [targetSearch, setTargetSearch] = useState('');
   const [pointAction, setPointAction] = useState(null);
   const appendInput = useRef(null);
+  const photoInput = useRef(null);
+  const folderInput = useRef(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   const rememberPreview = (id, file) => {
     const old = previewsRef.current[id];
@@ -98,37 +101,35 @@ export default function App() {
   };
   useEffect(() => () => Object.values(previewsRef.current).forEach((url) => URL.revokeObjectURL(url)), []);
 
+  // Active jobs live only in this app instance. Discard the legacy 0.5.0
+  // recovery cache without touching source photos or the separate field MRUs.
   useEffect(() => {
-    let active = true;
-    loadAndroidRecovery().then(async (saved) => {
-      if (!saved || !active) return;
-      setFiles(saved.files);
-      setRows(saved.rows.every((point) => Number.isFinite(point.reviewSlot))
-        ? saved.rows : establishReviewSlots(saved.rows, splitBatch(saved.rows)));
-      setSplit(splitBatch(saved.rows));
-      setPublisher(saved.publisher);
-      setOnion(saved.onion || '');
-      setSession(saved.session || '');
-      setComment(saved.comment || '');
-      setColor(saved.color || '');
-      setPacking(saved.packing || '');
-      setReviewing(saved.phase === 'review');
-      setResumeAvailable(!['review', 'complete'].includes(saved.phase));
-      const completed = activePoints(saved.rows).filter((row) => row.uploadResult?.links?.some((link) => link.provider === saved.publisher)).length;
-      setStatus(saved.phase === 'complete' ? 'Обработка завершена.' : saved.phase === 'review' ? 'Проверьте точки перед публикацией.'
-        : `${completed} из ${activePoints(saved.rows).length} точек готовы · можно продолжить`);
-      for (const row of saved.rows.flatMap(pointMembers)) {
-        if (!active) break;
-        try {
-          const file = await readAndroidPhoto(saved.files[row.number - 1]);
-          const cleaned = await cleanImageForUpload(file, { orientation: row.orientation,
-            preferredFilename: outgoingName(row, row.number) });
-          if (active) rememberPreview(row.id, cleaned.ok ? cleaned.file : file);
-        } catch { /* A missing preview does not hide the recovered link. */ }
-      }
-    }).catch((error) => { if (active) setStatus(`Восстановление: ${errorText(error)}`); });
-    return () => { active = false; };
+    clearAndroidRecovery().catch(() => { /* A stale cache cannot restore a job. */ });
   }, []);
+
+  const resetWork = async () => {
+    setBusy(true);
+    clearPreviews();
+    setFiles([]); setRows([]); setSplit(null);
+    setSession(''); setColor(''); setPacking(''); setComment('');
+    setPublisher('none'); setOnion('');
+    setResumeAvailable(false); setReviewing(false);
+    setStatus(''); setCopyStatus(''); setCopyBusy(false); setWorkProgress(null);
+    setViewer(null); setTxtOpen(false); setPhotoAction(null); setPointAction(null);
+    setMoveAction(null); setTargetSearch(''); setFocusedPoint(null);
+    setMapVisited(false); setScreen('photos');
+    for (const input of [photoInput, folderInput, appendInput]) {
+      if (input.current) input.current.value = '';
+    }
+    try { await clearAndroidRecovery(); }
+    catch { setStatus('Не удалось очистить старый кеш. Текущая работа очищена.'); }
+    finally { setBusy(false); }
+  };
+  const requestReset = () => {
+    if (busy || copyBusy) return;
+    if (files.length || rows.length || [session, color, packing, comment].some((value) => value.trim())) setResetOpen(true);
+    else resetWork();
+  };
 
   useEffect(() => {
     if (screen !== 'about' || !isAndroidUpdateAvailable()) return undefined;
@@ -218,37 +219,19 @@ export default function App() {
 
   const fileAt = (index) => files[index].native ? readAndroidPhoto(files[index]) : files[index];
 
-  const recoveryState = (current) => ({
-    files: files.map(({ id, name, type, size, native }) => ({ id, name, type, size, native })),
-    rows: current, publisher, onion, session, comment, color, packing, phase: reviewing ? 'review' : resumeAvailable ? 'publishing' : 'complete',
-  });
-
-  useEffect(() => {
-    if (busy || !files.length || !rows.length) return undefined;
-    const timer = setTimeout(() => {
-      saveAndroidRecovery(recoveryState(rows)).catch((error) => setStatus(`Сохранение состояния: ${errorText(error)}`));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [resumeAvailable, reviewing, busy, files, rows, publisher, onion, session, comment, color, packing]);
-
-  const publishCurrent = async (current, destination, includePhotos) => {
-    await saveAndroidRecovery({ ...recoveryState(current), phase: 'publishing' }, includePhotos);
+  const publishCurrent = async (current, destination) => {
     setReviewing(false);
     setResumeAvailable(true);
     const publication = await publishBatch(current, new Set(splitBatch(current).unresolved.map((photo) => photo.id)), {
       publisher, destination, fileAt, onStatus: setStatus,
       onCleaned: (row, cleaned) => rememberPreview(row.id, cleaned),
-      onRows: async (updated) => {
-        await saveAndroidRecovery({ ...recoveryState(updated), phase: 'publishing' });
-        setRows(updated);
-      },
+      onRows: setRows,
       onProgress: (stage, completed, total, fraction) =>
         setWorkProgress(actionProgress(stage, completed, total, fraction)),
     });
     const active = activePoints(current);
     const completed = active.filter((row) => row.uploadResult?.links?.some((link) => link.provider === publisher)).length;
     if (completed === active.length) setResumeAvailable(false);
-    await saveAndroidRecovery({ ...recoveryState(current), phase: completed === active.length ? 'complete' : 'publishing' });
     setStatus(publication.failures
       ? `Готово ${completed} из ${active.length}. Ошибок публикации: ${publication.failures}.${publication.stopped ? ' NinjaBox остановлен.' : ''}`
       : completed === active.length ? 'Обработка завершена.' : `Готово ${completed} из ${active.length}. Можно продолжить публикацию.`);
@@ -261,7 +244,7 @@ export default function App() {
       if (publisher === 'onion' && activePoints(rows).some((point) => pointMembers(point).length > 1)) {
         throw new Error('Onion публикует одно фото. Разделите многокадровые точки или выберите NinjaBox.');
       }
-      await publishCurrent([...rows], destination, true);
+      await publishCurrent([...rows], destination);
     } catch (error) { setStatus(`Продолжение: ${errorText(error)}`); }
     finally { setBusy(false); setWorkProgress(null); }
   };
@@ -321,7 +304,6 @@ export default function App() {
       setRows(points);
       setSplit(splitBatch(points));
       setReviewing(true);
-      await saveAndroidRecovery({ ...recoveryState(points), phase: 'review' }, true);
       setStatus('Распознавание завершено. Проверьте точки перед публикацией.');
     } catch (error) { setStatus(`Ошибка: ${errorText(error)}`); }
     finally {
@@ -343,7 +325,6 @@ export default function App() {
       const nextRows = combined.map((point) => Number.isFinite(point.reviewSlot) ? point
         : { ...point, reviewSection: slotted.find((item) => item.id === point.id).reviewSection,
           reviewSlot: Math.max(-1, ...rows.map((item) => item.reviewSlot)) + 1 + additions.findIndex((item) => item.id === point.id) });
-      await saveAndroidRecovery({ ...recoveryState(nextRows), files: combinedFiles.map(({ id, name, type, size, native }) => ({ id, name, type, size, native })), phase: 'review' }, true);
       setFiles(combinedFiles);
       setRows(nextRows);
       setSplit(splitBatch(nextRows));
@@ -557,10 +538,11 @@ export default function App() {
               <IonButton expand="block" fill="outline" onClick={selectAndroidPhotos} disabled={busy}>Выбрать фото</IonButton>
               <IonButton expand="block" fill="outline" onClick={selectAndroidFolder} disabled={busy}>Выбрать папку</IonButton>
             </div> : <div className="web-pickers">
-              <label>Отдельные фото<input type="file" accept="image/*" multiple onChange={select} disabled={busy} /></label>
-              <label>Папка с фото<input type="file" accept="image/*" webkitdirectory="" multiple onChange={select} disabled={busy} /></label>
+              <label>Отдельные фото<input ref={photoInput} type="file" accept="image/*" multiple onChange={select} disabled={busy} /></label>
+              <label>Папка с фото<input ref={folderInput} type="file" accept="image/*" webkitdirectory="" multiple onChange={select} disabled={busy} /></label>
             </div>}
             <p>Выбрано: {files.length}</p>
+            <IonButton fill="clear" onClick={requestReset} disabled={busy || copyBusy}>Начать заново</IonButton>
             {grouped && <>
               <IonButton fill="outline" onClick={addPhotos} disabled={busy}>Добавить фото</IonButton>
               <input ref={appendInput} type="file" accept="image/*" multiple hidden data-testid="append-photos"
@@ -708,6 +690,12 @@ export default function App() {
         </>}
       </div>
     </IonContent>
+    <IonAlert cssClass="reset-work-alert" isOpen={resetOpen} header="Начать заново?"
+      message="Выбранные фото, точки и поля текущей работы будут очищены. Исходники и подсказки сохранятся."
+      onDidDismiss={() => setResetOpen(false)} buttons={[
+        { text: 'Отмена', role: 'cancel' },
+        { text: 'Очистить', role: 'destructive', handler: () => { resetWork(); } },
+      ]} />
     <IonModal className="txt-modal" isOpen={txtOpen} onDidDismiss={() => setTxtOpen(false)}>
       <IonHeader><IonToolbar><IonTitle>TXT результат</IonTitle></IonToolbar></IonHeader>
       <IonContent className="txt-modal-content">
