@@ -136,9 +136,9 @@ try {
   assert.equal(await page.getByRole('listbox', { name: 'Подсказки: Сессия', exact: true }).getByRole('option').first().textContent(), 'Сессия изменён');
   assert.equal(await page.title(), 'DarkCat Photo');
   assert.equal(await page.locator('ion-segment-button').nth(0).textContent(), 'Точки');
-  assert.equal(await page.locator('ion-segment-button').count(), 2, 'Stage A has no nonfunctional map tab');
-  await page.locator('ion-segment-button').nth(1).click();
-  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.0.*этап A.*приёмки карты/);
+  assert.equal(await page.locator('ion-segment-button').count(), 3);
+  await page.locator('ion-segment-button').nth(2).click();
+  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.0.*проверочная сборка.*не опубликован/);
   const canonical = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
   assert.equal(await page.getByLabel('История изменений', { exact: true }).textContent(), canonical);
   for (const width of [320, 375, 812]) {
@@ -148,7 +148,7 @@ try {
   await page.setViewportSize({ width: 320, height: 812 });
   await page.screenshot({ path: '/tmp/darkcat-stage-a/about-320.png' });
   assert.deepEqual(errors, []);
-  console.log('Stage A: 3×3 at 320/375/812, point-scoped 5/9 swipe/zoom, three LIFO restores, real sanitized edited export/failure, four persisted MRUs, product name/two tabs/canonical changelog: PASS');
+  console.log('Stage A: 3×3 at 320/375/812, point-scoped 5/9 swipe/zoom, three LIFO restores, real sanitized edited export/failure, four persisted MRUs, product name/three tabs/canonical changelog: PASS');
 } finally {
   await browser.close(); server.httpServer.closeAllConnections(); await server.close();
 }

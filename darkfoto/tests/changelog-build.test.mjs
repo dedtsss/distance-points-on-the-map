@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { releaseNotes } from '../src/changelog.js';
 
-test('release notes use the canonical Russian source and Stage A cannot supply fictitious 0.5.0 release notes', async () => {
+test('release notes use the canonical Russian source and unreleased 0.5.0 is not dated as a published release', async () => {
   const source = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
   for (const version of ['0.4.0', '0.3.9', '0.3.8']) {
     const notes = releaseNotes(source, version);
@@ -16,7 +16,7 @@ test('release notes use the canonical Russian source and Stage A cannot supply f
   assert.equal(releaseNotes(source, '0.5.0'), '');
   assert.throws(() => execFileSync(process.execPath, [new URL('../scripts/release-notes.mjs', import.meta.url).pathname, '0.5.0'], { stdio: 'pipe' }));
   const build = JSON.parse(await readFile(new URL('../build-info.json', import.meta.url), 'utf8'));
-  assert.deepEqual(build, { version: '0.5.0', versionCode: 15, stage: 'A', releaseReady: false });
+  assert.deepEqual(build, { version: '0.5.0', versionCode: 15, stage: 'B', releaseReady: false });
   const config = JSON.parse(await readFile(new URL('../capacitor.config.json', import.meta.url), 'utf8'));
   assert.equal(config.appId, 'app.darkfoto.mvp');
   assert.equal(config.appName, 'DarkCat Photo');

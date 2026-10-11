@@ -25,6 +25,8 @@ import RecentField from './RecentField.jsx';
 import { exportLocalSession } from './localSessionExport.js';
 import { androidSessionDestination, hasSessionFolderExport } from './androidSessionExport.js';
 import { activePoints, setPointRemoved, establishReviewSlots, reviewSections } from './pointState.js';
+import { sessionMapPoints } from './sessionMap.js';
+const PointMap = React.lazy(() => import('./PointMap.jsx'));
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
   .sort((left, right) => (left.webkitRelativePath || left.name).localeCompare(right.webkitRelativePath || right.name));
@@ -42,6 +44,19 @@ export default function App() {
   const [publisher, setPublisher] = useState('none');
   const ninjaboxRelay = import.meta.env.VITE_NINJABOX_RELAY_URL || DEFAULT_NINJABOX_RELAY_URL;
   const [screen, setScreen] = useState('photos');
+  const [mapVisited, setMapVisited] = useState(false);
+  const [focusedPoint, setFocusedPoint] = useState(null);
+  const pointCards = useRef(new Map());
+  useEffect(() => {
+    if (screen !== 'photos' || !focusedPoint) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const card = pointCards.current.get(focusedPoint);
+      card?.focus({ preventScroll: true });
+      card?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    });
+    const timer = setTimeout(() => setFocusedPoint(null), 4000);
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+  }, [screen, focusedPoint]);
   const [version, setVersion] = useState(null);
   const [candidate, setCandidate] = useState(null);
   const [updateStatus, setUpdateStatus] = useState('');
@@ -506,13 +521,22 @@ export default function App() {
     <IonHeader><IonToolbar><IonTitle>DarkCat Photo</IonTitle></IonToolbar></IonHeader>
     <IonContent className="darkfoto-content">
       <div className="darkfoto-layout">
-        <IonSegment value={screen} onIonChange={(event) => event.detail.value === 'about' ? showAbout() : setScreen('photos')}>
+        <IonSegment value={screen} onIonChange={(event) => {
+          const next = event.detail.value;
+          if (next === 'about') showAbout();
+          else { if (next === 'map') setMapVisited(true); setScreen(next === 'map' ? 'map' : 'photos'); }
+        }}>
           <IonSegmentButton value="photos"><IonLabel>Точки</IonLabel></IonSegmentButton>
+          <IonSegmentButton value="map"><IonLabel>Карта</IonLabel></IonSegmentButton>
           <IonSegmentButton value="about"><IonLabel>О приложении</IonLabel></IonSegmentButton>
         </IonSegment>
+        {mapVisited && <React.Suspense fallback={screen === 'map' ? <p role="status">Загрузка карты…</p> : null}>
+          <PointMap visible={screen === 'map'} points={sessionMapPoints(rows, validById, photoStatus, pointLabel, previews)}
+            onOpenPoint={(id) => { setFocusedPoint(id); setScreen('photos'); }} />
+        </React.Suspense>}
         {screen === 'about' ? <IonCard><IonCardContent>
           <h2>О приложении / Обновление</h2>
-          {!buildInfo.releaseReady && <p className="stage-notice">{buildInfo.version} · этап {buildInfo.stage}, подготовка. Выпуск ожидает приёмки карты.</p>}
+          {!buildInfo.releaseReady && <p className="stage-notice">{buildInfo.version} · проверочная сборка. Выпуск не опубликован.</p>}
           <p>Установлена версия: {version ? `${version.versionName} (код ${version.versionCode})` : `${buildInfo.version} (код ${buildInfo.versionCode}, Web)`}</p>
           <p role="status">{updateStatus || nativeStatus || 'Обновление не проверено.'}</p>
           {updateBar?.active && <div className="progress-area" role="status" aria-label="Загрузка обновления">
@@ -525,7 +549,7 @@ export default function App() {
             {updateAction && <IonButton expand="block" onClick={downloadUpdate}>{updateAction}</IonButton>}</>}
           <h3>История изменений</h3>
           <pre className="changelog-text" aria-label="История изменений">{changelog}</pre>
-        </IonCardContent></IonCard> : <>
+        </IonCardContent></IonCard> : screen === 'photos' && <>
           <p className="intro">Выберите фотографии и получите Основные / Резерв. Исходники остаются на устройстве.</p>
           <IonCard><IonCardContent>
             <h2>Фотографии</h2>
@@ -616,7 +640,10 @@ export default function App() {
                   {section.items.map((photo) => {
                     const state = photoStatus(photo);
                     const statusLabel = state.kind === 'review' ? 'Требует проверки' : state.text;
-                    return <article key={photo.id} className={`result-photo-card${photo.removed ? ' point-removed' : ''}`} data-point-id={photo.id}>
+                    return <article key={photo.id} className={`result-photo-card${photo.removed ? ' point-removed' : ''}${focusedPoint === photo.id ? ' point-focused' : ''}`}
+                      data-point-id={photo.id} tabIndex={-1} ref={(element) => {
+                        if (element) pointCards.current.set(photo.id, element); else pointCards.current.delete(photo.id);
+                      }}>
                       <header className={`point-card-header point-card-header-${state.kind}`}>
                         <div className="point-card-title-row">
                           <strong className="photo-identity">{pointLabel(photo)}</strong>
