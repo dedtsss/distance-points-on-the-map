@@ -1,4 +1,5 @@
 import { pointMembers } from './core/photoPoints.js';
+import { haversineDistanceMeters } from './core/utils/geoDistance.js';
 
 export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
 export const MAP_LOAD_TIMEOUT_MS = 15000;
@@ -30,4 +31,16 @@ export function sessionMapBounds(points) {
   const east = west + 360 - gap;
   return [[west, Math.min(...points.map((point) => point.latitude))],
     [east, Math.max(...points.map((point) => point.latitude))]];
+}
+
+// Reserve points are close by definition; identical coordinates cannot be
+// separated by zoom. The preview lets users select each nearby logical point.
+export function nearbyMapPoints(points, selectedId) {
+  const selected = points.find((point) => point.id === selectedId);
+  if (!selected) return [];
+  return points.filter((point) => {
+    if (point.latitude === selected.latitude && point.longitude === selected.longitude) return true;
+    const distance = haversineDistanceMeters(selected, point);
+    return distance !== null && distance <= 25;
+  });
 }

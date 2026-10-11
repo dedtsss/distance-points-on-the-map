@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sessionMapPoints, sessionMapBounds, MAP_STYLE } from '../src/sessionMap.js';
+import { sessionMapPoints, sessionMapBounds, nearbyMapPoints, MAP_STYLE } from '../src/sessionMap.js';
 import { groupPhotos, removeMember, restoreLastMember, moveMember, appendPhotos } from '../src/core/photoPoints.js';
 import { splitBatch } from '../src/core/batch.js';
 import { setPointRemoved } from '../src/pointState.js';
@@ -53,4 +53,12 @@ test('bounds fit empty, single, ordinary and date-line sessions', () => {
   assert.deepEqual(sessionMapBounds([{ latitude: 64, longitude: 30 }]), [[30, 64], [30, 64]]);
   assert.deepEqual(sessionMapBounds([{ latitude: 63, longitude: 29 }, { latitude: 64, longitude: 31 }]), [[29, 63], [31, 64]]);
   assert.deepEqual(sessionMapBounds([{ latitude: 10, longitude: 179 }, { latitude: -10, longitude: -179 }]), [[179, -10], [181, 10]]);
+});
+
+test('nearby chooser retains distinct coincident points and excludes distant/stale selections', () => {
+  const points = [{ id: 'a', latitude: 64, longitude: 30 }, { id: 'b', latitude: 64, longitude: 30 },
+    { id: 'c', latitude: 64, longitude: 30.0003 }, { id: 'd', latitude: 64, longitude: 30.01 }];
+  assert.deepEqual(nearbyMapPoints(points, 'a').map((point) => point.id), ['a', 'b', 'c']);
+  assert.deepEqual(nearbyMapPoints(points, 'removed'), []);
+  assert.deepEqual(nearbyMapPoints([...points, { id: 'zero', latitude: 0, longitude: 0 }], 'a').map((p) => p.id), ['a', 'b', 'c']);
 });

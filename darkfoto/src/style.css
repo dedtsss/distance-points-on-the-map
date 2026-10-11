@@ -157,6 +157,8 @@ ion-segment-button ion-label { white-space: normal; word-break: normal; overflow
 .map-preview > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .map-preview strong { display: block; font-size: 1.1rem; }
 .map-preview p { font-size: .85rem; margin: 8px 0; }
+.map-nearby { display: grid; gap: 5px; margin: 8px 0; color: #c4d0dc; font-size: .82rem; }
+.map-nearby select { min-width: 0; width: 100%; min-height: 48px; padding: 8px; border: 1px solid #45576a; border-radius: 8px; background: #1b2530; color: #eef1f5; font: inherit; }
 .map-dismiss { margin-left: 5px; background: #1b2530; border-color: #45576a; color: #c4d0dc; }
 .map-error { padding: 10px 12px; margin-top: 10px; border: 1px solid #a85146; border-radius: 12px; background: #311f1c; }
 .map-error p { margin: 0 0 8px; }

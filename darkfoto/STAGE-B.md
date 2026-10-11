@@ -9,7 +9,7 @@ Stage B продолжает чистый Stage A head `893d9d8f93b7ac1f46c85402
 - Три вкладки: «Точки», «Карта», «О приложении». MapLibre 6.13.0 закреплён в lockfile; движок и локальный Vite worker загружаются при первом посещении карты.
 - Production style: `https://tiles.openfreemap.org/styles/dark`. Атрибуция MapLibre/OpenFreeMap/OpenMapTiles/OpenStreetMap остаётся видимой. Собственного tile proxy, API-key plumbing или изменения runtime access нет.
 - `sessionMapPoints` — вычисляемая проекция тех же `rows` и текущих результатов классификации. Состав, представитель, координаты, количество фото и статус пересчитываются существующими правилами. Удалённые/пустые/no-coordinate точки не становятся активными маркерами.
-- Основные/Резерв/Проверка различаются цветом, символом и подписью; у Резерва дополнительная пунктирная рамка. Маркеры доступны кнопками с клавиатуры; близкие маркеры можно разделить увеличением масштаба.
+- Основные/Резерв/Проверка различаются цветом, символом и подписью; у Резерва дополнительная пунктирная рамка. Preview позволяет выбрать отдельную близкую точку (до 25 м), включая разные logical IDs с одинаковыми координатами. Маркеры доступны кнопками с клавиатуры; близкие маркеры можно разделить увеличением масштаба.
 - Компактный preview показывает индекс/идентичность, статус, координаты, число фото и локальное фото представителя. «Открыть точку» переключает вкладку и через реестр карточек фокусирует, прокручивает и подсвечивает точный logical point ID. Изменения сессии не теряются.
 - Маркеры обновляются после append, move/remove/restore фото и remove/restore точки; выбранный preview тоже вычисляется из текущей проекции. У карты нет отдельной копии point model.
 - Первый viewport и «Показать все» вписывают текущие точки, включая короткую дугу при пересечении линии перемены дат. Обычные правки и переключения вкладок сохраняют canvas/pan/zoom. Empty→restore/new session заново задаёт начальный viewport.
@@ -18,8 +18,8 @@ Stage B продолжает чистый Stage A head `893d9d8f93b7ac1f46c85402
 
 ## Проверки и evidence
 
-- `cd darkfoto && npm test`: 59 unit tests; browser OCR и real JPEG OCR; регрессии 0.4.0 membership/append/link/TXT/GPX/publication; полный Stage A browser acceptance; новый deterministic-provider map acceptance с настоящим MapLibre/WebGL/worker; попиксельная проверка утверждённых launcher/splash ресурсов.
-- `npm run test:map:live`: настоящий production Dark style, реальные provider tiles, статусы и preview, click/keyboard marker selection, exact point handoff, live representative/member/point/append changes и сохранение viewport. Локальная проверка получила 10 успешных tile responses. Отдельные deterministic tests проверяют HTTP 503, 15-second timeout, retry и empty→restore.
+- `cd darkfoto && npm test`: 60 unit tests; browser OCR и real JPEG OCR; регрессии 0.4.0 membership/append/link/TXT/GPX/publication; полный Stage A browser acceptance; новый deterministic-provider map acceptance с настоящим MapLibre/WebGL/worker; попиксельная проверка утверждённых launcher/splash ресурсов.
+- `npm run test:map:live`: настоящий production Dark style, реальные provider tiles, статусы и preview, click/keyboard marker selection, exact point handoff, live representative/member/point/append changes и сохранение viewport. Локальная проверка получила 13 успешных tile responses. Отдельные deterministic tests проверяют HTTP 503, 15-second timeout, retry и empty→restore.
 - Responsive acceptance: 320×812, 375×812, 812×375; все маркеры внутри canvas после fit; отсутствие горизонтального overflow; preview и point handoff. Stage A сохраняет 9-photo 3×3, 5/9→4↔5↔6, три LIFO restore, sanitized edited export/failure и четыре persisted MRU.
 - `npm run android:sync` (включает build), native `:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest assembleRelease`: 9 native tests, unsigned APK, package/version/code проверяются через `aapt`; `apksigner verify` отвергает unsigned artifact.
 - Root Web/Cloudflare builds и 2 Onion tests. Normal Web/Android CI запускаются на точном pushed head; Android CI дополнительно проверяет **live production map** и сохраняет `/tmp/darkcat-stage-a`, `/tmp/darkcat-stage-b` и native reports. Итоговые run links/head/result находятся в PR и обязательном ledger Issue #550.
@@ -31,6 +31,7 @@ Committed screenshots ниже получены от реального OpenFree
 ![Live Dark, common portrait](docs/stage-b-evidence/map-live-375.png)
 ![Live Dark, landscape](docs/stage-b-evidence/map-live-812.png)
 ![Exact point handoff](docs/stage-b-evidence/point-handoff-375.png)
+![Coincident logical points remain reachable](docs/stage-b-evidence/map-live-coincident-375.png)
 
 ## Reuse и ограничения проверки
 

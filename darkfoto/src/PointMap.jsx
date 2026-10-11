@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Map as LibreMap, Marker, NavigationControl, AttributionControl, setWorkerUrl } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { MAP_STYLE, MAP_LOAD_TIMEOUT_MS, sessionMapBounds } from './sessionMap.js';
+import { MAP_STYLE, MAP_LOAD_TIMEOUT_MS, sessionMapBounds, nearbyMapPoints } from './sessionMap.js';
 
 setWorkerUrl(workerUrl);
 const symbols = { main: 'О', reserve: 'Р', review: '!', recognized: '•' };
@@ -21,6 +21,7 @@ export default function PointMap({ points, visible, onOpenPoint }) {
   const preview = useRef(null);
   const hasPoints = points.length > 0;
   const selected = points.find((point) => point.id === selectedId);
+  const nearby = nearbyMapPoints(points, selectedId);
   useEffect(() => {
     if (!hasPoints) setStarted(false);
     else if (visible) setStarted(true);
@@ -115,6 +116,10 @@ export default function PointMap({ points, visible, onOpenPoint }) {
         {selected.thumbnail && <img src={selected.thumbnail} alt="Фото представителя точки" />}
         <div><strong>{selected.label}</strong><span className={`photo-state photo-state-${selected.status.kind}`}>{selected.status.text}</span>
           <p>{selected.count} фото · {selected.latitude}, {selected.longitude}</p>
+          {nearby.length > 1 && <label className="map-nearby">Близкие точки (до 25 м)
+            <select value={selected.id} onChange={(event) => setSelectedId(event.target.value)}>
+              {nearby.map((point) => <option key={point.id} value={point.id}>{point.label} · {point.status.kind === 'review' ? 'Проверка' : point.status.text}</option>)}
+            </select></label>}
           <button type="button" className="map-button" onClick={() => onOpenPoint(selected.id)}>Открыть точку</button>
           <button type="button" className="map-button map-dismiss" onClick={() => setSelectedId(null)}>Закрыть</button></div>
       </article> : <p className="map-hint">Нажмите на маркер, чтобы увидеть точку. На карте: {points.length}.</p>}

@@ -32,10 +32,10 @@ if (!live) {
 await page.route('**/src/core/readPhoto.js', (route) => route.fulfill({ contentType: 'application/javascript', body: `
 export async function readPhoto(file) {
   const n = Number(file.name.match(/source-(\\d+)/)[1]);
-  return { coordinates: n === 6 ? null : { latitude: 64, longitude: 30 + ({ 1: 0, 2: .00001, 3: .00035, 4: .002, 5: .01, 7: .02 }[n]) },
+  return { coordinates: n === 6 ? null : { latitude: 64, longitude: 30 + ({ 1: 0, 2: .00001, 3: .00035, 4: .002, 5: .01, 7: .02, 8: 0 }[n]) },
     coordinateQuality: 'confident', gpsSource: 'exif', gpsStatus: 'done',
     indexFromOcr: n === 4 || n === 6 ? null : String(7000 + n), indexStatus: n === 4 || n === 6 ? 'missing' : 'found', orientation: 1,
-    accuracyMeters: n, captureTimeMs: 1700000000000 + n * 1000, captureTimeSource: 'exif' };
+    accuracyMeters: n, captureTimeMs: 1700000000000 + (n === 8 ? 240000 : n * 1000), captureTimeSource: 'exif' };
 }` }));
 const tabs = page.locator('ion-segment-button');
 const mapTab = async () => {
@@ -105,6 +105,7 @@ try {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.locator('.map-preview').getByRole('button', { name: 'Открыть точку', exact: true }).click();
   await card('5').waitFor();
+  await page.waitForFunction(() => document.activeElement.dataset.pointId === '5');
   assert.equal(await page.evaluate(() => document.activeElement.dataset.pointId), '5');
   assert.equal(await card('5').evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 56 && r.bottom <= innerHeight; }), true);
   await page.screenshot({ path: '/tmp/darkcat-stage-b/point-handoff-375.png' });
@@ -150,6 +151,20 @@ try {
   assert.equal(await page.locator('.session-map-marker').count(), 5);
   assert.equal(await marker('7').count(), 1);
   assert.equal(await marker('6').count(), 0, 'point without coordinates never appears');
+  await pointsTab();
+  await page.locator('[data-testid="append-photos"]').setInputFiles([file(8)]);
+  await card('8').waitFor(); await mapTab();
+  await page.getByRole('button', { name: 'Показать все', exact: true }).click();
+  await marker('5').click();
+  await page.getByLabel('Близкие точки (до 25 м)').selectOption('8');
+  await page.locator('.map-preview strong').filter({ hasText: '#7008' }).waitFor();
+  await page.screenshot({ path: `/tmp/darkcat-stage-b/map-${live ? 'live' : 'fixture'}-coincident-375.png` });
+  await page.getByLabel('Близкие точки (до 25 м)').selectOption('point:1:2');
+  await page.locator('.map-preview').filter({ hasText: /#7001.*1 фото/s }).waitFor();
+  await page.locator('.map-preview').getByRole('button', { name: 'Открыть точку', exact: true }).click();
+  await card('point:1:2').waitFor();
+  await page.waitForFunction(() => document.activeElement.dataset.pointId === 'point:1:2');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.pointId), 'point:1:2', 'coincident point selection opens its exact logical card');
   if (!live) {
     styleMode = 'failure';
     // Start a fresh map page to test initial failure and retry without test-only
@@ -179,7 +194,7 @@ try {
     assert.equal(await page.locator('.session-map-marker').count(), 1, 'empty -> restore while hidden starts and fits a new map');
   }
   assert.deepEqual(errors, []);
-  console.log(`Stage B ${live ? 'LIVE OpenFreeMap Dark' : 'deterministic provider / real MapLibre WebGL'}: statuses/preview/exact handoff/live membership+coordinates+remove+restore+append/viewport/320+375+812/error+retry: PASS (${tileResponses} production tile responses)`);
+  console.log(`Stage B ${live ? 'LIVE OpenFreeMap Dark' : 'deterministic provider / real MapLibre WebGL'}: statuses/preview/exact handoff/live membership+coordinates+remove+restore+append/viewport/320+375+812/coincident chooser${live ? '' : '/error+retry+empty-restore'}: PASS (${tileResponses} production tile responses)`);
 } finally {
   await browser.close(); server.httpServer.closeAllConnections(); await server.close();
 }
