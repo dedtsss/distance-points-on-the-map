@@ -56,6 +56,9 @@ const memberAct = async (id, member, action) => {
   await page.locator('.photo-action-sheet').waitFor({ state: 'hidden' });
 };
 const ready = async () => {
+  // A retry click schedules a React effect. Wait for the old error panel to
+  // leave before checking the new attempt, rather than accepting old markers.
+  await page.locator('.map-error').waitFor({ state: 'hidden' });
   await page.locator('.session-map-marker').first().waitFor();
   await page.locator('.map-loading').waitFor({ state: 'hidden', timeout: 20000 });
   assert.equal(await page.locator('.map-error').count(), 0, 'basemap must finish without error');
