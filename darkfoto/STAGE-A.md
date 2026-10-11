@@ -1,5 +1,7 @@
 # DarkCat Photo 0.5.0 — checkpoint Stage A
 
+Исторический checkpoint на `893d9d8`. Credential gate ниже отражает прежнюю ревизию и **отменён** [решением Stage B](https://github.com/dedtsss/agent-dispatch/issues/550#issuecomment-6104308243): MapLibre + OpenFreeMap Dark, без satellite и credentials. Актуальная интеграция и приёмка: [STAGE-B.md](STAGE-B.md).
+
 Задание: [agent-dispatch#550](https://github.com/dedtsss/agent-dispatch/issues/550).
 Каноническая [execution revision](https://github.com/dedtsss/agent-dispatch/issues/550#issuecomment-6100354358), [полная ревизия](https://github.com/dedtsss/agent-dispatch/issues/550#issuecomment-6100302415).
 Та же ветка `manual/darkfoto-mvp-550`, [PR #52](https://github.com/dedtsss/distance-points-on-the-map/pull/52), выпущенный baseline `b196ab88d1bd98020ac23cf34f772a11f652e7f4`.
