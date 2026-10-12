@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { recentReleaseEntries } from '../src/changelog.js';
 
 const server = await createServer({ configFile: new URL('../vite.config.js', import.meta.url).pathname,
   root: new URL('..', import.meta.url).pathname, logLevel: 'silent', server: { host: '127.0.0.1', port: 0 } });
@@ -33,24 +34,33 @@ try {
   await page.goto(server.resolvedUrls.local[0]);
   const buffer = await readFile(new URL('fixtures/representative-6300.jpg', import.meta.url));
   await page.locator('input[type=file]').first().setInputFiles(Array.from({ length: 10 }, (_, i) => ({
-    name: `source-${String(i + 1).padStart(2, '0')}.jpg`, mimeType: 'image/jpeg', buffer,
+    name: `source-${String(i + 1).padStart(2, '0')}-${'long-name-'.repeat(12)}.jpg`, mimeType: 'image/jpeg', buffer,
   })));
   await page.getByRole('button', { name: 'Обработать фото', exact: true }).click();
   await page.getByRole('heading', { name: 'Проверка точек' }).waitFor();
   const point = page.locator('.result-photo-card').first();
   assert.equal(await point.locator('.photo-thumbnail').count(), 9);
+  assert.equal(await page.getByRole('button', { name: 'Экспортировать сессию', exact: true }).count(), 1);
+  assert.equal(await page.locator('.group-copy-actions').getByRole('button', { name: 'Экспортировать сессию', exact: true }).count(), 1);
+  assert.deepEqual(await point.locator('.photo-filenames li').allTextContents(), Array.from({ length: 9 }, (_, i) =>
+    `source-${String(i + 1).padStart(2, '0')}-${'long-name-'.repeat(12)}.jpg`));
   await mkdir('/tmp/darkcat-stage-a', { recursive: true });
-  for (const width of [320, 375, 812]) {
-    await page.setViewportSize({ width, height: width === 812 ? 375 : 812 });
+  for (const [width, height] of [[320, 812], [375, 812], [812, 320], [812, 375]]) {
+    await page.setViewportSize({ width, height });
     await point.scrollIntoViewIfNeeded();
     const bounds = await point.locator('.photo-thumbnail').evaluateAll((elements) => elements.map((el) => {
       const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width };
     }));
+    const names = await point.locator('.photo-filenames li').evaluateAll((elements) => elements.map((el) => {
+      const r = el.getBoundingClientRect(); return { x: r.x, top: r.top, bottom: r.bottom, right: r.right, width: r.width };
+    }));
+    assert.equal(new Set(names.map((r) => r.x)).size, 1);
+    assert.ok(names.every((r, i) => r.x >= 0 && r.right <= width && (!i || r.top >= names[i - 1].bottom)), 'one filename per line, wrapping within viewport');
     assert.equal(new Set(bounds.map((r) => r.x)).size, 3);
     assert.equal(new Set(bounds.map((r) => r.y)).size, 3);
     assert.ok(bounds.every((r) => r.width >= (width === 320 ? 69 : 87)));
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await page.screenshot({ path: `/tmp/darkcat-stage-a/grid-${width}.png` });
+    await page.screenshot({ path: `/tmp/darkcat-stage-a/grid-${width}-${height}.png` });
   }
   await page.setViewportSize({ width: 375, height: 812 });
   await point.locator('.photo-thumbnail').nth(4).click();
@@ -138,17 +148,20 @@ try {
   assert.equal(await page.locator('ion-segment-button').nth(0).textContent(), 'Точки');
   assert.equal(await page.locator('ion-segment-button').count(), 3);
   await page.locator('ion-segment-button').nth(2).click();
-  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.0.*проверочная сборка.*не опубликован/);
+  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.1.*проверочная сборка.*не опубликован/);
   const canonical = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
-  assert.equal(await page.getByLabel('История изменений', { exact: true }).textContent(), canonical);
-  for (const width of [320, 375, 812]) {
-    await page.setViewportSize({ width, height: width === 812 ? 375 : 812 });
+  assert.deepEqual(await page.locator('.release-entry').allTextContents(), recentReleaseEntries(canonical).map((entry) => entry.text));
+  assert.equal(await page.locator('.release-entry').count(), 3);
+  assert.doesNotMatch(await page.getByLabel('История изменений', { exact: true }).textContent(), /Версия 0\.3\./);
+  assert.match(await page.locator('.changelog-link').getAttribute('href'), /darkfoto\/CHANGELOG\.md$/);
+  for (const [width, height] of [[320, 812], [375, 812], [812, 320], [812, 375]]) {
+    await page.setViewportSize({ width, height });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   }
   await page.setViewportSize({ width: 320, height: 812 });
   await page.screenshot({ path: '/tmp/darkcat-stage-a/about-320.png' });
   assert.deepEqual(errors, []);
-  console.log('Stage A: 3×3 at 320/375/812, point-scoped 5/9 swipe/zoom, three LIFO restores, real sanitized edited export/failure, four persisted MRUs, product name/three tabs/canonical changelog: PASS');
+  console.log('Stage A: 3×3 at 320/375/812, point-scoped 5/9 swipe/zoom, three LIFO restores, real sanitized edited export/failure, four persisted MRUs, product name/three tabs/latest three compact canonical entries/vertical long filenames/single action-block export: PASS');
 } finally {
   await browser.close(); server.httpServer.closeAllConnections(); await server.close();
 }

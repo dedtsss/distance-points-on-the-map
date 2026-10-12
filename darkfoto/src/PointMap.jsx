@@ -7,7 +7,7 @@ import { MAP_STYLE, MAP_LOAD_TIMEOUT_MS, sessionMapBounds, nearbyMapPoints } fro
 setWorkerUrl(workerUrl);
 const symbols = { main: 'О', reserve: 'Р', review: '!', recognized: '•' };
 
-export default function PointMap({ points, visible, onOpenPoint }) {
+export default function PointMap({ points, visible, focusRequest, onOpenPoint }) {
   const container = useRef(null);
   const mapRef = useRef(null);
   const markers = useRef(new Map());
@@ -19,6 +19,7 @@ export default function PointMap({ points, visible, onOpenPoint }) {
   const [started, setStarted] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const preview = useRef(null);
+  const appliedFocus = useRef(null);
   const hasPoints = points.length > 0;
   const selected = points.find((point) => point.id === selectedId);
   const nearby = nearbyMapPoints(points, selectedId);
@@ -31,7 +32,7 @@ export default function PointMap({ points, visible, onOpenPoint }) {
   }, [points, selectedId]);
   useEffect(() => {
     if (visible) preview.current?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-  }, [selectedId]);
+  }, [visible, selectedId, focusRequest]);
 
   const fit = (map = mapRef.current) => {
     const bounds = sessionMapBounds(currentPoints.current);
@@ -51,8 +52,9 @@ export default function PointMap({ points, visible, onOpenPoint }) {
         ...(camera.current || { center: [0, 0], zoom: 1 }), attributionControl: false });
       mapRef.current = map;
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+      // Liberty already credits OpenFreeMap/OpenMapTiles/OpenStreetMap.
       map.addControl(new AttributionControl({ compact: false, customAttribution:
-        '<a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a> | <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' }), 'bottom-right');
+        '<a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>' }), 'bottom-left');
       if (!camera.current) fit(map);
       map.on('moveend', () => { camera.current = { center: map.getCenter().toArray(), zoom: map.getZoom() }; });
       map.on('error', fail);
@@ -95,6 +97,17 @@ export default function PointMap({ points, visible, onOpenPoint }) {
   }, [points, selectedId, hasPoints, started, attempt]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!visible || !map || !focusRequest || appliedFocus.current === focusRequest) return;
+    const point = currentPoints.current.find((point) => point.id === focusRequest.id);
+    if (!point) return;
+    appliedFocus.current = focusRequest;
+    setSelectedId(point.id);
+    map.resize();
+    map.jumpTo({ center: [point.longitude, point.latitude], zoom: 17 });
+  }, [visible, focusRequest, hasPoints, started, attempt]);
+
+  useEffect(() => {
     if (!visible || !mapRef.current) return undefined;
     const observer = new ResizeObserver(() => mapRef.current?.resize());
     observer.observe(container.current); mapRef.current.resize();
@@ -107,7 +120,7 @@ export default function PointMap({ points, visible, onOpenPoint }) {
     {!hasPoints ? <p className="map-empty" role="status">В текущей сессии нет активных точек с координатами. Добавьте и обработайте фото во вкладке «Точки».</p> : <>
       <p className="map-legend"><span className="map-key-main">О · Основные</span><span className="map-key-reserve">Р · Резерв</span><span className="map-key-review">! · Проверка</span></p>
       <div className="map-frame">
-        <div ref={container} className="map-canvas" aria-label="OpenFreeMap Dark" />
+        <div ref={container} className="map-canvas" aria-label="OpenFreeMap Liberty" />
         {phase === 'loading' && <p className="map-loading" role="status">Загрузка карты…</p>}
       </div>
       {phase === 'error' && <div className="map-error" role="alert"><p>Не удалось загрузить карту полностью. Проверьте подключение к интернету и повторите попытку.</p>

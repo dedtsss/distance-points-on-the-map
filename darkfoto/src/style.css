@@ -49,6 +49,8 @@ ion-button { min-height: 48px; }
 .photo-detail a { color: #9bccff; }
 .photo-identity { font-size: 1.18rem; line-height: 1.15; color: #eef1f5; }
 .photo-filename { color: #9baebe; font-size: .78rem; line-height: 1.35; }
+.photo-filenames { display: grid; gap: 3px; list-style: none; padding: 0; margin: 0; min-width: 0; }
+.photo-filenames li { min-width: 0; overflow-wrap: anywhere; }
 .photo-coordinates { font-variant-numeric: tabular-nums; }
 .point-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 3px; width: 100%; }
 .point-actions ion-button { min-height: 38px; height: auto; margin: 0; --padding-start: 8px; --padding-end: 8px; font-size: .78rem; }
@@ -128,6 +130,8 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 
 .stage-notice { border-left: 3px solid #ffd882; padding-left: 10px; }
 .changelog-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .9rem; line-height: 1.5; color: #c4d0dc; }
+.release-entry { margin: 10px 0; padding-bottom: 10px; border-bottom: 1px solid #344352; }
+.changelog-link { display: inline-block; padding: 10px 0; color: var(--ion-color-primary); }
 
 /* The map stays mounted across tabs so ordinary edits never reset pan/zoom. */
 ion-segment-button { min-width: 0; font-size: .8rem; text-transform: none; --padding-start: 5px; --padding-end: 5px; }
@@ -142,16 +146,20 @@ ion-segment-button ion-label { white-space: normal; word-break: normal; overflow
 .map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .82rem; }
 .map-key-main { color: #8cf0b5; } .map-key-reserve { color: #ffd882; } .map-key-review { color: #ffaaa3; }
 .map-frame { position: relative; border: 1px solid #45576a; border-radius: 12px; overflow: hidden; }
-.map-canvas { height: clamp(260px, 48vh, 560px); width: 100%; background: #0c0c0c; }
+.map-canvas { height: clamp(260px, 48vh, 560px); width: 100%; background: #f2efe9; }
 .map-loading { position: absolute; top: 10px; left: 10px; right: 64px; margin: 0; padding: 8px; background: #1b2530; border-radius: 8px; pointer-events: none; }
 .session-map .maplibregl-ctrl-group { background: #eef1f5; }
 .session-map .maplibregl-ctrl-group button { width: 44px; height: 44px; }
-.session-map .maplibregl-ctrl-attrib { max-width: calc(100% - 20px); font-size: 10px; line-height: 1.4; color: #10151c; background: rgba(255,255,255,.9); }
+.session-map .maplibregl-ctrl-bottom-left { left: 6px; bottom: 6px; max-width: calc(100% - 12px); }
+.session-map .maplibregl-ctrl-attrib { float: none; margin: 0; padding: 3px 5px; box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; font-size: 10px; line-height: 1.4; color: #10151c; background: rgba(255,255,255,.9); }
 .session-map .maplibregl-ctrl-attrib a { color: #10151c; }
-.session-map-marker { min-width: 48px; min-height: 48px; padding: 5px 8px; border: 2px solid #fff; border-radius: 12px; background: #123126; color: #b0f6d1; box-shadow: 0 2px 8px #000; font: 700 13px system-ui, sans-serif; cursor: pointer; }
+.session-map-marker { position: relative; min-width: 24px; min-height: 24px; padding: 3px 6px; border: 1px solid #fff; border-radius: 999px; background: #123126; color: #b0f6d1; box-shadow: 0 1px 2px #0003; font: 400 12px system-ui, sans-serif; cursor: pointer; }
+/* A small visual pill retains a forgiving touch target. Nearby selection
+   provides access to logical points whose targets overlap. */
+.session-map-marker::after { content: ''; position: absolute; min-width: 44px; min-height: 44px; width: 100%; height: 100%; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .session-map-marker-reserve { background: #47320c; color: #ffd882; border-style: dashed; }
 .session-map-marker-review { background: #49221f; color: #ffaaa3; }
-.session-map-marker[aria-pressed=true] { border-width: 4px; z-index: 1; }
+.session-map-marker[aria-pressed=true] { outline: 2px solid #10151c; outline-offset: 1px; z-index: 1; }
 .map-preview { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid #5c7e70; border-radius: 12px; background: #17212b; }
 .map-preview img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; }
 .map-preview > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }

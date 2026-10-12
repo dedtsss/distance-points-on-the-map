@@ -37,7 +37,7 @@ jobs:
           npx playwright install --with-deps chromium
           npm test
           npm run android:sync
-      - name: Verify production OpenFreeMap Dark
+      - name: Verify production OpenFreeMap Liberty
         working-directory: darkfoto
         run: npm run test:map:live
       - name: Test native unit verification and compile debug APK
@@ -59,12 +59,13 @@ jobs:
         with:
           name: DarkCatPhoto-unsigned-release-apk
           path: darkfoto/android/app/build/outputs/apk/release/app-release-unsigned.apk
-      - name: Retain 0.5.0 browser map and native test evidence
+      - name: Retain 0.5.1 browser map and native test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: DarkCatPhoto-0.5.0-evidence
+          name: DarkCatPhoto-0.5.1-evidence
           path: |
             /tmp/darkcat-stage-a/
             /tmp/darkcat-stage-b/
+            /tmp/darkcat-051/
             darkfoto/android/app/build/reports/tests/testDebugUnitTest/

@@ -1,7 +1,7 @@
 import { pointMembers } from './core/photoPoints.js';
 import { haversineDistanceMeters } from './core/utils/geoDistance.js';
 
-export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
+export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 export const MAP_LOAD_TIMEOUT_MS = 15000;
 
 // A projection of the live session, not a second point store. Coordinates and

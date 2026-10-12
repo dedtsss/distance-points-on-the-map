@@ -45,7 +45,7 @@ test('invalid coordinates, removed and empty placeholders never become current m
   const rows = [photo('1', 30), { ...photo('2', 30), removed: true }, { ...photo('3', 30), emptyFromMove: true },
     photo('4', NaN), photo('5', 181), { ...photo('6', 30), coordinates: { latitude: 91, longitude: 30 } }];
   assert.deepEqual(sessionMapPoints(rows, new Map(), () => ({ kind: 'main' }), (p) => p.id).map((p) => p.id), ['1']);
-  assert.equal(MAP_STYLE, 'https://tiles.openfreemap.org/styles/dark');
+  assert.equal(MAP_STYLE, 'https://tiles.openfreemap.org/styles/liberty');
 });
 
 test('bounds fit empty, single, ordinary and date-line sessions', () => {

@@ -4,9 +4,8 @@ import { splitBatch } from './core/batch.js';
 import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint, restoreLastMember } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
-import { outgoingName, publishBatch } from './publishBatch.js';
+import { publishBatch } from './publishBatch.js';
 import { buildGpx, buildPointGpx, hasPointCoordinates, resultBlocksForCopy, validResultPhotos } from './resultExports.js';
-import { cleanImageForUpload } from './core/features/cleanup/cleanImageForUpload.js';
 import { formatPhotoResultBlock } from './core/features/export/resultBlockFormatter.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto,
   clearAndroidRecovery } from './androidFolder.js';
@@ -20,7 +19,7 @@ import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton
 import PhotoViewer from './PhotoViewer.jsx';
 import changelog from '../CHANGELOG.md?raw';
 import buildInfo from '../build-info.json';
-import { releaseNotes } from './changelog.js';
+import { recentReleaseEntries } from './changelog.js';
 import RecentField from './RecentField.jsx';
 import { exportLocalSession } from './localSessionExport.js';
 import { androidSessionDestination, hasSessionFolderExport } from './androidSessionExport.js';
@@ -46,7 +45,9 @@ export default function App() {
   const [screen, setScreen] = useState('photos');
   const [mapVisited, setMapVisited] = useState(false);
   const [focusedPoint, setFocusedPoint] = useState(null);
+  const [mapFocus, setMapFocus] = useState(null);
   const pointCards = useRef(new Map());
+  const content = useRef(null);
   useEffect(() => {
     if (screen !== 'photos' || !focusedPoint) return undefined;
     const frame = requestAnimationFrame(() => {
@@ -117,7 +118,8 @@ export default function App() {
     setStatus(''); setCopyStatus(''); setCopyBusy(false); setWorkProgress(null);
     setViewer(null); setTxtOpen(false); setPhotoAction(null); setPointAction(null);
     setMoveAction(null); setTargetSearch(''); setFocusedPoint(null);
-    setMapVisited(false); setScreen('photos');
+    setMapFocus(null); setMapVisited(false); setScreen('photos');
+    requestAnimationFrame(() => content.current?.scrollToTop(0));
     for (const input of [photoInput, folderInput, appendInput]) {
       if (input.current) input.current.value = '';
     }
@@ -500,7 +502,7 @@ export default function App() {
 
   return <IonApp><IonPage>
     <IonHeader><IonToolbar><IonTitle>DarkCat Photo</IonTitle></IonToolbar></IonHeader>
-    <IonContent className="darkfoto-content">
+    <IonContent ref={content} className="darkfoto-content">
       <div className="darkfoto-layout">
         <IonSegment value={screen} onIonChange={(event) => {
           const next = event.detail.value;
@@ -512,7 +514,7 @@ export default function App() {
           <IonSegmentButton value="about"><IonLabel>О приложении</IonLabel></IonSegmentButton>
         </IonSegment>
         {mapVisited && <React.Suspense fallback={screen === 'map' ? <p role="status">Загрузка карты…</p> : null}>
-          <PointMap visible={screen === 'map'} points={sessionMapPoints(rows, validById, photoStatus, pointLabel, previews)}
+          <PointMap visible={screen === 'map'} points={sessionMapPoints(rows, validById, photoStatus, pointLabel, previews)} focusRequest={mapFocus}
             onOpenPoint={(id) => { setFocusedPoint(id); setScreen('photos'); }} />
         </React.Suspense>}
         {screen === 'about' ? <IonCard><IonCardContent>
@@ -526,10 +528,12 @@ export default function App() {
           </div>}
           {version && <IonButton expand="block" onClick={checkUpdate}>Проверить обновление</IonButton>}
           {candidate && <><p>Новая версия: {candidate.version}</p>
-            {releaseNotes(changelog, candidate.version) && <pre className="changelog-text">{releaseNotes(changelog, candidate.version)}</pre>}
             {updateAction && <IonButton expand="block" onClick={downloadUpdate}>{updateAction}</IonButton>}</>}
           <h3>История изменений</h3>
-          <pre className="changelog-text" aria-label="История изменений">{changelog}</pre>
+          <div className="release-history" aria-label="История изменений">
+            {recentReleaseEntries(changelog).map((entry) => <pre className="changelog-text release-entry" key={entry.version}>{entry.text}</pre>)}
+          </div>
+          <a className="changelog-link" href="https://github.com/dedtsss/distance-points-on-the-map/blob/main/darkfoto/CHANGELOG.md" target="_blank" rel="noreferrer">Полная история изменений</a>
         </IonCardContent></IonCard> : screen === 'photos' && <>
           <p className="intro">Выберите фотографии и получите Основные / Резерв. Исходники остаются на устройстве.</p>
           <IonCard><IonCardContent>
@@ -591,7 +595,6 @@ export default function App() {
               <IonBadge color="warning">Резерв {grouped.reserve.length}</IonBadge>
               <IonBadge color="danger">Требует проверки {grouped.unresolved.length}</IonBadge>
             </div>
-            {hasSessionFolderExport() && <IonButton fill="outline" onClick={exportSession} disabled={busy || !active.length}>Экспортировать сессию</IonButton>}
             <div className="export-groups">
               <div><strong>TXT</strong><div className="compact-actions">
                 <IonButton fill="clear" onClick={() => { setCopyStatus(''); setTxtOpen(true); }}>Посмотреть</IonButton>
@@ -610,6 +613,7 @@ export default function App() {
                 disabled={!mainBlocks.length || copyBusy}>Копировать основные по одному</IonButton>
               <IonButton fill="outline" onClick={() => copyBlocks(reserveBlocks, 'Резерв')}
                 disabled={!reserveBlocks.length || copyBusy}>Копировать резерв по одному</IonButton>
+              {hasSessionFolderExport() && <IonButton fill="outline" onClick={exportSession} disabled={busy || !active.length}>Экспортировать сессию</IonButton>}
             </div>
             {copyStatus && <IonText><p role="status" aria-live="polite">{copyStatus}</p></IonText>}
             {workProgress?.kind === 'clipboard' && <WorkProgress progress={workProgress} />}
@@ -637,6 +641,9 @@ export default function App() {
                             ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
                         </div>
                         <div className="point-header-actions">
+                          {!photo.removed && <IonButton size="small" fill="clear" disabled={!hasPointCoordinates(photo)} onClick={() => {
+                            setMapFocus({ id: photo.id }); setMapVisited(true); setScreen('map');
+                          }}>На карте</IonButton>}
                           {!photo.removed && grouped && <IonButton size="small" fill="clear" disabled={busy}
                             aria-label={`Действия точки ${pointLabel(photo)}`} onClick={() => setPointAction(photo.id)}>⋯ Точка</IonButton>}
                           {!!photo.memberUndo?.length && (!photo.removed || photo.memberRemovedLast) && <IonButton size="small" fill="outline" disabled={busy}
@@ -662,7 +669,9 @@ export default function App() {
                           </div>)}
                         </div>
                         <div className="photo-detail">
-                          <span className="photo-filename">{pointMembers(photo).map((member) => member.fileName).join(', ')}</span>
+                          <ul className="photo-filenames" aria-label="Файлы точки">
+                            {pointMembers(photo).map((member) => <li className="photo-filename" key={member.id}>{member.fileName}</li>)}
+                          </ul>
                           {state.kind === 'reserve' && (photo.reserveConflicts || []).length > 0 && <div className="reserve-reasons">
                             <strong>Почему в резерве</strong>
                             {photo.reserveConflicts.map((conflict) => <span key={`${photo.id}:${conflict.otherId}`}>
