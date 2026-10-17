@@ -149,7 +149,7 @@ try {
   assert.equal(await page.locator('ion-segment-button').nth(0).textContent(), 'Точки');
   assert.equal(await page.locator('ion-segment-button').count(), 3);
   await page.locator('ion-segment-button').nth(2).click();
-  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.2.*проверочная сборка.*не опубликован/);
+  assert.match(await page.locator('.stage-notice').textContent(), /0\.5\.3.*проверочная сборка.*не опубликован/);
   const canonical = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
   assert.deepEqual(await page.locator('.release-entry').allTextContents(), recentReleaseEntries(canonical).map((entry) => entry.text));
   assert.equal(await page.locator('.release-entry').count(), 3);

@@ -50,10 +50,12 @@ public class DarkFotoFolderPlugin extends Plugin {
         return text.toString();
     }
 
-    private void deleteRecovery() {
+    private void deleteRecovery() throws IOException {
         File[] files = recoveryDir().listFiles();
-        if (files != null) for (File file : files) file.delete();
-        recoveryDir().delete();
+        if (files != null) for (File file : files) {
+            if (!file.delete() && file.exists()) throw new IOException("Recovery file could not be cleared");
+        }
+        if (recoveryDir().exists() && !recoveryDir().delete()) throw new IOException("Recovery directory could not be cleared");
     }
 
     @PluginMethod
@@ -119,8 +121,10 @@ public class DarkFotoFolderPlugin extends Plugin {
 
     @PluginMethod
     public void clearRecovery(PluginCall call) {
-        deleteRecovery();
-        call.resolve();
+        ocrExecutor.execute(() -> {
+            try { deleteRecovery(); call.resolve(); }
+            catch (Exception error) { call.reject("Recovery clear failed", error); }
+        });
     }
 
     private void clearCached() {

@@ -1,22 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
-import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint, restoreLastMember, selectRepresentative, GROUP_DEFAULTS } from './core/photoPoints.js';
+import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, mergeIntoPoint, appendPhotos, restoreMemberPoint, restoreLastMember, selectRepresentative, GROUP_DEFAULTS } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { publishBatch } from './publishBatch.js';
 import { buildGpx, buildPointGpx, hasPointCoordinates, resultBlocksForCopy, validResultPhotos } from './resultExports.js';
 import { formatPhotoResultBlock } from './core/features/export/resultBlockFormatter.js';
 import { hasAndroidFolderPicker, pickAndroidFolder, pickAndroidPhotos, readAndroidPhoto,
-  clearAndroidRecovery } from './androidFolder.js';
+  clearAndroidRecovery, saveAndroidRecovery, loadAndroidRecovery } from './androidFolder.js';
 import { checkForUpdate, clearUpdateState, installRelease, installedVersion, isAndroidUpdateAvailable, startUpdateDownload, updateState } from './update.js';
 import { actionProgress, updateButton, updateProgress } from './progress.js';
 import { recognizeAndroidStamp } from './nativeOcr.js';
 import { copyResultBlocks, copyText, exportGpx, exportText, isNativeTextExport } from './androidText.js';
 import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonCard,
   IonCardContent, IonItem, IonLabel, IonInput, IonSelect, IonSelectOption,
-  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonSearchbar, IonAlert } from '@ionic/react';
+  IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonAlert } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
+import DestinationPicker from './DestinationPicker.jsx';
 import changelog from '../CHANGELOG.md?raw';
 import buildInfo from '../build-info.json';
 import { recentReleaseEntries } from './changelog.js';
@@ -25,6 +26,7 @@ import { exportLocalSession } from './localSessionExport.js';
 import { androidSessionDestination, hasSessionFolderExport } from './androidSessionExport.js';
 import { activePoints, setPointRemoved, establishReviewSlots, reviewSections } from './pointState.js';
 import { sessionMapPoints } from './sessionMap.js';
+import { createRecoveryWriter } from './recovery.js';
 const PointMap = React.lazy(() => import('./PointMap.jsx'));
 
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
@@ -74,7 +76,15 @@ export default function App() {
   const [packing, setPacking] = useState('');
   const [rows, setRows] = useState([]);
   const [split, setSplit] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(hasAndroidFolderPicker);
+  const [recoveryReady, setRecoveryReady] = useState(!hasAndroidFolderPicker());
+  const [recoveryStatus, setRecoveryStatus] = useState('');
+  const recoveryPaused = useRef(false);
+  const recoveryWriter = useRef(null);
+  if (!recoveryWriter.current) recoveryWriter.current = createRecoveryWriter({
+    save: async (...args) => { await saveAndroidRecovery(...args); setRecoveryStatus(''); }, clear: clearAndroidRecovery,
+    onError: () => setRecoveryStatus('Не удалось сохранить работу. Не закрывайте приложение до успешного сохранения.'),
+  });
   const [status, setStatus] = useState('');
   const [txtOpen, setTxtOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
@@ -108,34 +118,94 @@ export default function App() {
   };
   useEffect(() => () => Object.values(previewsRef.current).forEach((url) => URL.revokeObjectURL(url)), []);
 
-  // Active jobs live only in this app instance. Discard the legacy 0.5.0
-  // recovery cache without touching source photos or the separate field MRUs.
   useEffect(() => {
-    clearAndroidRecovery().catch(() => { /* A stale cache cannot restore a job. */ });
+    if (!hasAndroidFolderPicker()) return undefined;
+    let active = true;
+    const restore = async () => {
+      try {
+        const saved = await loadAndroidRecovery();
+        if (!active) return;
+        if (saved) {
+          // Read every private photo first. A damaged job is never partially
+          // installed or silently replaced with freshly recognized groups.
+          const restoredPreviews = {};
+          const members = saved.rows.flatMap((point) => [...pointMembers(point), ...(point.excludedMembers || [])]);
+          const photos = await Promise.all(saved.files.map(readAndroidPhoto));
+          if (!active) return;
+          photos.forEach((photo, index) => {
+            const member = members.find((item) => item.number === index + 1);
+            if (member) restoredPreviews[member.id] = URL.createObjectURL(photo);
+          });
+          previewsRef.current = restoredPreviews; setPreviews(restoredPreviews);
+          setFiles(saved.files); setRows(saved.rows);
+          const restoredIndexMode = saved.indexMode ?? true;
+          setIndexMode(restoredIndexMode);
+          setSplit(saved.rows.length ? splitBatch(saved.rows, 25, { indexMode: restoredIndexMode }) : null);
+          setSession(saved.session || ''); setColor(saved.color || '');
+          setPacking(saved.packing || ''); setComment(saved.comment || '');
+          setPublisher(saved.publisher); setOnion(saved.onion || '');
+          setReviewing(saved.phase === 'reviewing');
+          setResumeAvailable(Boolean(saved.resumeAvailable || saved.phase === 'publishing'));
+          setScreen(saved.screen || 'photos'); setMapVisited(saved.screen === 'map');
+          setStatus('Работа восстановлена.');
+        }
+        setRecoveryReady(true);
+      } catch {
+        // Keep the failed manifest intact. Only the explicit reset may discard it.
+        setRecoveryStatus('Не удалось восстановить работу. Сохранённые данные не изменены. Перезапустите приложение или выберите «Начать заново».');
+      } finally { if (active) setBusy(false); }
+    };
+    restore();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!hasAndroidFolderPicker() || !recoveryReady || recoveryPaused.current || busy && !split) return;
+    if (!files.length && !rows.length && ![session, color, packing, comment, onion].some(Boolean)) return;
+    try {
+      recoveryWriter.current.schedule({ schemaVersion: 1, files, rows: split ? rows : [],
+        phase: split ? reviewing ? 'reviewing' : 'processed' : 'selected',
+        session, color, packing, comment, indexMode, publisher, onion, resumeAvailable, screen });
+    } catch { setRecoveryStatus('Не удалось сохранить работу: некорректное состояние. Не закрывайте приложение.'); }
+  }, [files, rows, split, reviewing, session, color, packing, comment, indexMode, publisher, onion, resumeAvailable, screen, busy, recoveryReady]);
+
+  useEffect(() => {
+    const flush = () => { if (document.hidden) recoveryWriter.current.flush(); };
+    const pagehide = () => recoveryWriter.current.flush();
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', pagehide);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', pagehide);
+      recoveryWriter.current.cancel();
+    };
   }, []);
 
   const resetWork = async () => {
+    recoveryPaused.current = true;
     setBusy(true);
-    clearPreviews();
-    setFiles([]); setRows([]); setSplit(null);
-    setSession(''); setColor(''); setPacking(''); setComment('');
-    setPublisher('none'); setOnion(''); setIndexMode(false);
-    setResumeAvailable(false); setReviewing(false);
-    setStatus(''); setCopyStatus(''); setCopyBusy(false); setWorkProgress(null);
-    setViewer(null); setTxtOpen(false); setPhotoAction(null); setPointAction(null);
-    setMoveAction(null); setTargetSearch(''); setFocusedPoint(null);
-    setMapFocus(null); setMapVisited(false); setScreen('photos');
-    requestAnimationFrame(() => content.current?.scrollToTop(0));
-    for (const input of [photoInput, folderInput, appendInput]) {
-      if (input.current) input.current.value = '';
-    }
-    try { await clearAndroidRecovery(); }
-    catch { setStatus('Не удалось очистить старый кеш. Текущая работа очищена.'); }
-    finally { setBusy(false); }
+    try {
+      await recoveryWriter.current.clear();
+      clearPreviews();
+      setFiles([]); setRows([]); setSplit(null);
+      setSession(''); setColor(''); setPacking(''); setComment('');
+      setPublisher('none'); setOnion(''); setIndexMode(false);
+      setResumeAvailable(false); setReviewing(false);
+      setStatus(''); setRecoveryStatus(''); setRecoveryReady(true);
+      setCopyStatus(''); setCopyBusy(false); setWorkProgress(null);
+      setViewer(null); setTxtOpen(false); setPhotoAction(null); setPointAction(null);
+      setMoveAction(null); setTargetSearch(''); setFocusedPoint(null);
+      setMapFocus(null); setMapVisited(false); setScreen('photos');
+      requestAnimationFrame(() => content.current?.scrollToTop(0));
+      for (const input of [photoInput, folderInput, appendInput]) {
+        if (input.current) input.current.value = '';
+      }
+    } catch { setRecoveryStatus('Не удалось очистить сохранённую работу. Повторите «Начать заново».'); }
+    finally { recoveryPaused.current = false; setBusy(false); }
   };
   const requestReset = () => {
     if (busy || copyBusy) return;
-    if (files.length || rows.length || [session, color, packing, comment].some((value) => value.trim())) setResetOpen(true);
+    if (!recoveryReady || files.length || rows.length || [session, color, packing, comment].some((value) => value.trim())) setResetOpen(true);
     else resetWork();
   };
 
@@ -202,7 +272,6 @@ export default function App() {
   const selectAndroidFolder = async () => {
     try {
       const picked = await pickAndroidFolder();
-        await clearAndroidRecovery();
       clearPreviews();
       setFiles(picked);
       setRows([]);
@@ -215,7 +284,6 @@ export default function App() {
   const selectAndroidPhotos = async () => {
     try {
       const picked = await pickAndroidPhotos();
-        await clearAndroidRecovery();
       clearPreviews();
       setFiles(picked);
       setRows([]);
@@ -469,9 +537,10 @@ export default function App() {
   };
   const movePhoto = (targetId) => {
     if (busy || !moveAction) return;
-    applyMembership(moveMember(rows, moveAction.pointId, moveAction.memberId, targetId));
+    applyMembership(moveAction.kind === 'merge' ? mergeIntoPoint(rows, moveAction.pointId, targetId)
+      : moveMember(rows, moveAction.pointId, moveAction.memberId, targetId));
     setMoveAction(null);
-    setStatus('Фото перемещено. Проверьте обновлённые точки.');
+    setStatus(moveAction.kind === 'merge' ? 'Точки объединены. Проверьте результат.' : 'Фото перемещено. Проверьте обновлённые точки.');
   };
   const copyLink = async (url) => {
     try { await copyText(url); setCopyStatus('Ссылка скопирована.'); }
@@ -482,7 +551,22 @@ export default function App() {
   const viewerIndex = viewerMembers.findIndex((member) => member.id === viewer?.memberId);
   const actionPoint = rows.find((point) => point.id === pointAction && !point.removed);
   const canRegroup = reviewing && !busy && !hasPublishedPoints(rows);
+  const setStatusOverride = (value) => {
+    setRows((current) => {
+      const next = current.map((point) => point.id === actionPoint.id ? { ...point, statusOverride: value } : point);
+      const classified = analyze(next);
+      const sections = new Map([['main', classified.main], ['reserve', classified.reserve], ['review', classified.unresolved]]
+        .flatMap(([section, points]) => points.map((point) => [point.id, section])));
+      return next.map((point) => sections.has(point.id) ? { ...point, reviewSection: sections.get(point.id) } : point);
+    });
+  };
   const pointButtons = actionPoint ? [
+    { text: 'В основные', disabled: busy, handler: () => setStatusOverride('main') },
+    { text: 'В резерв', disabled: busy, handler: () => setStatusOverride('reserve') },
+    { text: 'Авто', disabled: busy, handler: () => setStatusOverride(null) },
+    ...(active.length > 1 ? [{ text: 'Объединить с…', disabled: busy, handler: () => {
+      setTargetSearch(''); setMoveAction({ kind: 'merge', pointId: actionPoint.id });
+    } }] : []),
     ...(canRegroup && pointMembers(actionPoint).length > 1 ? [{ text: 'Разделить', handler: () => applyRegroup(splitPoint(rows, actionPoint.id)) }] : []),
     ...[-1, 1].flatMap((direction) => {
       const neighbor = neighborOf(actionPoint, direction);
@@ -519,6 +603,7 @@ export default function App() {
           <IonSegmentButton value="map"><IonLabel>Карта</IonLabel></IonSegmentButton>
           <IonSegmentButton value="about"><IonLabel>О приложении</IonLabel></IonSegmentButton>
         </IonSegment>
+        {recoveryStatus && <p role="alert">{recoveryStatus}</p>}
         {mapVisited && <React.Suspense fallback={screen === 'map' ? <p role="status">Загрузка карты…</p> : null}>
           <PointMap visible={screen === 'map'} points={sessionMapPoints(rows, validById, photoStatus, pointLabel, previews)} focusRequest={mapFocus}
             onOpenPoint={(id) => { setFocusedPoint(id); setScreen('photos'); }} />
@@ -545,8 +630,8 @@ export default function App() {
           <IonCard><IonCardContent>
             <h2>Фотографии</h2>
             {hasAndroidFolderPicker() ? <div className="action-row">
-              <IonButton expand="block" fill="outline" onClick={selectAndroidPhotos} disabled={busy}>Выбрать фото</IonButton>
-              <IonButton expand="block" fill="outline" onClick={selectAndroidFolder} disabled={busy}>Выбрать папку</IonButton>
+              <IonButton expand="block" fill="outline" onClick={selectAndroidPhotos} disabled={busy || !recoveryReady || files.length > 0}>Выбрать фото</IonButton>
+              <IonButton expand="block" fill="outline" onClick={selectAndroidFolder} disabled={busy || !recoveryReady || files.length > 0}>Выбрать папку</IonButton>
             </div> : <div className="web-pickers">
               <label>Отдельные фото<input ref={photoInput} type="file" accept="image/*" multiple onChange={select} disabled={busy} /></label>
               <label>Папка с фото<input ref={folderInput} type="file" accept="image/*" webkitdirectory="" multiple onChange={select} disabled={busy} /></label>
@@ -585,7 +670,7 @@ export default function App() {
             </IonList>
             <IonButton className="primary-action" expand="block"
               onClick={resumeAvailable || (reviewing && publisher !== 'none') ? resumePublication : run}
-              disabled={busy || !files.length || (reviewing && publisher === 'none')
+              disabled={busy || !recoveryReady || !files.length || (reviewing && publisher === 'none')
                 || (reviewing && !active.length)
                 || (!reviewing && hasPublishedPoints(rows) && !resumeAvailable)}>
               {busy ? 'Обработка…' : resumeAvailable ? 'Продолжить публикацию'
@@ -689,6 +774,13 @@ export default function App() {
                           </div>)}
                         </div>
                         <div className="photo-detail">
+                          {photo.statusOverride && <strong>{photo.statusOverride === 'main' ? 'Вручную: Основные' : 'Вручную: Резерв'}</strong>}
+                          {(photo.manualConflicts || []).map((conflict) => <span className="review-reason" role="alert" key={`manual:${conflict.otherId}`}>
+                            Ручной конфликт: {conflict.distanceMeters.toFixed(1)} м до {conflict.otherLabel} · обе точки в основных
+                          </span>)}
+                          {(photo.toleranceConflicts || []).map((conflict) => <span className="tolerance-warning" key={`tolerance:${conflict.otherId}`}>
+                            Допуск: {conflict.distanceMeters.toFixed(1)} м до {conflict.otherLabel}
+                          </span>)}
                           {state.kind === 'reserve' && (photo.reserveConflicts || []).length > 0 && <div className="reserve-reasons">
                             <strong>Почему в резерве</strong>
                             {photo.reserveConflicts.map((conflict) => <span key={`${photo.id}:${conflict.otherId}`}>
@@ -742,19 +834,9 @@ export default function App() {
         { text: 'Убрать фото', role: 'destructive', handler: () => removePhoto(photoAction) },
         { text: 'Отмена', role: 'cancel' },
       ]} />
-    <IonModal className="move-photo-modal" isOpen={!!moveAction} onDidDismiss={() => setMoveAction(null)}>
-      <IonHeader><IonToolbar><IonTitle>Переместить фото</IonTitle></IonToolbar>
-        <IonSearchbar value={targetSearch} placeholder="Индекс или точка" aria-label="Найти точку"
-          onIonInput={(event) => setTargetSearch(event.detail.value || '')} />
-      </IonHeader>
-      <IonContent><IonList>
-        {moveTargets.map((point) => <IonItem key={point.id} button onClick={() => movePhoto(point.id)}>
-          <IonLabel><strong>{pointLabel(point)}</strong><p>{pointMembers(point).length} фото · {photoStatus(point).text}</p></IonLabel>
-        </IonItem>)}
-        {!moveTargets.length && <IonItem><IonLabel>Точки не найдены</IonLabel></IonItem>}
-      </IonList></IonContent>
-      <IonFooter><IonToolbar><IonButton expand="block" fill="outline" onClick={() => setMoveAction(null)}>Отмена</IonButton></IonToolbar></IonFooter>
-    </IonModal>
+    <DestinationPicker action={moveAction} source={rows.find((point) => point.id === moveAction?.pointId)}
+      targets={moveTargets} previews={previews} label={pointLabel} status={photoStatus} coordinates={coordinatesText}
+      search={targetSearch} onSearch={setTargetSearch} onChoose={movePhoto} onClose={() => setMoveAction(null)} />
     <PhotoViewer src={viewer ? previews[viewer.memberId] : null} open={!!viewer} onClose={() => setViewer(null)}
       index={viewerIndex} total={viewerMembers.length} onNavigate={(direction) => {
         const member = viewerMembers[viewerIndex + direction];

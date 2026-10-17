@@ -85,7 +85,7 @@ try {
   await page.waitForFunction(() => globalThis.__txtPresented);
   await page.locator('.txt-preview').waitFor();
   const txt = await page.locator('.txt-preview').textContent();
-  assert.match(txt, /Точка 1\nКоординаты: 64\.12346/);
+  assert.match(txt, /№1\nКоординаты: 64\.12346/);
   assert.doesNotMatch(txt, /Индекс не найден|не распознан|index_missing|index_low_confidence/);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.waitForFunction(() => globalThis.__txtDismissed);

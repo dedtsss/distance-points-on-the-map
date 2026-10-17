@@ -40,7 +40,10 @@ function canJoin(members, candidate, rules, indexMode) {
   const resulting = makePoint([...members, candidate]);
   if ([...members, candidate].some((photo) => haversineDistanceMeters(photo, resulting) > rules.radiusMeters)) return false;
   if (!indexMode && [...members, candidate].every((photo) => photo.gpsSource === 'exif')) {
-    return [...members, candidate].every((photo) => haversineDistanceMeters(anchor, photo) <= rules.tightRadiusMeters);
+    // A changing representative must not stretch a cluster into a GPS bridge.
+    return [...members, candidate].every((photo) =>
+      haversineDistanceMeters(anchor, photo) <= rules.tightRadiusMeters
+      && haversineDistanceMeters(resulting, photo) <= rules.tightRadiusMeters);
   }
   const times = [...members, candidate].map(trustedTime);
   const known = times.filter((time) => time !== null);
@@ -59,8 +62,18 @@ function canJoin(members, candidate, rules, indexMode) {
 export function groupPhotos(photos, rules = GROUP_DEFAULTS, { indexMode = true } = {}) {
   const groups = [];
   for (const photo of [...photos].sort(byOrder)) {
+    const candidates = !indexMode && photo.gpsSource === 'exif' && validCoordinates(photo)
+      ? groups.filter((members) => members.every((member) => member.gpsSource === 'exif')
+        && canJoin(members, photo, rules, indexMode))
+        .map((members) => ({ members, distance: haversineDistanceMeters(makePoint(members), photo) }))
+        .sort((a, b) => a.distance - b.distance)
+      : [];
+    const nearest = candidates.length && (candidates.length === 1 || candidates[1].distance - candidates[0].distance > 0.001)
+      ? candidates[0].members : null;
     const last = groups.at(-1);
-    if (last && canJoin(last, photo, rules, indexMode)) last.push(photo);
+    const match = !indexMode && photo.gpsSource === 'exif' ? nearest
+      : last && canJoin(last, photo, rules, indexMode) ? last : null;
+    if (match) match.push(photo);
     else groups.push([photo]);
   }
   return groups.map((members) => makePoint(members));
@@ -81,7 +94,8 @@ export function splitPoint(points, id) {
   if (hasPublishedPoints(points)) return points;
   const occupied = new Set(points.filter((point) => point.id !== id).map((point) => point.id));
   return points.flatMap((point) => point.id === id && !point.removed ? pointMembers(point).map((photo, index) =>
-    availableIdentity({ ...makePoint([photo], point.manualRepresentativeId), ...(index === 0 ? { excludedMembers: point.excludedMembers || [], memberUndo: point.memberUndo || [] } : {}) }, occupied)) : [point]);
+    availableIdentity({ ...makePoint([photo], point.manualRepresentativeId), statusOverride: point.statusOverride || null,
+      ...(index === 0 ? { excludedMembers: point.excludedMembers || [], memberUndo: point.memberUndo || [] } : {}) }, occupied)) : [point]);
 }
 
 export function mergePoint(points, id, direction) {
@@ -94,6 +108,7 @@ export function mergePoint(points, id, direction) {
   const occupied = new Set(points.filter((_, index) => index !== start && index !== start + 1).map((point) => point.id));
   return [...points.slice(0, start), availableIdentity({ ...makePoint([...pointMembers(points[start]), ...pointMembers(points[start + 1])],
     points[start].manualRepresentativeId || points[start + 1].manualRepresentativeId),
+    statusOverride: points[position].statusOverride || points[neighbor].statusOverride || null,
     excludedMembers: [...(points[start].excludedMembers || []), ...(points[start + 1].excludedMembers || [])],
     memberUndo: [...(points[start].memberUndo || []), ...(points[start + 1].memberUndo || [])].sort((a, b) => a.order - b.order) }, occupied),
     ...points.slice(start + 2)];
@@ -110,6 +125,26 @@ function withMembers(point, members) {
     reviewSection: point.reviewSection, reviewSlot: point.reviewSlot,
     removed: false, emptyFromMove: false, memberRemovedLast: false, publishError: undefined,
     uploadResult: invalidatePublication(point) };
+}
+
+// Explicit visual merge keeps the destination's identity and owner choices.
+// Published inputs become stale; their old URLs must never describe new members.
+export function mergeIntoPoint(points, sourceId, targetId) {
+  const source = points.find((point) => point.id === sourceId && !point.removed);
+  const target = points.find((point) => point.id === targetId && !point.removed);
+  if (!source || !target || source === target) return points;
+  const merged = withMembers({ ...target,
+    manualRepresentativeId: target.manualRepresentativeId || source.manualRepresentativeId,
+  }, [...pointMembers(target), ...pointMembers(source)]);
+  const staleLinks = [target, source].flatMap((point) => [
+    ...(point.uploadResult?.links || []), ...(point.uploadResult?.staleLinks || []),
+  ]);
+  return points.filter((point) => point.id !== sourceId).map((point) => point.id !== targetId ? point : {
+    ...merged, statusOverride: target.statusOverride || source.statusOverride || null,
+    excludedMembers: [...(target.excludedMembers || []), ...(source.excludedMembers || [])],
+    memberUndo: [...(target.memberUndo || []), ...(source.memberUndo || [])].sort((a, b) => a.order - b.order),
+    uploadResult: { ...merged.uploadResult, stale: Boolean(staleLinks.length || source.uploadResult?.stale || merged.uploadResult?.stale), staleLinks },
+  });
 }
 
 export function removeMember(points, pointId, memberId) {

@@ -84,7 +84,7 @@ test('synthetic 18 -> exactly 9 points; multi-minute EXIF groups stay together a
   assert.equal(batch.reserve[0].reserveConflicts[0].otherLabel, 'Точка 1');
   assert.equal(validResultPhotos(batch).length, 9);
   assert.equal(resultBlocksForCopy(batch).length, 9);
-  assert.match(buildResultText({ grouped: batch, session: 'Синтетика', formatOptions: { session: 'Синтетика' } }), /Точка 1 \/ Синтетика/);
+  assert.match(buildResultText({ grouped: batch, session: 'Синтетика', formatOptions: { session: 'Синтетика' } }), /№1 \/ Синтетика/);
   assert.doesNotMatch(buildResultText({ grouped: batch }), /не распознан|Индекс|index_/);
   assert.equal((buildGpx(batch).match(/<wpt /g) || []).length, 9);
   assert.match(buildPointGpx(points[0], '', mode), /<name>Точка 1<\/name>/);
@@ -107,7 +107,7 @@ test('no-index OCR keeps strict time/space safeguards and never uses incidental 
 test('manual representative updates analysis/map/TXT/GPX/local export, survives edits and falls back without duplicate ownership', () => {
   const a = { ...noIndex18[0], coordinates: { latitude: 64, longitude: 30 } };
   const b = { ...noIndex18[1], coordinates: { latitude: 64.00001, longitude: 30 } };
-  const c = { ...noIndex18[3], coordinates: { latitude: 64.00023, longitude: 30 } };
+  const c = { ...noIndex18[3], coordinates: { latitude: 64.00021, longitude: 30 } };
   let points = [makePoint([a, b]), makePoint([c])];
   const id = points[0].id;
   assert.equal(analyze(points).reserve.length, 0);

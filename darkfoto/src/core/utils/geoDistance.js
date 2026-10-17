@@ -133,6 +133,10 @@ export function buildDistanceMatrix(points) {
   }));
 }
 
+// Discard sub-micrometre floating-point noise at exact metre boundaries.
+// This is numerical precision, independent of the fixed business tolerance.
+export const distanceBelowThreshold = (distance, threshold) => Math.round(distance * 1e7) < Math.round(threshold * 1e7);
+
 export function findDistanceViolations(points, options = {}) {
   const thresholdMeters = Number.isFinite(Number(options.thresholdMeters))
     ? Number(options.thresholdMeters)
@@ -146,7 +150,7 @@ export function findDistanceViolations(points, options = {}) {
       const pointB = validPoints[j];
       const distanceMeters = haversineDistanceMeters(pointA, pointB);
 
-      if (distanceMeters !== null && distanceMeters < thresholdMeters) {
+      if (distanceMeters !== null && distanceBelowThreshold(distanceMeters, thresholdMeters)) {
         violations.push({
           pointAId: pointA.id,
           pointBId: pointB.id,

@@ -114,6 +114,8 @@ ion-action-sheet.publication-sheet::part(content) { background: #1b2530; }
 .point-link .compact-actions { gap: 8px; }
 .point-link ion-button { --padding-start: 6px; --padding-end: 6px; }
 .move-photo-modal { --width: min(100%, 480px); --height: min(85%, 640px); }
+.move-photo-modal::part(content) { background: var(--ion-background-color); }
+.move-photo-modal ion-header, .move-photo-modal ion-footer { background: var(--ion-background-color); }
 .move-photo-modal ion-label { white-space: normal; overflow-wrap: anywhere; }
 .move-photo-modal ion-searchbar { --background: var(--ion-item-background); --color: var(--ion-text-color); --placeholder-color: var(--ion-text-color); --icon-color: var(--ion-text-color); --clear-button-color: var(--ion-text-color); }
 
@@ -175,3 +177,26 @@ ion-segment-button ion-label { white-space: normal; word-break: normal; overflow
 .map-error { padding: 10px 12px; margin-top: 10px; border: 1px solid #a85146; border-radius: 12px; background: #311f1c; }
 .map-error p { margin: 0 0 8px; }
 .map-hint, .map-empty { font-size: .9rem; }
+
+.tolerance-warning { padding: 8px 10px; border-radius: 8px; background: #54451f; color: #ffe29b; font-size: .82rem; }
+.destination-source { padding: 6px 16px; display: flex; align-items: center; gap: 10px; }
+.destination-source > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.destination-source .destination-strip { flex: 0 1 65%; margin: 0; }
+.destination-source .destination-thumbnail { flex-basis: 64px; }
+.destination-strip { display: flex; gap: 6px; align-items: center; min-width: 0; margin-top: 6px; }
+.destination-thumbnail { display: flex; flex: 0 1 80px; min-width: 0; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: #263442; }
+.destination-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.move-photo-modal h3 { margin: 12px 16px 4px; font-size: .95rem; }
+@media (max-height: 450px) {
+  .move-photo-modal { --height: 100%; }
+  .move-photo-modal ion-toolbar { --min-height: 40px; }
+  .move-photo-modal ion-header ion-toolbar { --min-height: 32px; }
+  .move-photo-modal ion-searchbar { padding-top: 0; padding-bottom: 0; min-height: 44px; }
+  .destination-source { padding-top: 4px; padding-bottom: 4px; }
+  .destination-source .destination-thumbnail { flex-basis: 42px; }
+  .move-photo-modal h3 { margin-top: 4px; margin-bottom: 0; }
+  .move-photo-modal ion-label { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 45%); column-gap: 8px; }
+  .move-photo-modal ion-label > strong, .move-photo-modal ion-label > p { grid-column: 1; }
+  .move-photo-modal ion-label > p { margin: 0; font-size: .75rem; }
+  .move-photo-modal ion-label .destination-strip { grid-column: 2; grid-row: 1 / span 3; margin: 0; align-self: center; }
+}

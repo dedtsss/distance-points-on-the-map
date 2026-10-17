@@ -12,8 +12,8 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
 const labels = ['Сессия', 'Цвет', 'Фасовка', 'Комментарий'];
 const fields = ['session', 'color', 'packing', 'comment'];
-// A native recovery bridge with a material 0.5.0 job. Web pickers let us also
-// test the browser's File objects: reset must leave the originals readable.
+// Web mode retains in-memory lifecycle; native recovery is covered separately.
+// Reset must leave the browser source File readable.
 await page.route('**/src/androidFolder.js', (route) => route.fulfill({ contentType: 'application/javascript', body: `
 export const hasAndroidFolderPicker = () => false;
 export const pickAndroidFolder = async () => [];
@@ -50,7 +50,7 @@ try {
   }, fields);
   await page.reload();
   await empty();
-  await page.waitForFunction(() => globalThis.__clears === 1);
+  assert.equal(await page.evaluate(() => globalThis.__clears || 0), 0, 'web does not clear native recovery on startup');
   for (const [index, label] of labels.entries()) {
     await input(label).focus();
     const options = page.getByRole('listbox', { name: `Подсказки: ${label}`, exact: true }).getByRole('option');
@@ -106,7 +106,7 @@ try {
   await page.getByText(/нет активных точек с координатами/).waitFor();
   assert.equal(await page.locator('.session-map-marker, .map-preview').count(), 0);
   assert.deepEqual(errors, []);
-  console.log('0.5.1 job lifecycle: cold native recovery ignored; zero photos/points/fields/progress; persistent 10-value MRUs; cancel/confirm/field-only/empty reset; originals readable; map empty; 320/375 portrait+landscape: PASS');
+  console.log('Web job lifecycle: native recovery not invoked; zero photos/points/fields/progress; persistent 10-value MRUs; cancel/confirm/field-only/empty reset; originals readable; map empty; 320/375 portrait+landscape: PASS');
 } finally {
   await browser.close(); server.httpServer.closeAllConnections(); await server.close();
 }

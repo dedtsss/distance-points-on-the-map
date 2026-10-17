@@ -95,16 +95,21 @@ const greedyCover = (edges, compare) => {
 /**
  * Computes a minimum vertex cover for ordinary-size connected components and a
  * deterministic bounded vertex-cover heuristic for unusually large batches.
- * Reserving every returned item removes every active < threshold conflict.
+ * Respects owner overrides and reports remaining forced-Main conflicts.
  */
 export function recommendReserveForConflicts(photos = [], thresholdMeters = 25, options = {}) {
-  const activePhotos = (photos || []).filter(isActivePhoto);
+  const activePhotos = (photos || []).filter((photo) => isActivePhoto(photo) && photo.statusOverride !== 'reserve');
   const violations = findDistanceViolations(activePhotos, { thresholdMeters });
-  const edges = normalizedEdges(violations);
+  const forcedMain = new Set(activePhotos.filter((photo) => photo.statusOverride === 'main').map((photo) => String(photo.id)));
+  const allEdges = normalizedEdges(violations);
+  const forcedReserve = new Set(allEdges.flatMap(([left, right]) => forcedMain.has(left) && !forcedMain.has(right) ? [right]
+    : forcedMain.has(right) && !forcedMain.has(left) ? [left] : []));
+  const edges = allEdges.filter(([left, right]) => !forcedMain.has(left) && !forcedMain.has(right)
+    && !forcedReserve.has(left) && !forcedReserve.has(right));
   const photosById = new Map((photos || []).map((photo) => [String(photo.id), photo]));
   const compare = (left, right) => comparePhotos(left, right, photosById);
   const exactLimit = Math.max(4, Number(options.exactComponentLimit) || 22);
-  const reservePhotoIds = [];
+  const reservePhotoIds = [...forcedReserve, ...(photos || []).filter((photo) => photo.statusOverride === 'reserve').map((photo) => String(photo.id))];
   let bounded = false;
   let componentCount = 0;
 
@@ -119,15 +124,16 @@ export function recommendReserveForConflicts(photos = [], thresholdMeters = 25, 
   });
 
   const uniqueReservePhotoIds = [...new Set(reservePhotoIds)].sort(compare);
+  const remainingConflictCount = allEdges.filter(([left, right]) => forcedMain.has(left) && forcedMain.has(right)).length;
   return {
     thresholdMeters: Number(thresholdMeters) || 25,
     conflictCount: violations.length,
     reservePhotoIds: uniqueReservePhotoIds,
-    activeAfterCount: activePhotos.length - uniqueReservePhotoIds.length,
-    remainingConflictCount: 0,
+    activeAfterCount: activePhotos.filter((photo) => !uniqueReservePhotoIds.includes(String(photo.id))).length,
+    remainingConflictCount,
     componentCount,
     strategy: bounded ? 'bounded-deterministic' : 'exact-minimum',
-    message: edges.length === 0
+    message: remainingConflictCount ? 'Остаются конфликты между точками, вручную оставленными в основных.' : violations.length === 0
       ? 'Конфликтов ACTIVE-точек нет.'
       : bounded
         ? 'Для крупной сети использована детерминированная bounded-рекомендация; все конфликты будут устранены.'

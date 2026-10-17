@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { handleNinjaboxRelay } from '../relay/worker.js';
@@ -276,6 +276,15 @@ try {
     await page.locator('.move-photo-modal ion-searchbar input').fill('6883');
     const bounds = await page.locator('.move-photo-modal ion-content').boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
+    assert.ok(bounds.height >= 80, 'visual picker has usable destination space in landscape');
+    await page.locator('.destination-source img').waitFor();
+    await page.locator('.move-photo-modal ion-item .destination-strip img').first().waitFor();
+    assert.match(await page.locator('.destination-source').textContent(), /Точка 12/);
+    const destination = page.locator('.move-photo-modal ion-item').filter({ hasText: '#6883' });
+    assert.match(await destination.textContent(), /64, 30/);
+    assert.ok(await destination.locator('.destination-thumbnail').count() >= 2);
+    await mkdir('output/playwright', { recursive: true });
+    await page.screenshot({ path: `output/playwright/608-picker-${width}.png` });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.equal(await page.locator('.move-photo-modal ion-content').evaluate((el) => el.scrollWidth <= el.clientWidth), true);
   }
@@ -293,6 +302,21 @@ try {
   await page.locator('[data-point-id="12"]').getByRole('button', { name: 'Вернуть', exact: true }).click();
   assert.equal(await targetPoint().locator('.photo-thumbnail').count(), 2, 'empty moved source recovers its photo');
   assert.equal(await page.locator('[data-point-id="12"] .photo-thumbnail').count(), 1);
+  // A late point can merge directly into an early non-neighbor after publication.
+  await pointAct(card('#6893'), 'Объединить с…');
+  await page.locator('.move-photo-modal ion-title').filter({ hasText: 'Объединить точки' }).waitFor();
+  await page.locator('.destination-source img').waitFor();
+  await page.locator('.move-photo-modal ion-searchbar input').fill('6882');
+  const mergeDestination = page.locator('.move-photo-modal ion-item').filter({ hasText: '#6882' });
+  await mergeDestination.locator('.destination-strip img').first().waitFor();
+  await mergeDestination.click();
+  await page.locator('.move-photo-modal').waitFor({ state: 'hidden' });
+  assert.equal(await cards.locator('.photo-identity').filter({ hasText: '#6893' }).count(), 0);
+  assert.equal(await source().locator('.photo-thumbnail').count(), 4);
+  assert.match(await source().textContent(), /требуется повторная публикация/);
+  assert.equal(await source().locator('.point-link').count(), 0);
+  assert.deepEqual(await page.evaluate(() => globalThis.__recognitions), [...beforeAppend, 'source-11.jpg', 'source-12.jpg', 'source-13.jpg']);
+  console.log('Issue608 visual picker: bounded local source/destination thumbnails, status/coordinates/counts, late-to-early move, distant published whole-point merge, publication invalidation, narrow portrait/landscape: PASS');
   console.log('0.4.0 mobile membership: stable 1+3→2+2 identities, dirty-point retry, representative removal/undo, append-only recognition, removed placeholders, no-GPS move, universal exact URL copy, searchable chooser at 320/375/812px: PASS');
   assert.deepEqual(errors, []);
   console.log('375×812 / landscape: review 10→8, split/merge, no early uploads, 7 active sanitized POSTs/links, independent removals/stable slots, one-point/aggregate GPX, TXT substring selection/copy and footer: PASS');
