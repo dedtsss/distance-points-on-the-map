@@ -78,6 +78,7 @@ const ready = async () => {
 };
 try {
   await page.goto(server.resolvedUrls.local[0]);
+  await page.getByRole('checkbox', { name: 'Учитывать номер/индекс на фото' }).check();
   await mapTab();
   await page.getByText(/нет активных точек с координатами/).waitFor();
   assert.equal(styleRequests, 0, 'empty state performs no provider requests');
@@ -216,6 +217,7 @@ try {
     // Start a fresh map page to test initial failure and retry without test-only
     // product APIs or replacing the MapLibre engine.
     await page.reload(); await pointsTab();
+    await page.getByRole('checkbox', { name: 'Учитывать номер/индекс на фото' }).check();
     await page.locator('input[type=file]').first().setInputFiles([file(5)]);
     await page.getByRole('button', { name: 'Обработать фото', exact: true }).click();
     await page.getByRole('heading', { name: 'Проверка точек' }).waitFor();
@@ -224,6 +226,7 @@ try {
     styleMode = 'success'; await page.getByRole('button', { name: 'Повторить загрузку карты' }).click(); await ready();
     styleMode = 'timeout';
     await page.reload(); await pointsTab();
+    await page.getByRole('checkbox', { name: 'Учитывать номер/индекс на фото' }).check();
     await page.locator('input[type=file]').first().setInputFiles([file(5)]);
     await page.getByRole('button', { name: 'Обработать фото', exact: true }).click();
     await page.getByRole('heading', { name: 'Проверка точек' }).waitFor();

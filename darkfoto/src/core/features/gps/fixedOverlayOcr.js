@@ -237,8 +237,8 @@ export async function readFixedOverlayProfile(file, options = {}) {
     const indexBounds = relativeBoundsWithin(overlay.bounds, FIXED_OVERLAY_PROFILE.index);
     const indexCrop = cropBounds(image, indexBounds);
     const indexPrepared = prepareNearestAutocontrast(indexCrop);
-    options.onProgress?.({ status: 'fixed_overlay:index', progress: 0.75 });
-    const indexRecognition = await recognize(indexPrepared, {
+    if (options.indexMode !== false) options.onProgress?.({ status: 'fixed_overlay:index', progress: 0.75 });
+    const indexRecognition = options.indexMode === false ? { text: '', confidence: 0 } : await recognize(indexPrepared, {
       ...options,
       session,
       whitelist: INDEX_WHITELIST,
@@ -293,8 +293,8 @@ export async function readFixedOverlayProfile(file, options = {}) {
         latitude: parsedCoordinates.latitude,
         longitude: parsedCoordinates.longitude,
         indexFromOcr,
-        indexStatus: indexFromOcr ? 'found' : 'missing',
-        indexAttempts: [indexAttempt],
+        indexStatus: options.indexMode === false ? 'disabled' : indexFromOcr ? 'found' : 'missing',
+        indexAttempts: options.indexMode === false ? [] : [indexAttempt],
         indexCandidates: indexCandidate ? [indexCandidate] : [],
         chosenIndexCandidate: indexCandidate,
         indexCropBounds: indexCandidate ? indexCrop.sourceBounds : null,
@@ -313,7 +313,7 @@ export async function readFixedOverlayProfile(file, options = {}) {
         attempts: [coordinateAttempt],
         cropPreview: coordinateAttempt.cropPreview,
         processedPreview: coordinateAttempt.processedPreview,
-        warnings: indexFromOcr ? [] : ['index_not_found'],
+        warnings: options.indexMode === false || indexFromOcr ? [] : ['index_not_found'],
       },
     };
   } catch (error) {

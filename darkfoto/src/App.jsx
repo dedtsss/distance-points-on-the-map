@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
-import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint, restoreLastMember } from './core/photoPoints.js';
+import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, appendPhotos, restoreMemberPoint, restoreLastMember, selectRepresentative, GROUP_DEFAULTS } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { publishBatch } from './publishBatch.js';
@@ -30,6 +30,10 @@ const PointMap = React.lazy(() => import('./PointMap.jsx'));
 const imageFiles = (files) => [...files].filter((file) => file.type.startsWith('image/'))
   .sort((left, right) => (left.webkitRelativePath || left.name).localeCompare(right.webkitRelativePath || right.name));
 const errorText = (error) => error instanceof Error ? error.message : String(error);
+// Hide EXIF rational floating-point tails without changing the stored GPS evidence.
+const coordinatesText = (coordinates) => coordinates
+  ? [coordinates.latitude, coordinates.longitude].map((value) => Number(Number(value).toFixed(10))).join(', ')
+  : 'Координаты не найдены';
 const WorkProgress = ({ progress }) => progress && <div className="progress-area" role="status" aria-live="polite">
   <span>{progress.label}{progress.itemPercent !== null
     ? ` · ${progress.itemPercent}% ${progress.kind === 'ninjabox' ? 'загрузки' : 'текущего фото'}` : ''}</span>
@@ -39,6 +43,8 @@ const WorkProgress = ({ progress }) => progress && <div className="progress-area
 
 export default function App() {
   const [files, setFiles] = useState([]);
+  const [indexMode, setIndexMode] = useState(false);
+  const analyze = (points) => splitBatch(points, 25, { indexMode });
   const [onion, setOnion] = useState('');
   const [publisher, setPublisher] = useState('none');
   const ninjaboxRelay = import.meta.env.VITE_NINJABOX_RELAY_URL || DEFAULT_NINJABOX_RELAY_URL;
@@ -113,7 +119,7 @@ export default function App() {
     clearPreviews();
     setFiles([]); setRows([]); setSplit(null);
     setSession(''); setColor(''); setPacking(''); setComment('');
-    setPublisher('none'); setOnion('');
+    setPublisher('none'); setOnion(''); setIndexMode(false);
     setResumeAvailable(false); setReviewing(false);
     setStatus(''); setCopyStatus(''); setCopyBusy(false); setWorkProgress(null);
     setViewer(null); setTxtOpen(false); setPhotoAction(null); setPointAction(null);
@@ -224,7 +230,7 @@ export default function App() {
   const publishCurrent = async (current, destination) => {
     setReviewing(false);
     setResumeAvailable(true);
-    const publication = await publishBatch(current, new Set(splitBatch(current).unresolved.map((photo) => photo.id)), {
+    const publication = await publishBatch(current, new Set(analyze(current).unresolved.map((photo) => photo.id)), {
       publisher, destination, fileAt, onStatus: setStatus,
       onCleaned: (row, cleaned) => rememberPreview(row.id, cleaned),
       onRows: setRows,
@@ -257,11 +263,11 @@ export default function App() {
       setStatus(`Распознавание ${index + 1}/${selected.length}`);
       setWorkProgress(actionProgress('recognition', index, selected.length));
       try {
-        const nativeOcr = selected[index].native ? await recognizeAndroidStamp(selected[index]) : null;
         const file = await (selected[index].native ? readAndroidPhoto(selected[index]) : selected[index]);
         rememberPreview(String(offset + index + 1), file);
         const read = await readPhoto(file, {
-          ...(nativeOcr ? { readOcr: async () => nativeOcr } : {}),
+          indexMode,
+          ...(selected[index].native ? { readOcr: (_file, options) => recognizeAndroidStamp(selected[index], options) } : {}),
           onProgress: ({ status: ocrStatus, progress }) => {
             const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
             const stage = String(ocrStatus || 'ocr')
@@ -301,10 +307,10 @@ export default function App() {
     clearPreviews();
     try {
       const current = await recognizeFiles(files, 0, setRows);
-      const logical = groupPhotos(current);
-      const points = establishReviewSlots(logical, splitBatch(logical));
+      const logical = groupPhotos(current, GROUP_DEFAULTS, { indexMode });
+      const points = establishReviewSlots(logical, analyze(logical));
       setRows(points);
-      setSplit(splitBatch(points));
+      setSplit(analyze(points));
       setReviewing(true);
       setStatus('Распознавание завершено. Проверьте точки перед публикацией.');
     } catch (error) { setStatus(`Ошибка: ${errorText(error)}`); }
@@ -321,15 +327,15 @@ export default function App() {
     try {
       const additions = await recognizeFiles(selected, files.length);
       const combinedFiles = [...files, ...selected];
-      const combined = appendPhotos(rows, additions);
+      const combined = appendPhotos(rows, additions, GROUP_DEFAULTS, { indexMode });
       // Retain existing review slots, including every removed placeholder.
-      const slotted = establishReviewSlots(combined, splitBatch(combined));
+      const slotted = establishReviewSlots(combined, analyze(combined));
       const nextRows = combined.map((point) => Number.isFinite(point.reviewSlot) ? point
         : { ...point, reviewSection: slotted.find((item) => item.id === point.id).reviewSection,
           reviewSlot: Math.max(-1, ...rows.map((item) => item.reviewSlot)) + 1 + additions.findIndex((item) => item.id === point.id) });
       setFiles(combinedFiles);
       setRows(nextRows);
-      setSplit(splitBatch(nextRows));
+      setSplit(analyze(nextRows));
       setReviewing(true);
       setResumeAvailable(false);
       setStatus(`Добавлено ${selected.length} фото. Проверьте точки перед публикацией.`);
@@ -351,9 +357,9 @@ export default function App() {
   const active = activePoints(rows);
   const pending = active.filter((point) => point.uploadResult?.stale
     || !point.uploadResult?.links?.some((link) => link.provider === publisher && link.url));
-  const grouped = split ? splitBatch(active) : null;
+  const grouped = split ? analyze(active) : null;
   const normalizedSession = session.trim();
-  const formatOptions = { description: comment, color, packing, session: normalizedSession };
+  const formatOptions = { description: comment, color, packing, session: normalizedSession, indexMode };
   const validPhotos = validResultPhotos(grouped);
   const mainBlocks = resultBlocksForCopy({ main: grouped?.main, reserve: [] }, formatOptions);
   const reserveBlocks = resultBlocksForCopy({ main: [], reserve: grouped?.reserve }, formatOptions);
@@ -368,7 +374,7 @@ export default function App() {
     if (busy) return;
     setBusy(true); setStatus('Выберите папку для экспорта сессии.');
     try {
-      const result = await exportLocalSession(rows, { session, color, packing, comment }, {
+      const result = await exportLocalSession(rows, { session, color, packing, comment, indexMode }, {
         destination: androidSessionDestination, fileAt,
         onCommit: () => { setStatus('Запись и проверка файлов…'); setWorkProgress({ kind: 'local-export', label: 'Запись и проверка файлов…',
           type: 'indeterminate', value: 0, buffer: 0, itemPercent: null }); },
@@ -404,7 +410,7 @@ export default function App() {
   const copyOne = async (photo) => {
     try {
       await copyText(formatPhotoResultBlock(photo, formatOptions));
-      setCopyStatus(`Скопирован блок #${photo.indexFromOcr}`);
+      setCopyStatus(`Скопирован блок ${pointLabel(photo)}`);
     } catch (error) { setCopyStatus(`Не удалось скопировать: ${errorText(error)}`); }
   };
   const gpx = async (action) => {
@@ -415,7 +421,7 @@ export default function App() {
   };
   const pointGpx = async (photo) => {
     try {
-      await exportGpx(buildPointGpx(photo, normalizedSession), 'share',
+      await exportGpx(buildPointGpx(photo, normalizedSession, { indexMode }), 'share',
         [normalizedSession, photo.indexFromOcr || photo.id].filter(Boolean).join('_'));
       setStatus('GPX точки готов.');
     } catch (error) { setStatus(`GPX: ${errorText(error)}`); }
@@ -428,7 +434,7 @@ export default function App() {
     : !grouped ? { kind: 'recognized', text: 'Распознано' }
       : reserveIds.has(photo.id) ? { kind: 'reserve', text: 'Резерв' }
         : { kind: 'main', text: 'Основное' };
-  const pointLabel = (photo) => photo?.indexFromOcr ? `#${photo.indexFromOcr}`
+  const pointLabel = (photo) => indexMode && photo?.indexFromOcr ? `#${photo.indexFromOcr}`
     : photo?.number ? `Точка ${photo.number}` : 'Точка';
   const rowPosition = new Map(rows.map((photo, index) => [photo.id, index]));
   const neighborOf = (photo, direction) => {
@@ -439,7 +445,7 @@ export default function App() {
   const displaySections = grouped ? reviewSections(rows, grouped)
     : [{ key: 'recognized', title: '', items: rows }];
   const applyRegroup = (nextRows) => {
-    setRows(establishReviewSlots(nextRows, splitBatch(nextRows)));
+    setRows(establishReviewSlots(nextRows, analyze(nextRows)));
   };
   const removePoint = (photo) => {
     if (!reviewing || busy || hasPublishedPoints(rows)) return;
@@ -554,6 +560,11 @@ export default function App() {
             </>}
           </IonCardContent></IonCard>
           <IonCard><IonCardContent>
+            <label className="index-setting">
+              <input type="checkbox" checked={indexMode} disabled={busy || rows.length > 0}
+                onChange={(event) => setIndexMode(event.target.checked)} />
+              Учитывать номер/индекс на фото
+            </label>
             <IonList lines="inset">
               <IonItem><IonSelect label="Публикация" labelPlacement="stacked" value={publisher}
                 interface="action-sheet" interfaceOptions={{ header: 'Публикация', cssClass: 'publication-sheet' }}
@@ -637,8 +648,7 @@ export default function App() {
                         </div>
                         <div className="point-card-meta">
                           <span>{photo.emptyFromMove ? 0 : pointMembers(photo).length} фото</span>
-                          <span className="photo-coordinates">{photo.coordinates
-                            ? `${photo.coordinates.latitude}, ${photo.coordinates.longitude}` : 'Координаты не найдены'}</span>
+                          <span className="photo-coordinates">{coordinatesText(photo.coordinates)}</span>
                         </div>
                         <div className="point-header-actions">
                           {!photo.removed && <IonButton size="small" fill="clear" disabled={!hasPointCoordinates(photo)} onClick={() => {
@@ -663,15 +673,22 @@ export default function App() {
                             aria-label={`Открыть фото ${member.fileName || member.number} точки ${photo.indexFromOcr || photo.number}`}>
                             {previews[member.id] && <img src={previews[member.id]} alt="" loading="lazy" />}
                           </button>
+                            <div className="member-evidence">
+                              <span className="photo-filename">{member.fileName}</span>
+                              <span className="member-coordinates">{coordinatesText(member.coordinates)}</span>
+                              <span>{member.gpsSource === 'exif' ? 'EXIF' : member.gpsSource === 'ocr' ? 'OCR' : 'Источник не найден'}</span>
+                              {(indexMode || member.indexFromOcr) && <span>{member.indexFromOcr ? `#${member.indexFromOcr}` : 'Индекс не найден'}</span>}
+                              {member.id === photo.representativeId && <strong className="representative-label">Главная</strong>}
+                            </div>
+                            {grouped && <IonButton fill="clear" size="small" className="make-representative"
+                              disabled={busy || member.id === photo.representativeId}
+                              onClick={() => applyMembership(selectRepresentative(rows, photo.id, member.id))}>Сделать главной</IonButton>}
                             {grouped && <IonButton fill="clear" size="small" disabled={busy}
                               aria-label={`Действия фото ${member.fileName || member.number}`}
                               onClick={() => setPhotoAction({ pointId: photo.id, memberId: member.id, name: member.fileName || String(member.number) })}>⋯</IonButton>}
                           </div>)}
                         </div>
                         <div className="photo-detail">
-                          <ul className="photo-filenames" aria-label="Файлы точки">
-                            {pointMembers(photo).map((member) => <li className="photo-filename" key={member.id}>{member.fileName}</li>)}
-                          </ul>
                           {state.kind === 'reserve' && (photo.reserveConflicts || []).length > 0 && <div className="reserve-reasons">
                             <strong>Почему в резерве</strong>
                             {photo.reserveConflicts.map((conflict) => <span key={`${photo.id}:${conflict.otherId}`}>

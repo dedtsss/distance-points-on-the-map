@@ -72,6 +72,7 @@ const openTxt = async () => {
 
 try {
   await page.goto(server.resolvedUrls.local[0]);
+  await page.getByRole('checkbox', { name: 'Учитывать номер/индекс на фото' }).check();
   await page.locator('ion-select').evaluate((element) => element.dispatchEvent(new CustomEvent('ionChange', { detail: { value: 'ninjabox' }, bubbles: true })));
   const buffer = await readFile(new URL('fixtures/representative-6300.jpg', import.meta.url));
   await page.locator('input[type=file]').first().setInputFiles(Array.from({ length: 10 }, (_, i) => ({ name: `source-${String(i + 1).padStart(2, '0')}.jpg`, mimeType: 'image/jpeg', buffer })));

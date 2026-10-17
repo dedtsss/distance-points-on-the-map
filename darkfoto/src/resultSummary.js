@@ -36,6 +36,7 @@ export const formatDistancePair = (pair) => {
 
 export function buildResultText({ grouped, formatOptions = {}, session = '', reviewLabels = {} }) {
   if (!grouped) return '';
+  formatOptions = { indexMode: grouped.indexMode, ...formatOptions };
   const main = formatAllPhotoResultBlocks(activePoints(grouped.main), formatOptions);
   const reserve = formatAllPhotoResultBlocks(activePoints(grouped.reserve), formatOptions);
   const review = activePoints(grouped.unresolved)

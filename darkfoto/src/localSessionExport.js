@@ -10,7 +10,7 @@ export const safeDirectory = (value, fallback = 'session') => String(value || ''
 export function localSessionPlan(rows, metadata = {}) {
   const points = activePoints(rows);
   if (!points.length) throw new Error('Нет активных точек для экспорта.');
-  const grouped = splitBatch(points);
+  const grouped = splitBatch(points, 25, { indexMode: metadata.indexMode ?? true });
   const states = new Map([['Основное', grouped.main], ['Резерв', grouped.reserve], ['Требует проверки', grouped.unresolved]]
     .flatMap(([status, items]) => items.map((point) => [point.id, status])));
   const used = new Set();

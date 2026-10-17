@@ -34,7 +34,7 @@ export function formatPhotoResultBlock(photo, options = {}) {
   const photoText = links.length > 0 ? links.join(' ') : 'ссылка отсутствует';
 
   return [
-    `#${index}${session ? ` / ${session}` : ''}`,
+    `${options.indexMode === false ? `Точка ${photo.number}` : `#${index}`}${session ? ` / ${session}` : ''}`,
     `Координаты: ${coordinatesText(photo)}`,
     `Цвет: ${color || 'не указан'}`,
     `Фасовка: ${packing || 'не указана'}`,

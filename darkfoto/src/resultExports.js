@@ -6,9 +6,9 @@ const byPhotoOrder = (left, right) => (
   || String(left?.id || '').localeCompare(String(right?.id || ''))
 );
 
-export function validResultPhotos(grouped) {
+export function validResultPhotos(grouped, { indexMode = grouped?.indexMode ?? true } = {}) {
   return activePoints([...(grouped?.main || []), ...(grouped?.reserve || [])])
-    .filter((photo) => photo?.indexFromOcr && photo?.coordinates
+    .filter((photo) => (!indexMode || photo?.indexFromOcr) && photo?.coordinates
       && Number.isFinite(Number(photo.coordinates.latitude))
       && Number.isFinite(Number(photo.coordinates.longitude))
       && Math.abs(Number(photo.coordinates.latitude)) <= 90
@@ -17,7 +17,7 @@ export function validResultPhotos(grouped) {
 }
 
 export function resultBlocksForCopy(grouped, options = {}) {
-  return buildPhotoResultBlocks(validResultPhotos(grouped), options).map((block) => block.text);
+  return buildPhotoResultBlocks(validResultPhotos(grouped, options), { indexMode: grouped?.indexMode, ...options }).map((block) => block.text);
 }
 
 const xml = (value) => String(value ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
@@ -26,11 +26,11 @@ const xml = (value) => String(value ?? '').replace(/[\u0000-\u0008\u000b\u000c\u
 })[character]);
 const decimal = (value) => Number(value).toFixed(10).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
 
-export function buildGpx(grouped, session = '') {
+export function buildGpx(grouped, session = '', { indexMode = grouped?.indexMode ?? true } = {}) {
   const suffix = normalizeSessionName(session);
   const reserveIds = new Set((grouped?.reserve || []).map((photo) => photo.id));
-  const points = validResultPhotos(grouped).map((photo) => {
-    const name = `#${photo.indexFromOcr}${suffix ? ` / ${suffix}` : ''}`;
+  const points = validResultPhotos(grouped, { indexMode }).map((photo) => {
+    const name = `${indexMode ? `#${photo.indexFromOcr}` : `Точка ${photo.number}`}${suffix ? ` / ${suffix}` : ''}`;
     const description = `${reserveIds.has(photo.id) ? 'Резерв' : 'Основное'} · ${photo.fileName || ''}`;
     return `  <wpt lat="${decimal(photo.coordinates.latitude)}" lon="${decimal(photo.coordinates.longitude)}"><name>${xml(name)}</name><desc>${xml(description)}</desc></wpt>`;
   });
@@ -47,8 +47,8 @@ export const hasPointCoordinates = (point) => point?.coordinates
   && Math.abs(Number(point.coordinates.latitude)) <= 90
   && Math.abs(Number(point.coordinates.longitude)) <= 180;
 
-export function buildPointGpx(point, session = '') {
+export function buildPointGpx(point, session = '', { indexMode = true } = {}) {
   if (!hasPointCoordinates(point)) throw new Error('Координаты не найдены');
   const identity = point.indexFromOcr || point.id || point.number;
-  return buildGpx({ main: [{ ...point, removed: false, indexFromOcr: identity }], reserve: [] }, session);
+  return buildGpx({ main: [{ ...point, removed: false, indexFromOcr: identity }], reserve: [] }, session, { indexMode });
 }

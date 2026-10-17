@@ -5,6 +5,7 @@ import { captureTime, availableOcrAccuracy } from './captureTime.js';
 
 // Keep the original File in browser memory only. The return value contains no binary data.
 export async function readPhoto(file, options = {}) {
+  const indexMode = options.indexMode !== false;
   const readExif = options.readExif || readPhotoExif;
   const readOcr = options.readOcr || readCoordinatesWithOcr;
   let exif;
@@ -12,9 +13,12 @@ export async function readPhoto(file, options = {}) {
   const errors = [];
   const ocrStarted = performance.now();
   try { exif = await readExif(file); } catch (error) { errors.push(`EXIF: ${error.message}`); }
-  try { ocr = await readOcr(file, { onProgress: options.onProgress }); } catch (error) { errors.push(`OCR: ${error.message}`); }
-
   const exifCoordinates = normalizeCoordinates(exif?.coordinates?.latitude, exif?.coordinates?.longitude);
+  if (indexMode || !exifCoordinates) {
+    try { ocr = await readOcr(file, { onProgress: options.onProgress, indexMode, skipIndexOcr: !indexMode }); }
+    catch (error) { errors.push(`OCR: ${error.message}`); }
+  }
+  const warnings = (ocr?.warnings || []).filter((warning) => indexMode || !/^index_/.test(warning));
   const ocrCoordinates = ocr?.ok ? normalizeCoordinates(ocr.latitude, ocr.longitude) : null;
   const coordinates = exifCoordinates || ocrCoordinates;
   const source = exifCoordinates ? 'exif' : ocrCoordinates ? 'ocr' : 'missing';
@@ -25,18 +29,19 @@ export async function readPhoto(file, options = {}) {
   return {
     ...captureTime(file, exif),
     accuracyMeters: availableOcrAccuracy(ocr),
-    indexFromOcr: ocr?.indexFromOcr || null,
-    indexStatus: ocr?.indexStatus || 'missing',
+    indexMode,
+    indexFromOcr: indexMode ? ocr?.indexFromOcr || null : null,
+    indexStatus: indexMode ? ocr?.indexStatus || 'missing' : 'disabled',
     coordinates,
     gpsSource: source,
     gpsStatus: coordinates ? 'done' : 'missing',
     gpsConfidence: source === 'exif' ? 1 : Number(ocr?.confidence) || 0,
-    gpsWarnings: ocr?.warnings || [],
+    gpsWarnings: exifCoordinates ? [] : warnings,
     coordinateQuality,
     orientation: exif?.orientation || 1,
     ocrStatus: ocr?.ocrStatus || 'missing',
-    warnings: [...(ocr?.warnings || []), ...errors],
-    ocrEngine: ocr?.ocrEngine || 'tesseract_web',
+    warnings: [...warnings, ...errors],
+    ocrEngine: ocr ? ocr.ocrEngine || 'tesseract_web' : 'skipped',
     recognitionMs: ocr?.recognitionMs ?? Math.round(performance.now() - ocrStarted),
   };
 }

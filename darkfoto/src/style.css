@@ -49,8 +49,12 @@ ion-button { min-height: 48px; }
 .photo-detail a { color: #9bccff; }
 .photo-identity { font-size: 1.18rem; line-height: 1.15; color: #eef1f5; }
 .photo-filename { color: #9baebe; font-size: .78rem; line-height: 1.35; }
-.photo-filenames { display: grid; gap: 3px; list-style: none; padding: 0; margin: 0; min-width: 0; }
-.photo-filenames li { min-width: 0; overflow-wrap: anywhere; }
+.member-evidence { display: grid; gap: 3px; min-width: 0; font-size: .75rem; line-height: 1.4; }
+.member-evidence > * { overflow-wrap: anywhere; }
+.representative-label { color: #7be0ac; }
+.member-photo .make-representative { height: auto; white-space: normal; }
+.index-setting { display: flex; align-items: center; gap: 10px; min-height: 48px; line-height: 1.4; }
+.index-setting input { flex-shrink: 0; width: 22px; height: 22px; }
 .photo-coordinates { font-variant-numeric: tabular-nums; }
 .point-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 3px; width: 100%; }
 .point-actions ion-button { min-height: 38px; height: auto; margin: 0; --padding-start: 8px; --padding-end: 8px; font-size: .78rem; }

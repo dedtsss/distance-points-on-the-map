@@ -16,7 +16,7 @@ const withDeadline = (promise, ms, label) => {
 
 // Only a lower stamp line can supply an index. Coordinates, dates and time are excluded.
 export function parseNativeStamp(pass) {
-  const generic = pass?.profile === 'gray' ? parseGpsFromOcrText(pass?.text) : null;
+  const generic = parseGpsFromOcrText(pass?.text);
   const coordinates = parseFixedOverlayCoordinates(pass?.text) || (generic?.ok ? generic : null);
   const indexLines = (pass?.lines || []).filter((line) => Number(line.topRatio) >= 0.44);
   const indexes = indexLines.flatMap((line) => {
@@ -110,13 +110,13 @@ export async function recognizeAndroidStamp(item, options = {}) {
   try {
     first = await withDeadline(folder.recognizePhoto({ id: item.id }), NATIVE_PASS_TIMEOUT_MS, 'native');
     let parsed = parseNativeStamp(first);
-    if (!parsed.ok || parsed.indexStatus !== 'found') {
+    if (!parsed.ok || (options.indexMode !== false && parsed.indexStatus !== 'found')) {
       try {
         second = await withDeadline(folder.recognizePhoto({ id: item.id, alternate: true }), 2500, 'native_alternate');
         parsed = mergeNativePasses(parsed, parseNativeStamp(second));
       } catch (error) { nativeError = error; }
     }
-    if (parsed.ok && parsed.indexStatus === 'found') return { ...parsed, ...diagnostics(),
+    if (parsed.ok && (options.indexMode === false || parsed.indexStatus === 'found')) return { ...parsed, ...diagnostics(),
       recognitionMs: Math.round(performance.now() - started) };
     // Fallback receives only the prepared native crop and a four-second product deadline.
     try {

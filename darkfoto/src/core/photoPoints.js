@@ -12,23 +12,25 @@ const trustedTime = (photo) => ['exif', 'filename'].includes(photo.captureTimeSo
   && Number.isFinite(photo.captureTimeMs) ? photo.captureTimeMs : null;
 const byOrder = (a, b) => a.number - b.number || String(a.id).localeCompare(String(b.id));
 
-export function makePoint(members) {
+export function makePoint(members, manualRepresentativeId = null) {
   const ordered = [...members].sort(byOrder);
   const valid = ordered.filter(validCoordinates);
   const accurate = valid.filter((photo) => Number.isFinite(photo.accuracyMeters) && photo.accuracyMeters >= 0)
     .sort((a, b) => a.accuracyMeters - b.accuracyMeters || byOrder(a, b));
-  const representative = accurate[0] || valid[0] || ordered[0];
+  const manual = ordered.find((photo) => photo.id === manualRepresentativeId);
+  const representative = manual || accurate[0] || valid[0] || ordered[0];
   const index = recognizedIndex(representative) ? representative : ordered.find(recognizedIndex);
   return { ...representative,
     id: ordered.length === 1 ? ordered[0].id : `point:${ordered.map((photo) => photo.id).join(':')}`,
     number: ordered[0].number, members: ordered, representativeId: representative.id,
+    manualRepresentativeId: manual?.id || null,
     indexFromOcr: index?.indexFromOcr || representative.indexFromOcr || null,
     indexStatus: index ? 'found' : representative.indexStatus,
     uploadResult: ordered.length === 1 ? ordered[0].uploadResult || { links: [] } : { links: [] },
   };
 }
 
-function canJoin(members, candidate, rules) {
+function canJoin(members, candidate, rules, indexMode) {
   const anchor = members[0];
   const previous = members.at(-1);
   if (!validCoordinates(candidate) || !validCoordinates(anchor)) return false;
@@ -37,11 +39,14 @@ function canJoin(members, candidate, rules) {
   // Also remain near the best representative if accuracy changes its position.
   const resulting = makePoint([...members, candidate]);
   if ([...members, candidate].some((photo) => haversineDistanceMeters(photo, resulting) > rules.radiusMeters)) return false;
+  if (!indexMode && [...members, candidate].every((photo) => photo.gpsSource === 'exif')) {
+    return [...members, candidate].every((photo) => haversineDistanceMeters(anchor, photo) <= rules.tightRadiusMeters);
+  }
   const times = [...members, candidate].map(trustedTime);
   const known = times.filter((time) => time !== null);
   const span = known.length ? Math.max(...known) - Math.min(...known) : 0;
   if (span > rules.maxSpanMs) return false;
-  const gap = recognizedIndex(previous) && recognizedIndex(candidate)
+  const gap = indexMode && recognizedIndex(previous) && recognizedIndex(candidate)
     ? Math.abs(Number(previous.indexFromOcr) - Number(candidate.indexFromOcr)) : null;
   if (times.some((time) => time === null)) {
     return distance <= rules.tightRadiusMeters && gap !== null && gap <= rules.nearIndexGap;
@@ -51,14 +56,14 @@ function canJoin(members, candidate, rules) {
     || (distance <= rules.tightRadiusMeters && span <= rules.strongSpanMs);
 }
 
-export function groupPhotos(photos, rules = GROUP_DEFAULTS) {
+export function groupPhotos(photos, rules = GROUP_DEFAULTS, { indexMode = true } = {}) {
   const groups = [];
   for (const photo of [...photos].sort(byOrder)) {
     const last = groups.at(-1);
-    if (last && canJoin(last, photo, rules)) last.push(photo);
+    if (last && canJoin(last, photo, rules, indexMode)) last.push(photo);
     else groups.push([photo]);
   }
-  return groups.map(makePoint);
+  return groups.map((members) => makePoint(members));
 }
 
 export const pointMembers = (point) => point.emptyFromMove ? [] : point.members || [point];
@@ -76,7 +81,7 @@ export function splitPoint(points, id) {
   if (hasPublishedPoints(points)) return points;
   const occupied = new Set(points.filter((point) => point.id !== id).map((point) => point.id));
   return points.flatMap((point) => point.id === id && !point.removed ? pointMembers(point).map((photo, index) =>
-    availableIdentity({ ...makePoint([photo]), ...(index === 0 ? { excludedMembers: point.excludedMembers || [], memberUndo: point.memberUndo || [] } : {}) }, occupied)) : [point]);
+    availableIdentity({ ...makePoint([photo], point.manualRepresentativeId), ...(index === 0 ? { excludedMembers: point.excludedMembers || [], memberUndo: point.memberUndo || [] } : {}) }, occupied)) : [point]);
 }
 
 export function mergePoint(points, id, direction) {
@@ -87,7 +92,8 @@ export function mergePoint(points, id, direction) {
   if (points[position].removed || points[neighbor].removed) return points;
   const start = Math.min(position, neighbor);
   const occupied = new Set(points.filter((_, index) => index !== start && index !== start + 1).map((point) => point.id));
-  return [...points.slice(0, start), availableIdentity({ ...makePoint([...pointMembers(points[start]), ...pointMembers(points[start + 1])]),
+  return [...points.slice(0, start), availableIdentity({ ...makePoint([...pointMembers(points[start]), ...pointMembers(points[start + 1])],
+    points[start].manualRepresentativeId || points[start + 1].manualRepresentativeId),
     excludedMembers: [...(points[start].excludedMembers || []), ...(points[start + 1].excludedMembers || [])],
     memberUndo: [...(points[start].memberUndo || []), ...(points[start + 1].memberUndo || [])].sort((a, b) => a.order - b.order) }, occupied),
     ...points.slice(start + 2)];
@@ -100,7 +106,7 @@ const invalidatePublication = (point) => ({ ...point.uploadResult,
 });
 
 function withMembers(point, members) {
-  return { ...point, ...makePoint(members), id: point.id,
+  return { ...point, ...makePoint(members, point.manualRepresentativeId), id: point.id,
     reviewSection: point.reviewSection, reviewSlot: point.reviewSlot,
     removed: false, emptyFromMove: false, memberRemovedLast: false, publishError: undefined,
     uploadResult: invalidatePublication(point) };
@@ -175,10 +181,10 @@ export function restoreMemberPoint(points, id) {
   return moveMember(ready, owner.id, memberId, id);
 }
 
-export function appendPhotos(points, photos, rules = GROUP_DEFAULTS) {
+export function appendPhotos(points, photos, rules = GROUP_DEFAULTS, { indexMode = true } = {}) {
   let next = [...points];
   for (const photo of [...photos].sort(byOrder)) {
-    const matches = next.filter((point) => !point.removed && canJoin(pointMembers(point), photo, rules));
+    const matches = next.filter((point) => !point.removed && canJoin(pointMembers(point), photo, rules, indexMode));
     // The accepted evidence must identify exactly one entity; never coalesce
     // manually separated points or attach into an excluded placeholder.
     if (matches.length === 1) next = next.map((point) => point.id === matches[0].id
@@ -186,4 +192,11 @@ export function appendPhotos(points, photos, rules = GROUP_DEFAULTS) {
     else next.push(makePoint([photo]));
   }
   return next;
+}
+
+// Rebuild the same point so every coordinate consumer sees the selected member.
+export function selectRepresentative(points, pointId, memberId) {
+  return points.map((point) => point.id === pointId && !point.removed
+    && pointMembers(point).some((member) => member.id === memberId)
+    ? withMembers({ ...point, manualRepresentativeId: memberId }, pointMembers(point)) : point);
 }

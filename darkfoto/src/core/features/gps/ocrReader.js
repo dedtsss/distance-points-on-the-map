@@ -3,7 +3,7 @@ import { readFixedOverlayProfile } from './fixedOverlayOcr.js';
 
 export async function readCoordinatesWithOcr(stableFile, options = {}) {
   const fixed = await readFixedOverlayProfile(stableFile, options);
-  if (fixed.matched && fixed.result?.indexFromOcr) return fixed.result;
+  if (fixed.matched && (fixed.result?.indexFromOcr || (options.indexMode === false && fixed.result?.ok))) return fixed.result;
 
   const generic = await readGpsFromImageOcr(stableFile, options);
   if (fixed.matched && fixed.result) return {
