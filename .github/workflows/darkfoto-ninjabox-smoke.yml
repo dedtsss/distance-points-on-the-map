@@ -1,0 +1,28 @@
+name: DarkCat Photo NinjaBox synthetic smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      relay_url:
+        description: 'Public HTTPS DarkCat Photo relay URL ending in /v1/ninjabox'
+        required: true
+
+jobs:
+  synthetic-cleaned-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: darkfoto/package-lock.json
+      - name: Install and run live synthetic smoke
+        working-directory: darkfoto
+        env:
+          DARKFOTO_NINJABOX_RELAY_URL: ${{ inputs.relay_url }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run smoke:ninjabox

@@ -1,0 +1,5 @@
+SocksPort 0
+Log notice stdout
+DataDirectory /var/lib/tor
+HiddenServiceDir /var/lib/tor/darkfoto
+HiddenServicePort 80 127.0.0.1:8787
