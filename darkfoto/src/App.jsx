@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPhoto } from './core/readPhoto.js';
 import { splitBatch } from './core/batch.js';
-import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, mergeIntoPoint, appendPhotos, restoreMemberPoint, restoreLastMember, selectRepresentative, GROUP_DEFAULTS } from './core/photoPoints.js';
+import { groupPhotos, pointMembers, sourcePhotoCount, splitPoint, mergePoint, hasPublishedPoints, removeMember, moveMember, mergeIntoPoint, appendPhotos, restoreMemberPoint, restoreLastMember, selectRepresentative, regroupPhotos } from './core/photoPoints.js';
 import { buildResultText } from './resultSummary.js';
 import { DEFAULT_NINJABOX_RELAY_URL, onionBaseUrl, ninjaboxRelayUrl } from './core/publisher.js';
 import { publishBatch } from './publishBatch.js';
@@ -18,6 +18,8 @@ import { IonApp, IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton
   IonSegment, IonSegmentButton, IonBadge, IonList, IonText, IonModal, IonProgressBar, IonFooter, IonActionSheet, IonAlert } from '@ionic/react';
 import PhotoViewer from './PhotoViewer.jsx';
 import DestinationPicker from './DestinationPicker.jsx';
+import Settings from './Settings.jsx';
+import { readPreferences, savePreferences } from './preferences.js';
 import changelog from '../CHANGELOG.md?raw';
 import buildInfo from '../build-info.json';
 import { recentReleaseEntries } from './changelog.js';
@@ -46,7 +48,10 @@ const WorkProgress = ({ progress }) => progress && <div className="progress-area
 export default function App() {
   const [files, setFiles] = useState([]);
   const [indexMode, setIndexMode] = useState(false);
-  const analyze = (points) => splitBatch(points, 25, { indexMode });
+  const [preferences, setPreferences] = useState(readPreferences);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [regroupOpen, setRegroupOpen] = useState(false);
+  const analyze = (points) => splitBatch(points, preferences.minimumDistanceMeters, { indexMode });
   const [onion, setOnion] = useState('');
   const [publisher, setPublisher] = useState('none');
   const ninjaboxRelay = import.meta.env.VITE_NINJABOX_RELAY_URL || DEFAULT_NINJABOX_RELAY_URL;
@@ -140,7 +145,7 @@ export default function App() {
           setFiles(saved.files); setRows(saved.rows);
           const restoredIndexMode = saved.indexMode ?? true;
           setIndexMode(restoredIndexMode);
-          setSplit(saved.rows.length ? splitBatch(saved.rows, 25, { indexMode: restoredIndexMode }) : null);
+          setSplit(saved.rows.length ? splitBatch(saved.rows, preferences.minimumDistanceMeters, { indexMode: restoredIndexMode }) : null);
           setSession(saved.session || ''); setColor(saved.color || '');
           setPacking(saved.packing || ''); setComment(saved.comment || '');
           setPublisher(saved.publisher); setOnion(saved.onion || '');
@@ -375,7 +380,7 @@ export default function App() {
     clearPreviews();
     try {
       const current = await recognizeFiles(files, 0, setRows);
-      const logical = groupPhotos(current, GROUP_DEFAULTS, { indexMode });
+      const logical = groupPhotos(current, preferences);
       const points = establishReviewSlots(logical, analyze(logical));
       setRows(points);
       setSplit(analyze(points));
@@ -395,7 +400,7 @@ export default function App() {
     try {
       const additions = await recognizeFiles(selected, files.length);
       const combinedFiles = [...files, ...selected];
-      const combined = appendPhotos(rows, additions, GROUP_DEFAULTS, { indexMode });
+      const combined = appendPhotos(rows, additions, preferences, { indexMode });
       // Retain existing review slots, including every removed placeholder.
       const slotted = establishReviewSlots(combined, analyze(combined));
       const nextRows = combined.map((point) => Number.isFinite(point.reviewSlot) ? point
@@ -442,7 +447,7 @@ export default function App() {
     if (busy) return;
     setBusy(true); setStatus('Выберите папку для экспорта сессии.');
     try {
-      const result = await exportLocalSession(rows, { session, color, packing, comment, indexMode }, {
+      const result = await exportLocalSession(rows, { session, color, packing, comment, indexMode, minimumDistanceMeters: preferences.minimumDistanceMeters }, {
         destination: androidSessionDestination, fileAt,
         onCommit: () => { setStatus('Запись и проверка файлов…'); setWorkProgress({ kind: 'local-export', label: 'Запись и проверка файлов…',
           type: 'indeterminate', value: 0, buffer: 0, itemPercent: null }); },
@@ -579,6 +584,32 @@ export default function App() {
   ] : [];
   const moveTargets = active.filter((point) => point.id !== moveAction?.pointId
     && `${pointLabel(point)} ${point.id}`.toLowerCase().includes(targetSearch.toLowerCase().trim()));
+  const changePreferences = (values) => {
+    const next = savePreferences(values);
+    setPreferences(next);
+    if (split && next.minimumDistanceMeters !== preferences.minimumDistanceMeters) {
+      const classified = splitBatch(rows, next.minimumDistanceMeters, { indexMode });
+      setRows(establishReviewSlots(rows, classified));
+      setSplit(classified);
+    }
+  };
+  const regroupCurrent = async () => {
+    if (busy || !split) return;
+    setBusy(true);
+    try {
+      const rebuilt = regroupPhotos(rows, preferences);
+      const classified = analyze(rebuilt);
+      const nextRows = establishReviewSlots(rebuilt, classified);
+      setRows(nextRows); setSplit(classified); setReviewing(true); setResumeAvailable(false);
+      if (hasAndroidFolderPicker()) {
+        recoveryWriter.current.schedule({ schemaVersion: 1, files, rows: nextRows, phase: 'reviewing',
+          session, color, packing, comment, indexMode, publisher, onion, resumeAvailable: false, screen });
+        await recoveryWriter.current.flush();
+      }
+      setStatus('Текущие фото перегруппированы по сохранённым координатам. Проверьте точки перед публикацией.');
+    } catch (error) { setStatus(`Перегруппировка: ${errorText(error)}`); }
+    finally { setBusy(false); }
+  };
   const updateBar = updateProgress(nativeUpdate);
   const updateAction = updateButton(nativeUpdate?.state, candidate?.version);
   const nativeStatus = {
@@ -591,7 +622,10 @@ export default function App() {
   }[nativeUpdate?.state];
 
   return <IonApp><IonPage>
-    <IonHeader><IonToolbar><IonTitle>DarkCat Photo</IonTitle></IonToolbar></IonHeader>
+    <IonHeader><IonToolbar><IonTitle>DarkCat Photo</IonTitle>
+      <IonButton slot="end" fill="clear" size="small" aria-label="Настройки" disabled={busy || !recoveryReady}
+        onClick={() => setSettingsOpen(true)}>⚙</IonButton>
+    </IonToolbar></IonHeader>
     <IonContent ref={content} className="darkfoto-content">
       <div className="darkfoto-layout">
         <IonSegment value={screen} onIonChange={(event) => {
@@ -605,7 +639,7 @@ export default function App() {
         </IonSegment>
         {recoveryStatus && <p role="alert">{recoveryStatus}</p>}
         {mapVisited && <React.Suspense fallback={screen === 'map' ? <p role="status">Загрузка карты…</p> : null}>
-          <PointMap visible={screen === 'map'} points={sessionMapPoints(rows, validById, photoStatus, pointLabel, previews)} focusRequest={mapFocus}
+          <PointMap minimumDistanceMeters={preferences.minimumDistanceMeters} visible={screen === 'map'} points={sessionMapPoints(rows, validById, photoStatus, pointLabel, previews)} focusRequest={mapFocus}
             onOpenPoint={(id) => { setFocusedPoint(id); setScreen('photos'); }} />
         </React.Suspense>}
         {screen === 'about' ? <IonCard><IonCardContent>
@@ -776,15 +810,15 @@ export default function App() {
                         <div className="photo-detail">
                           {photo.statusOverride && <strong>{photo.statusOverride === 'main' ? 'Вручную: Основные' : 'Вручную: Резерв'}</strong>}
                           {(photo.manualConflicts || []).map((conflict) => <span className="review-reason" role="alert" key={`manual:${conflict.otherId}`}>
-                            Ручной конфликт: {conflict.distanceMeters.toFixed(1)} м до {conflict.otherLabel} · обе точки в основных
+                            Ручной конфликт: {conflict.distanceMeters.toFixed(1)} м до {conflict.otherLabel} · минимум {preferences.minimumDistanceMeters} м · обе точки в основных
                           </span>)}
                           {(photo.toleranceConflicts || []).map((conflict) => <span className="tolerance-warning" key={`tolerance:${conflict.otherId}`}>
-                            Допуск: {conflict.distanceMeters.toFixed(1)} м до {conflict.otherLabel}
+                            Допуск: {conflict.distanceMeters.toFixed(1)} м до {conflict.otherLabel} · минимум {preferences.minimumDistanceMeters} м, допуск 2 м
                           </span>)}
                           {state.kind === 'reserve' && (photo.reserveConflicts || []).length > 0 && <div className="reserve-reasons">
                             <strong>Почему в резерве</strong>
                             {photo.reserveConflicts.map((conflict) => <span key={`${photo.id}:${conflict.otherId}`}>
-                              {conflict.otherStatus === 'main' ? 'Конфликт' : 'Также рядом'}: {conflict.otherLabel} · {conflict.distanceMeters.toFixed(1)} м
+                              {conflict.otherStatus === 'main' ? 'Конфликт' : 'Также рядом'}: {conflict.otherLabel} · {conflict.distanceMeters.toFixed(1)} м · минимум {preferences.minimumDistanceMeters} м, допуск 2 м
                             </span>)}
                           </div>}
                           {state.kind === 'review' && <span className="review-reason">{state.text}</span>}
@@ -808,6 +842,15 @@ export default function App() {
         </>}
       </div>
     </IonContent>
+    <Settings open={settingsOpen} preferences={preferences} onSave={changePreferences}
+      onClose={() => setSettingsOpen(false)} canRegroup={Boolean(split && rows.length && !busy)}
+      onRegroup={() => { setSettingsOpen(false); setRegroupOpen(true); }} />
+    <IonAlert cssClass="regroup-work-alert" isOpen={regroupOpen} header="Перегруппировать текущую сессию?"
+      message="Состав точек, разделения, объединения, переносы, удаления, главные фото и ручные статусы будут перестроены. Все выбранные фото и поля сохранятся. OCR не запускается. Старые публикации станут неактуальными."
+      onDidDismiss={() => setRegroupOpen(false)} buttons={[
+        { text: 'Отмена', role: 'cancel' },
+        { text: 'Перегруппировать', role: 'destructive', handler: () => { regroupCurrent(); } },
+      ]} />
     <IonAlert cssClass="reset-work-alert" isOpen={resetOpen} header="Начать заново?"
       message="Выбранные фото, точки и поля текущей работы будут очищены. Исходники и подсказки сохранятся."
       onDidDismiss={() => setResetOpen(false)} buttons={[

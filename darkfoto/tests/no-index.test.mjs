@@ -98,9 +98,9 @@ test('synthetic 18 -> exactly 9 points; multi-minute EXIF groups stay together a
   assert.equal(splitBatch(points).unresolved.length, 9);
 });
 
-test('no-index OCR keeps strict time/space safeguards and never uses incidental digits', () => {
+test('no-index confident OCR uses the same radius as EXIF regardless of time or incidental digits', () => {
   const pair = noIndex18.slice(0, 2).map((p) => ({ ...p, gpsSource: 'ocr', indexFromOcr: '6880', indexStatus: 'found' }));
-  assert.equal(groupPhotos(pair, GROUP_DEFAULTS, mode).length, 2);
+  assert.equal(groupPhotos(pair, GROUP_DEFAULTS, mode).length, 1);
   assert.equal(groupPhotos(pair.map((p, i) => ({ ...p, captureTimeMs: pair[0].captureTimeMs + i * 1000 })), GROUP_DEFAULTS, mode).length, 1);
 });
 

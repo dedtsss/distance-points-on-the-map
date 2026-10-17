@@ -189,22 +189,27 @@ try {
   assert.equal(await marker('6').count(), 0, 'point without coordinates never appears');
   await pointsTab();
   await page.locator('[data-testid="append-photos"]').setInputFiles([file(8)]);
+  await card('point:1:2').locator('[data-member-id="8"]').waitFor();
+  assert.equal(await card('8').count(), 0, 'identical GPS collapses despite the later capture time');
+  // Coincident logical points now require an explicit owner split, rather
+  // than relying on the superseded time-based automatic separation.
+  await pointAct('point:1:2', 'Разделить');
   await card('8').waitFor(); await mapTab();
   await page.getByRole('button', { name: 'Показать все', exact: true }).click();
   await marker('5').click();
   await page.getByLabel('Близкие точки (до 25 м)').selectOption('8');
   await page.locator('.map-preview strong').filter({ hasText: '#7008' }).waitFor();
   await page.screenshot({ path: `/tmp/darkcat-stage-b/map-${live ? 'live' : 'fixture'}-coincident-375.png` });
-  await page.getByLabel('Близкие точки (до 25 м)').selectOption('point:1:2');
+  await page.getByLabel('Близкие точки (до 25 м)').selectOption('1');
   await page.locator('.map-preview').filter({ hasText: /#7001.*1 фото/s }).waitFor();
   await page.locator('.map-preview').getByRole('button', { name: 'Открыть точку', exact: true }).click();
-  await card('point:1:2').waitFor();
-  await page.waitForFunction(() => document.activeElement.dataset.pointId === 'point:1:2');
-  assert.equal(await page.evaluate(() => document.activeElement.dataset.pointId), 'point:1:2', 'coincident point selection opens its exact logical card');
+  await card('1').waitFor();
+  await page.waitForFunction(() => document.activeElement.dataset.pointId === '1');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.pointId), '1', 'coincident point selection opens its exact logical card');
   // Request each coincident logical identity from its own card, even if
   // another marker/preview at those coordinates was selected previously.
   await mkdir('/tmp/darkcat-051', { recursive: true });
-  for (const [id, label] of [['8', '#7008'], ['point:1:2', '#7001'], ['8', '#7008']]) {
+  for (const [id, label] of [['8', '#7008'], ['1', '#7001'], ['8', '#7008']]) {
     await card(id).getByRole('button', { name: 'На карте', exact: true }).click();
     await focused(id, label);
     assert.equal(await page.evaluate(() => globalThis.__mapCanvas === document.querySelector('.map-canvas canvas')), true);

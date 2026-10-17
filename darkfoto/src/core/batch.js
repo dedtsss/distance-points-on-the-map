@@ -54,7 +54,7 @@ export function splitBatch(photos, thresholdMeters = 25, { indexMode = true } = 
       .filter((pair) => pair.otherStatus === 'main') : [],
   }));
   return {
-    indexMode,
+    indexMode, thresholdMeters,
     main: resolved.filter((photo) => photo.workStatus === 'active'),
     reserve: resolved.filter((photo) => photo.workStatus === 'reserve'),
     unresolved,

@@ -14,8 +14,8 @@ export const photo = (number, meters = 0, seconds = number, extra = {}) => ({
   uploadResult: { links: [] }, ...extra,
 });
 
-test('deterministic grouping uses space, time and neighboring index evidence', () => {
-  const rows = [photo(1), photo(2, 8), photo(3, 40)];
+test('deterministic confident grouping uses the default 4 m radius regardless of index', () => {
+  const rows = [photo(1), photo(2, 1.9), photo(3, 40)];
   assert.deepEqual(groupPhotos(rows).map((point) => point.members.map((member) => member.id)), [['1', '2'], ['3']]);
   assert.deepEqual(groupPhotos([...rows].reverse()), groupPhotos(rows));
   assert.equal(groupPhotos([photo(1), photo(2, 8, 10, { indexFromOcr: '8000' })]).length, 2);
@@ -23,18 +23,18 @@ test('deterministic grouping uses space, time and neighboring index evidence', (
   assert.equal(groupPhotos([photo(1), photo(2, 8, 10, { indexFromOcr: null, indexStatus: 'missing' })]).length, 2);
 });
 
-test('fixed anchor and total time span prevent transitive spatial/time drift', () => {
-  assert.deepEqual(groupPhotos([photo(1, 0, 0), photo(2, 8, 50), photo(3, 16, 100)])
+test('complete-link bound prevents spatial drift; time never splits confident duplicates', () => {
+  assert.deepEqual(groupPhotos([photo(1, 0, 0), photo(2, 3, 50), photo(3, 6, 100)])
     .map((point) => point.members.length), [2, 1]);
   assert.deepEqual(groupPhotos([photo(1, 0, 0), photo(2, 0, 100), photo(3, 0, 200)])
-    .map((point) => point.members.length), [2, 1]);
+    .map((point) => point.members.length), [3]);
   assert.equal(groupPhotos([photo(1, 0, 0), photo(2, 0, 120)]).length, 1);
-  assert.equal(groupPhotos([photo(1, 0, 0), photo(2, 0, 121)]).length, 2);
+  assert.equal(groupPhotos([photo(1, 0, 0), photo(2, 0, 121)]).length, 1);
 });
 
-test('weak mtime alone never merges; missing time needs tight space and continuous indexes', () => {
+test('confident coordinates ignore weak/missing time and indexes; suspicious coordinates stay separate', () => {
   const weak = (n, m, extra = {}) => photo(n, m, 0, { captureTimeSource: 'lastModified', ...extra });
-  assert.equal(groupPhotos([weak(1, 0, { indexFromOcr: null }), weak(2, 0, { indexFromOcr: null })]).length, 2);
+  assert.equal(groupPhotos([weak(1, 0, { indexFromOcr: null }), weak(2, 0, { indexFromOcr: null })]).length, 1);
   assert.equal(groupPhotos([weak(1, 0), weak(2, 8)]).length, 2);
   assert.equal(groupPhotos([weak(1, 0), weak(2, 2)]).length, 1);
   assert.equal(groupPhotos([photo(1), photo(2, 0, 5, { coordinateQuality: 'suspicious' })]).length, 2);

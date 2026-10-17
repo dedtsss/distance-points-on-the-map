@@ -1,15 +1,12 @@
 import { haversineDistanceMeters } from './utils/geoDistance.js';
 import { normalizeCoordinates } from './features/gps/coordinateParser.js';
 
-// Separate same-object evidence from the unchanged 25 m Main/Reserve rule.
-export const GROUP_DEFAULTS = Object.freeze({ radiusMeters: 10, maxSpanMs: 120_000,
-  tightRadiusMeters: 3, strongSpanMs: 30_000, nearIndexGap: 2, largeIndexGap: 10 });
+// Point identity is independent of the business distance between points.
+export const GROUP_DEFAULTS = Object.freeze({ radiusMeters: 4 });
 export const recognizedIndex = (photo) => photo.indexStatus === 'found'
   && /^\d{4,5}$/.test(String(photo.indexFromOcr || ''));
 const validCoordinates = (photo) => photo.coordinateQuality === 'confident'
   && normalizeCoordinates(photo.coordinates?.latitude, photo.coordinates?.longitude);
-const trustedTime = (photo) => ['exif', 'filename'].includes(photo.captureTimeSource)
-  && Number.isFinite(photo.captureTimeMs) ? photo.captureTimeMs : null;
 const byOrder = (a, b) => a.number - b.number || String(a.id).localeCompare(String(b.id));
 
 export function makePoint(members, manualRepresentativeId = null) {
@@ -30,53 +27,48 @@ export function makePoint(members, manualRepresentativeId = null) {
   };
 }
 
-function canJoin(members, candidate, rules, indexMode) {
-  const anchor = members[0];
-  const previous = members.at(-1);
-  if (!validCoordinates(candidate) || !validCoordinates(anchor)) return false;
-  const distance = haversineDistanceMeters(anchor, candidate);
-  if (distance === null || distance > rules.radiusMeters) return false;
-  // Also remain near the best representative if accuracy changes its position.
-  const resulting = makePoint([...members, candidate]);
-  if ([...members, candidate].some((photo) => haversineDistanceMeters(photo, resulting) > rules.radiusMeters)) return false;
-  if (!indexMode && [...members, candidate].every((photo) => photo.gpsSource === 'exif')) {
-    // A changing representative must not stretch a cluster into a GPS bridge.
-    return [...members, candidate].every((photo) =>
-      haversineDistanceMeters(anchor, photo) <= rules.tightRadiusMeters
-      && haversineDistanceMeters(resulting, photo) <= rules.tightRadiusMeters);
-  }
-  const times = [...members, candidate].map(trustedTime);
-  const known = times.filter((time) => time !== null);
-  const span = known.length ? Math.max(...known) - Math.min(...known) : 0;
-  if (span > rules.maxSpanMs) return false;
-  const gap = indexMode && recognizedIndex(previous) && recognizedIndex(candidate)
-    ? Math.abs(Number(previous.indexFromOcr) - Number(candidate.indexFromOcr)) : null;
-  if (times.some((time) => time === null)) {
-    return distance <= rules.tightRadiusMeters && gap !== null && gap <= rules.nearIndexGap;
-  }
-  if (gap === null) return distance <= rules.tightRadiusMeters && span <= rules.strongSpanMs;
-  return gap <= rules.largeIndexGap
-    || (distance <= rules.tightRadiusMeters && span <= rules.strongSpanMs);
+function canJoin(members, candidate, rules) {
+  if (!validCoordinates(candidate) || !members.length || !members.every(validCoordinates)) return false;
+  // Complete-link bound: anchor/representative-only tests permit A-B-C bridges.
+  return members.every((member) => {
+    const distance = haversineDistanceMeters(member, candidate);
+    return distance !== null && distance <= rules.radiusMeters + 1e-7;
+  });
 }
 
-export function groupPhotos(photos, rules = GROUP_DEFAULTS, { indexMode = true } = {}) {
+function nearestGroup(groups, photo, rules) {
+  return groups.filter((members) => canJoin(members, photo, rules))
+    .map((members) => ({ members, duplicate: members.some((member) => haversineDistanceMeters(member, photo) === 0),
+      distance: haversineDistanceMeters(makePoint(members), photo) }))
+    .sort((a, b) => Number(b.duplicate) - Number(a.duplicate) || a.distance - b.distance
+      || byOrder(a.members[0], b.members[0]))[0]?.members;
+}
+
+export function groupPhotos(photos, rules = GROUP_DEFAULTS) {
   const groups = [];
   for (const photo of [...photos].sort(byOrder)) {
-    const candidates = !indexMode && photo.gpsSource === 'exif' && validCoordinates(photo)
-      ? groups.filter((members) => members.every((member) => member.gpsSource === 'exif')
-        && canJoin(members, photo, rules, indexMode))
-        .map((members) => ({ members, distance: haversineDistanceMeters(makePoint(members), photo) }))
-        .sort((a, b) => a.distance - b.distance)
-      : [];
-    const nearest = candidates.length && (candidates.length === 1 || candidates[1].distance - candidates[0].distance > 0.001)
-      ? candidates[0].members : null;
-    const last = groups.at(-1);
-    const match = !indexMode && photo.gpsSource === 'exif' ? nearest
-      : last && canJoin(last, photo, rules, indexMode) ? last : null;
+    const match = nearestGroup(groups, photo, rules);
     if (match) match.push(photo);
     else groups.push([photo]);
   }
   return groups.map((members) => makePoint(members));
+}
+
+// Explicitly rebuild from recognized evidence, including photos previously
+// excluded/removed. Never read original files, replace GPS, or run recognition.
+export function regroupPhotos(points, rules = GROUP_DEFAULTS) {
+  const originals = points.flatMap((point) => [...pointMembers(point), ...(point.excludedMembers || [])]);
+  const photos = originals.map((photo) => ({ ...photo, statusOverride: null,
+    manualRepresentativeId: null, removed: false, emptyFromMove: false,
+    excludedMembers: [], memberUndo: [], reviewSection: undefined, reviewSlot: undefined,
+    uploadResult: { links: [] }, publishError: undefined }));
+  return groupPhotos(photos, rules).map((point) => {
+    const ids = new Set(point.members.map((photo) => photo.id));
+    const owners = points.filter((old) => [...pointMembers(old), ...(old.excludedMembers || [])].some((photo) => ids.has(photo.id)));
+    const staleLinks = owners.flatMap((old) => [...(old.uploadResult?.links || []), ...(old.uploadResult?.staleLinks || [])]);
+    return { ...point, uploadResult: { links: [], staleLinks,
+      stale: Boolean(staleLinks.length || owners.some((old) => old.uploadResult?.stale)) } };
+  });
 }
 
 export const pointMembers = (point) => point.emptyFromMove ? [] : point.members || [point];
@@ -216,13 +208,14 @@ export function restoreMemberPoint(points, id) {
   return moveMember(ready, owner.id, memberId, id);
 }
 
-export function appendPhotos(points, photos, rules = GROUP_DEFAULTS, { indexMode = true } = {}) {
+export function appendPhotos(points, photos, rules = GROUP_DEFAULTS) {
   let next = [...points];
   for (const photo of [...photos].sort(byOrder)) {
-    const matches = next.filter((point) => !point.removed && canJoin(pointMembers(point), photo, rules, indexMode));
-    // The accepted evidence must identify exactly one entity; never coalesce
-    // manually separated points or attach into an excluded placeholder.
-    if (matches.length === 1) next = next.map((point) => point.id === matches[0].id
+    const candidates = next.filter((point) => !point.removed);
+    const groups = candidates.map(pointMembers);
+    const members = nearestGroup(groups, photo, rules);
+    const match = candidates[groups.indexOf(members)];
+    if (match) next = next.map((point) => point.id === match.id
       ? withMembers(point, [...pointMembers(point), photo]) : point);
     else next.push(makePoint([photo]));
   }

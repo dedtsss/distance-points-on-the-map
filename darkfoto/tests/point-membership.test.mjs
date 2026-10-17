@@ -164,12 +164,12 @@ test('append safely attaches using accepted evidence, preserving manual grouping
   assert.equal(splitBatch(added).unresolved.length, 1);
   assert.equal(added[0].reviewSlot, before[0].reviewSlot);
   recover(added, 7);
-  // Two manually separated points both fit: preserve both and keep a new entity.
+  // Existing manually separated points remain distinct; the new photo joins the nearest.
   const manual = [makePoint([photo(1)]), makePoint([photo(2, 1)])];
   const ambiguous = appendPhotos(manual, [photo(3, 1)]);
-  assert.equal(ambiguous.length, 3);
+  assert.equal(ambiguous.length, 2);
   assert.equal(ambiguous[0], manual[0]);
-  assert.equal(ambiguous[1], manual[1]);
+  assert.deepEqual(membership(ambiguous), [['1'], ['2', '3']]);
   assert.equal(appendPhotos(manual, [photo(4, 8, { indexFromOcr: '9000' })]).length, 3);
   assert.equal(appendPhotos(manual.slice(0, 1), [photo(4, 8, { captureTimeSource: 'lastModified' })]).length, 2);
 });

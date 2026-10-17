@@ -200,3 +200,14 @@ ion-segment-button ion-label { white-space: normal; word-break: normal; overflow
   .move-photo-modal ion-label > p { margin: 0; font-size: .75rem; }
   .move-photo-modal ion-label .destination-strip { grid-column: 2; grid-row: 1 / span 3; margin: 0; align-self: center; }
 }
+
+.settings-modal { --background: var(--ion-background-color); --height: min(760px, 100%); }
+.settings-modal::part(content) { background: var(--ion-background-color); }
+.settings-modal ion-header, .settings-modal ion-footer { background: var(--ion-background-color); }
+.settings-modal ion-content, .settings-modal ion-toolbar { --background: var(--ion-background-color); color: var(--ion-text-color); }
+.settings-fields { padding: 16px; display: grid; gap: 12px; }
+.settings-fields label { font-weight: 600; }
+.settings-fields input { width: 100%; min-width: 0; padding: 10px; font: inherit; background: var(--ion-item-background); color: var(--ion-text-color); border: 1px solid #7b8797; border-radius: 6px; }
+.settings-fields p { margin: 0; font-size: 14px; line-height: 1.4; }
+.settings-fields ion-button { white-space: normal; height: auto; min-height: 44px; }
+.settings-modal ion-title { padding-inline: 16px; }

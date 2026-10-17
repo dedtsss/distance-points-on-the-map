@@ -35,12 +35,12 @@ export function sessionMapBounds(points) {
 
 // Reserve points are close by definition; identical coordinates cannot be
 // separated by zoom. The preview lets users select each nearby logical point.
-export function nearbyMapPoints(points, selectedId) {
+export function nearbyMapPoints(points, selectedId, minimumDistanceMeters = 25) {
   const selected = points.find((point) => point.id === selectedId);
   if (!selected) return [];
   return points.filter((point) => {
     if (point.latitude === selected.latitude && point.longitude === selected.longitude) return true;
     const distance = haversineDistanceMeters(selected, point);
-    return distance !== null && distance <= 25;
+    return distance !== null && distance <= minimumDistanceMeters;
   });
 }

@@ -26,14 +26,14 @@ test('whole-batch A1 B1 A2 with days between captures, multiple intervening poin
   assert.deepEqual(group(input.slice(0, 3)).map((p) => p.members.length), [2, 1]);
 });
 
-test('tight 3 m rule keeps nearby distinct points and prevents anchor/representative bridges', () => {
+test('default 4 m diameter keeps nearby distinct points and prevents anchor/representative bridges', () => {
   assert.equal(group([photo(1), photo(2, 8)]).length, 2);
   assert.deepEqual(group([photo(1), photo(2, 2.5), photo(3, 5)]).map((p) => p.members.length), [2, 1]);
   const points = group([photo(1), photo(2, -2.5), photo(3, 2.5, { accuracyMeters: 1 })]);
   assert.equal(points.length, 2, 'new best representative cannot stretch its farthest member to 5 m');
-  for (const p of points) for (const m of p.members) assert.ok(haversineDistanceMeters(p, m) <= 3);
-  // Two equidistant compatible entities are ambiguous: create a new entity.
-  assert.equal(group([photo(1, -2), photo(2, 2), photo(3)]).length, 3);
+  for (const p of points) for (const m of p.members) assert.ok(haversineDistanceMeters(p, m) <= 4);
+  // A deterministic nearest compatible group wins; exact bound is inclusive.
+  assert.equal(group([photo(1, -2), photo(2, 2), photo(3)]).length, 1);
 });
 
 for (const meters of [22.9, 23.0, 24.0, 25.0]) test(`fixed tolerance boundary ${meters.toFixed(1)} m`, () => {

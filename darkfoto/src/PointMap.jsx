@@ -7,7 +7,7 @@ import { MAP_STYLE, MAP_LOAD_TIMEOUT_MS, sessionMapBounds, nearbyMapPoints } fro
 setWorkerUrl(workerUrl);
 const symbols = { main: 'О', reserve: 'Р', review: '!', recognized: '•' };
 
-export default function PointMap({ points, visible, focusRequest, onOpenPoint }) {
+export default function PointMap({ points, visible, focusRequest, onOpenPoint, minimumDistanceMeters = 25 }) {
   const container = useRef(null);
   const mapRef = useRef(null);
   const markers = useRef(new Map());
@@ -22,7 +22,7 @@ export default function PointMap({ points, visible, focusRequest, onOpenPoint })
   const appliedFocus = useRef(null);
   const hasPoints = points.length > 0;
   const selected = points.find((point) => point.id === selectedId);
-  const nearby = nearbyMapPoints(points, selectedId);
+  const nearby = nearbyMapPoints(points, selectedId, minimumDistanceMeters);
   useEffect(() => {
     if (!hasPoints) setStarted(false);
     else if (visible) setStarted(true);
@@ -129,7 +129,7 @@ export default function PointMap({ points, visible, focusRequest, onOpenPoint })
         {selected.thumbnail && <img src={selected.thumbnail} alt="Фото представителя точки" />}
         <div><strong>{selected.label}</strong><span className={`photo-state photo-state-${selected.status.kind}`}>{selected.status.text}</span>
           <p>{selected.count} фото · {selected.latitude}, {selected.longitude}</p>
-          {nearby.length > 1 && <label className="map-nearby">Близкие точки (до 25 м)
+          {nearby.length > 1 && <label className="map-nearby">Близкие точки (до {minimumDistanceMeters} м)
             <select value={selected.id} onChange={(event) => setSelectedId(event.target.value)}>
               {nearby.map((point) => <option key={point.id} value={point.id}>{point.label} · {point.status.kind === 'review' ? 'Проверка' : point.status.text}</option>)}
             </select></label>}
